@@ -23,7 +23,7 @@ class EmbeddingExtractor:
             source=self.MODEL_SOURCE,
             savedir=savedir,
             run_opts={"device": device},
-            local_strategy=LocalStrategy.COPY
+            local_strategy=LocalStrategy.COPY,
         )
 
     def extract_from_file(self, audio_path: Path) -> np.ndarray:

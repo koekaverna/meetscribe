@@ -11,9 +11,7 @@ from tqdm import tqdm
 
 
 def merge_close_segments(
-    vad_segments: list[tuple[int, int]],
-    max_gap_ms: int = 500,
-    max_chunk_ms: int = 30000
+    vad_segments: list[tuple[int, int]], max_gap_ms: int = 500, max_chunk_ms: int = 30000
 ) -> list[tuple[int, int]]:
     """Merge VAD segments with small gaps into larger chunks."""
     if not vad_segments:
@@ -46,7 +44,7 @@ def is_silent(waveform: torch.Tensor, threshold_db: float = -40.0) -> bool:
     Returns:
         True if audio is below threshold (silent)
     """
-    rms = torch.sqrt(torch.mean(waveform ** 2))
+    rms = torch.sqrt(torch.mean(waveform**2))
 
     if rms < 1e-10:
         return True
@@ -58,6 +56,7 @@ def is_silent(waveform: torch.Tensor, threshold_db: float = -40.0) -> bool:
 @dataclass
 class TranscriptSegment:
     """Transcribed segment with timestamp."""
+
     start_ms: int
     end_ms: int
     text: str
@@ -93,10 +92,7 @@ class BaseTranscriber(ABC):
 
     @abstractmethod
     def transcribe(
-        self,
-        audio_path: Path,
-        language: str = DEFAULT_LANGUAGE,
-        speaker: str | None = None
+        self, audio_path: Path, language: str = DEFAULT_LANGUAGE, speaker: str | None = None
     ) -> list[TranscriptSegment]:
         """Transcribe audio file."""
         pass
@@ -158,10 +154,7 @@ class BaseTranscriber(ABC):
         return results
 
     def _find_speaker(
-        self,
-        start_ms: int,
-        end_ms: int,
-        time_segments: list[tuple[int, int, str]]
+        self, start_ms: int, end_ms: int, time_segments: list[tuple[int, int, str]]
     ) -> str:
         """Find speaker with maximum time overlap."""
         best_speaker = "Unknown"
@@ -184,13 +177,14 @@ class OpenAIWhisperTranscriber(BaseTranscriber):
 
     def _load_model(self):
         import whisper
+
         self._model = whisper.load_model(self.model_size, device=self.device)
 
     def transcribe(
         self,
         audio_path: Path,
         language: str = BaseTranscriber.DEFAULT_LANGUAGE,
-        speaker: str | None = None
+        speaker: str | None = None,
     ) -> list[TranscriptSegment]:
         result = self._model.transcribe(
             str(audio_path),
@@ -209,12 +203,14 @@ class OpenAIWhisperTranscriber(BaseTranscriber):
         for seg in result["segments"]:
             text = seg["text"].strip()
             if text:
-                segments.append(TranscriptSegment(
-                    start_ms=int(seg["start"] * 1000),
-                    end_ms=int(seg["end"] * 1000),
-                    text=text,
-                    speaker=speaker
-                ))
+                segments.append(
+                    TranscriptSegment(
+                        start_ms=int(seg["start"] * 1000),
+                        end_ms=int(seg["end"] * 1000),
+                        text=text,
+                        speaker=speaker,
+                    )
+                )
 
         return segments
 

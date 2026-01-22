@@ -33,12 +33,12 @@ classifiers = [
 dependencies = [
     "speechbrain>=1.0.0",
     "openai-whisper",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
+    "torch>=2.7.0",
+    "torchaudio>=2.7.0,<2.9",
     "imageio-ffmpeg",
     "soundfile",
     "scikit-learn",
-    "huggingface_hub",
+    "huggingface_hub<1.0",
     "tqdm",
 ]
 
@@ -67,16 +67,16 @@ packages = ["src/meetscribe"]
 index-strategy = "unsafe-best-match"
 
 [[tool.uv.index]]
-name = "pytorch-cu124"
-url = "https://download.pytorch.org/whl/cu124"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 
 [[tool.uv.index]]
 name = "pypi"
 url = "https://pypi.org/simple"
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu124" }
-torchaudio = { index = "pytorch-cu124" }
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
 
 [tool.ruff]
 line-length = 100
