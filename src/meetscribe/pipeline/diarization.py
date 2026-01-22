@@ -9,6 +9,7 @@ from speechbrain.processing.diarization import Spec_Clust_unorm
 @dataclass
 class DiarizedSegment:
     """Speech segment with cluster assignment."""
+
     start_ms: int
     end_ms: int
     cluster_id: int
@@ -26,24 +27,25 @@ class SpectralClusterer:
         self,
         embeddings: list[np.ndarray],
         segments: list[tuple[int, int]],
-        num_speakers: int | None = None
+        num_speakers: int | None = None,
     ) -> list[DiarizedSegment]:
         """Cluster embeddings into speaker groups."""
         if len(embeddings) == 0:
             return []
 
         if len(embeddings) == 1:
-            return [DiarizedSegment(
-                start_ms=segments[0][0],
-                end_ms=segments[0][1],
-                cluster_id=0,
-                embedding=embeddings[0]
-            )]
+            return [
+                DiarizedSegment(
+                    start_ms=segments[0][0],
+                    end_ms=segments[0][1],
+                    cluster_id=0,
+                    embedding=embeddings[0],
+                )
+            ]
 
         emb_matrix = np.stack(embeddings)
         clusterer = Spec_Clust_unorm(
-            min_num_spkrs=self.min_speakers,
-            max_num_spkrs=self.max_speakers
+            min_num_spkrs=self.min_speakers, max_num_spkrs=self.max_speakers
         )
 
         k = num_speakers if num_speakers is not None else self.max_speakers
@@ -52,12 +54,11 @@ class SpectralClusterer:
 
         results = []
         for i, (emb, (start, end)) in enumerate(zip(embeddings, segments)):
-            results.append(DiarizedSegment(
-                start_ms=start,
-                end_ms=end,
-                cluster_id=int(labels[i]),
-                embedding=emb
-            ))
+            results.append(
+                DiarizedSegment(
+                    start_ms=start, end_ms=end, cluster_id=int(labels[i]), embedding=emb
+                )
+            )
 
         return results
 

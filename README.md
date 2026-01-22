@@ -11,40 +11,16 @@ Meeting transcription with speaker diarization. Combines OpenAI Whisper for tran
 
 ## Installation
 
-Requires Python 3.12+ and CUDA-compatible GPU (recommended).
+Requires Python 3.12+.
 
 ```bash
-# Using uv (recommended)
-uv pip install meetscribe
-
-# Or with pip
-pip install meetscribe
+uv venv
+uv pip install -e .
 ```
 
-### CUDA Support
+## Commands
 
-For CUDA acceleration, install PyTorch with CUDA support first:
-
-```bash
-uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
-uv pip install meetscribe
-```
-
-## Usage
-
-### Enroll Speakers
-
-Register known speakers for automatic identification:
-
-```bash
-# From a directory of audio samples
-meetscribe enroll "John Doe" ./samples/john/
-
-# From a single file
-meetscribe enroll "Jane Smith" recording.wav
-```
-
-### Transcribe Meeting
+### `meetscribe transcribe`
 
 Transcribe a meeting with speaker identification:
 
@@ -52,15 +28,25 @@ Transcribe a meeting with speaker identification:
 meetscribe transcribe meeting.mp4 --host "John Doe" --output ./notes/
 ```
 
-Options:
-- `-H, --host`: Name of the host (required)
-- `-o, --output`: Output file or directory (required)
-- `-m, --model`: Whisper model size (default: medium)
-- `-l, --language`: Language code (default: ru)
-- `--max-speakers`: Maximum number of speakers to detect (default: 10)
-- `--threshold`: Speaker identification confidence threshold (default: 0.7)
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-H, --host` | Name of the host | required |
+| `-o, --output` | Output file or directory | required |
+| `-m, --model` | Whisper model size | medium |
+| `-l, --language` | Language code | ru |
+| `--max-speakers` | Maximum speakers to detect | 10 |
+| `--threshold` | Identification threshold | 0.7 |
 
-### Extract Samples
+### `meetscribe enroll`
+
+Register known speakers for automatic identification:
+
+```bash
+meetscribe enroll "John Doe" ./samples/john/
+meetscribe enroll "Jane Smith" recording.wav
+```
+
+### `meetscribe extract-samples`
 
 Extract audio samples from unknown speakers for later enrollment:
 
@@ -68,7 +54,7 @@ Extract audio samples from unknown speakers for later enrollment:
 meetscribe extract-samples meeting.mp4
 ```
 
-### List Speakers
+### `meetscribe list-speakers`
 
 Show enrolled speakers:
 
@@ -76,7 +62,7 @@ Show enrolled speakers:
 meetscribe list-speakers
 ```
 
-### Show Configuration
+### `meetscribe info`
 
 Display data directories and settings:
 
@@ -90,32 +76,20 @@ MeetScribe expects video files with two audio tracks:
 1. **Track 1**: Host audio (e.g., from local microphone)
 2. **Track 2**: Guests audio (e.g., from remote participants)
 
-This separation improves transcription accuracy by isolating speakers.
+## Development
 
-## Data Directories
+```bash
+# Setup
+uv venv
+uv pip install -e ".[dev]"
 
-MeetScribe stores data in platform-specific directories:
+# Run tests
+pytest
 
-| Platform | Data | Cache |
-|----------|------|-------|
-| Windows | `%LOCALAPPDATA%\meetscribe` | `%LOCALAPPDATA%\meetscribe\cache` |
-| macOS | `~/Library/Application Support/meetscribe` | `~/Library/Caches/meetscribe` |
-| Linux | `~/.local/share/meetscribe` | `~/.cache/meetscribe` |
-
-## Pipeline
-
-1. **Audio extraction**: Extract separate tracks from video using FFmpeg
-2. **VAD**: Voice Activity Detection using SpeechBrain CRDNN
-3. **Embeddings**: Speaker embeddings using ECAPA-TDNN
-4. **Clustering**: Spectral clustering to group segments by speaker
-5. **Identification**: Match clusters to enrolled speakers
-6. **Transcription**: Whisper transcription with speaker labels
-
-## Models
-
-- **VAD**: [speechbrain/vad-crdnn-libriparty](https://huggingface.co/speechbrain/vad-crdnn-libriparty)
-- **Embeddings**: [speechbrain/spkrec-ecapa-voxceleb](https://huggingface.co/speechbrain/spkrec-ecapa-voxceleb)
-- **Transcription**: [OpenAI Whisper](https://github.com/openai/whisper)
+# Lint
+pytest check src/
+ruff format src/
+```
 
 ## License
 

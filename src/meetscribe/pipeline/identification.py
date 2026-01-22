@@ -12,6 +12,7 @@ from .embeddings import EmbeddingExtractor
 @dataclass
 class SpeakerMatch:
     """Speaker identification result."""
+
     name: str
     confidence: float
     is_known: bool
@@ -26,7 +27,7 @@ class SpeakerIdentifier:
         self,
         voiceprints_path: Path,
         extractor: EmbeddingExtractor,
-        threshold: float = DEFAULT_THRESHOLD
+        threshold: float = DEFAULT_THRESHOLD,
     ):
         self.voiceprints_path = voiceprints_path
         self.extractor = extractor

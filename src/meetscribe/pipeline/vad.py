@@ -12,6 +12,7 @@ from speechbrain.utils.fetching import LocalStrategy
 @dataclass
 class SpeechSegment:
     """A segment of detected speech."""
+
     start_ms: int
     end_ms: int
     cluster_id: int | None = None
@@ -32,15 +33,15 @@ class VADProcessor:
     SAMPLE_RATE = 16000
 
     # VAD parameters (WhisperX-style naming)
-    VAD_ONSET = 0.5       # Speech start threshold (0-1), higher = stricter
-    VAD_OFFSET = 0.25     # Speech end threshold, lower = less likely to cut off speech
-    MIN_SPEECH_MS = 250   # Minimum speech segment duration (ms)
+    VAD_ONSET = 0.5  # Speech start threshold (0-1), higher = stricter
+    VAD_OFFSET = 0.25  # Speech end threshold, lower = less likely to cut off speech
+    MIN_SPEECH_MS = 250  # Minimum speech segment duration (ms)
     MIN_SILENCE_MS = 250  # Minimum silence to split segments (ms)
 
     # SpeechBrain-specific
-    LARGE_CHUNK_SIZE = 30   # Seconds, for initial pass
-    SMALL_CHUNK_SIZE = 10   # Seconds, for refinement
-    APPLY_ENERGY_VAD = True # Energy-based double-check (reduces hallucinations)
+    LARGE_CHUNK_SIZE = 30  # Seconds, for initial pass
+    SMALL_CHUNK_SIZE = 10  # Seconds, for refinement
+    APPLY_ENERGY_VAD = True  # Energy-based double-check (reduces hallucinations)
 
     def __init__(self, device: str = "cuda", cache_dir: Path | None = None):
         self.device = device
@@ -50,7 +51,7 @@ class VADProcessor:
             source=self.MODEL_SOURCE,
             savedir=savedir,
             run_opts={"device": device},
-            local_strategy=LocalStrategy.COPY
+            local_strategy=LocalStrategy.COPY,
         )
 
     def process(self, audio_path: Path, min_duration_ms: int | None = None) -> list[SpeechSegment]:
@@ -67,14 +68,14 @@ class VADProcessor:
             min_duration_ms = self.MIN_SPEECH_MS
 
         boundaries = self.model.get_speech_segments(
-            str(audio_path),
+            audio_path.as_posix(),
             large_chunk_size=self.LARGE_CHUNK_SIZE,
             small_chunk_size=self.SMALL_CHUNK_SIZE,
             overlap_small_chunk=True,
             apply_energy_VAD=self.APPLY_ENERGY_VAD,
             double_check=True,
             close_th=self.MIN_SILENCE_MS / 1000,  # Convert to seconds
-            len_th=self.MIN_SPEECH_MS / 1000,     # Convert to seconds
+            len_th=self.MIN_SPEECH_MS / 1000,  # Convert to seconds
         )
 
         segments = []

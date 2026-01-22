@@ -29,9 +29,7 @@ _log_file = config.LOGS_DIR / f"{_dt.now():%Y-%m-%d_%H-%M-%S}.log"
 # File handler: all messages (DEBUG+)
 _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
 _file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(logging.Formatter(
-    "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-))
+_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
 # Console handler: ERROR+ only
 _console_handler = logging.StreamHandler()
@@ -53,6 +51,7 @@ os.environ["HF_HUB_CACHE"] = os.path.expanduser("~/.cache/huggingface/hub")
 # Add NVIDIA DLLs to PATH for Windows CUDA
 if sys.platform == "win32":
     from pathlib import Path as WinPath
+
     site_packages = WinPath(sys.prefix) / "Lib" / "site-packages" / "nvidia"
     if site_packages.exists():
         for lib_dir in site_packages.iterdir():
@@ -63,6 +62,7 @@ if sys.platform == "win32":
 
 # Patch Whisper to use imageio-ffmpeg binary
 import imageio_ffmpeg
+
 _FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
 
 
@@ -75,13 +75,19 @@ def _patch_whisper_ffmpeg():
         cmd = [
             _FFMPEG_BIN,
             "-nostdin",
-            "-threads", "0",
-            "-i", file,
-            "-f", "s16le",
-            "-ac", "1",
-            "-acodec", "pcm_s16le",
-            "-ar", str(sr),
-            "-"
+            "-threads",
+            "0",
+            "-i",
+            file,
+            "-f",
+            "s16le",
+            "-ac",
+            "1",
+            "-acodec",
+            "pcm_s16le",
+            "-ar",
+            str(sr),
+            "-",
         ]
         try:
             out = run(cmd, capture_output=True, check=True).stdout
@@ -90,31 +96,12 @@ def _patch_whisper_ffmpeg():
         return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
 
     import whisper.audio
+
     whisper.audio.load_audio = load_audio_patched
 
 
 _patch_whisper_ffmpeg()
 
-
-# Patch SpeechBrain fetch to handle Windows absolute paths
-def _patch_speechbrain_fetch():
-    """Patch fetch to handle absolute local paths correctly."""
-    from pathlib import Path as _Path
-    import speechbrain.utils.fetching as sb_fetching
-
-    _original_fetch = sb_fetching.fetch
-
-    def fetch_patched(filename, source, *args, **kwargs):
-        # If source is './' and filename is absolute, return filename directly
-        p = _Path(filename)
-        if p.is_absolute() and p.exists():
-            return str(p)
-        return _original_fetch(filename, source, *args, **kwargs)
-
-    sb_fetching.fetch = fetch_patched
-
-
-_patch_speechbrain_fetch()
 
 import argparse
 import subprocess
@@ -149,11 +136,22 @@ def run_cmd(cmd: list[str], desc: str) -> None:
 
 def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path:
     """Extract audio track from video."""
-    run_cmd([
-        _FFMPEG_BIN, "-y", "-i", str(video_path),
-        "-map", f"0:{track_index}", "-ac", "1", "-ar", "16000",
-        str(output_path)
-    ], f"Extracting track {track_index}")
+    run_cmd(
+        [
+            _FFMPEG_BIN,
+            "-y",
+            "-i",
+            str(video_path),
+            "-map",
+            f"0:{track_index}",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            str(output_path),
+        ],
+        f"Extracting track {track_index}",
+    )
     return output_path
 
 
@@ -163,7 +161,7 @@ def save_unknown_samples(
     cluster_names: dict[int, str],
     date_str: str,
     min_duration_ms: int = 3000,
-    max_samples: int = 5
+    max_samples: int = 5,
 ) -> None:
     """Save audio samples for unknown speakers."""
     unknown_clusters = {cid for cid, name in cluster_names.items() if name.startswith("Unknown")}
@@ -177,12 +175,14 @@ def save_unknown_samples(
         cluster_dir = samples_dir / f"{date_str}-speaker{cluster_id}"
 
         # Filter and sort by duration (longest first)
-        cluster_segs = [s for s in segments if getattr(s, 'cluster_id', None) == cluster_id]
+        cluster_segs = [s for s in segments if getattr(s, "cluster_id", None) == cluster_id]
         cluster_segs = [s for s in cluster_segs if s.duration_ms >= min_duration_ms]
         cluster_segs.sort(key=lambda s: s.duration_ms, reverse=True)
 
         if not cluster_segs:
-            print(f"  -> No samples >= {min_duration_ms/1000:.0f}s for {cluster_names[cluster_id]}")
+            print(
+                f"  -> No samples >= {min_duration_ms / 1000:.0f}s for {cluster_names[cluster_id]}"
+            )
             continue
 
         cluster_dir.mkdir(parents=True, exist_ok=True)
@@ -191,9 +191,15 @@ def save_unknown_samples(
             start = int(seg.start_ms * sr / 1000)
             end = int(seg.end_ms * sr / 1000)
             duration_s = seg.duration_ms / 1000
-            torchaudio.save(str(cluster_dir / f"sample_{i:02d}_{duration_s:.1f}s.wav"), waveform[:, start:end], sr)
+            torchaudio.save(
+                str(cluster_dir / f"sample_{i:02d}_{duration_s:.1f}s.wav"),
+                waveform[:, start:end],
+                sr,
+            )
 
-        print(f"  -> Saved {min(len(cluster_segs), max_samples)} samples for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms/1000:.1f}s)")
+        print(
+            f"  -> Saved {min(len(cluster_segs), max_samples)} samples for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms / 1000:.1f}s)"
+        )
 
 
 def format_ts(ms: int) -> str:
@@ -206,13 +212,13 @@ def merge_transcripts(host_segs: list, guest_segs: list) -> tuple[str, int]:
     all_segs = host_segs + guest_segs
     all_segs.sort(key=lambda x: x.start_ms)
     dialogue = "\n\n".join(
-        f"**[{format_ts(s.start_ms)}] {s.speaker or 'Unknown'}:** {s.text}"
-        for s in all_segs
+        f"**[{format_ts(s.start_ms)}] {s.speaker or 'Unknown'}:** {s.text}" for s in all_segs
     )
     return dialogue, len(all_segs)
 
 
 # === Commands ===
+
 
 def cmd_enroll(args):
     """Enroll a speaker."""
@@ -225,10 +231,10 @@ def cmd_enroll(args):
     else:
         audio_files = [samples_path]
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Speaker Enrollment: {args.name}")
     print(f"  Samples: {len(audio_files)} files")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
     identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor)
@@ -242,9 +248,9 @@ def cmd_enroll(args):
 
 def cmd_list(args):
     """List enrolled speakers."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Enrolled Speakers")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     if not config.VOICEPRINTS_FILE.exists():
         print("  No speakers enrolled.\n")
@@ -270,14 +276,14 @@ def cmd_transcribe(args):
     if output_path.is_dir():
         output_path = output_path / f"{date_str}-meeting.md"
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  MeetScribe")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Video:  {video_path.name}")
     print(f"  Host:   {args.host}")
     print(f"  Device: {DEFAULT_DEVICE}")
     print(f"  Output: {output_path}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Load models
     print("[0/7] Loading models...")
@@ -364,12 +370,12 @@ def cmd_transcribe(args):
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(dialogue, encoding="utf-8")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  [OK] Done: {output_path}")
     print(f"  Host segments: {len(host_segs)}")
     print(f"  Guest segments: {len(guest_segs)}")
     print(f"  Total: {total} segments")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 def cmd_extract_samples(args):
@@ -381,12 +387,12 @@ def cmd_extract_samples(args):
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  Extract Speaker Samples (no transcription)")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"  Video:  {video_path.name}")
     print(f"  Device: {DEFAULT_DEVICE}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Load models (no Whisper needed)
     print("[0/4] Loading models...")
@@ -442,16 +448,16 @@ def cmd_extract_samples(args):
         save_unknown_samples(track2, speech_segs, cluster_names, date_str)
 
     samples_dir = config.SAMPLES_DIR / "unknown"
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  [OK] Done! Samples saved to: {samples_dir}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
 
 def cmd_info(args):
     """Show data directories and configuration."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  MeetScribe Configuration")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     print(f"  Data directory:       {config.DATA_DIR}")
     print(f"  Cache directory:      {config.CACHE_DIR}")
     print(f"  Models directory:     {config.MODELS_DIR}")
