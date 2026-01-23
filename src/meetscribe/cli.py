@@ -2,18 +2,23 @@
 """
 MeetScribe - Meeting Transcription with Speaker Diarization
 
-Track 1: Host (simple transcription)
-Track 2: Guests (VAD -> Embeddings -> Diarization -> Identification)
+Supports video files with multiple audio tracks and audio files directly.
+Per-track mode: diarize (default) or assign speaker name via --trackN.
 
 Usage:
     meetscribe enroll "John" samples/*.wav
-    meetscribe transcribe meeting.mp4 --host "John" --output ./notes/
+    meetscribe transcribe video.mp4 -o output.md
+    meetscribe transcribe video.mp4 -o output.md --track1 "Host"
+    meetscribe transcribe audio1.wav audio2.wav -o output.md --track1 "Name"
+    meetscribe extract video.mp4 -o output_dir/
     meetscribe list-speakers
 """
 
 import argparse
+import glob
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -156,6 +161,16 @@ def step(num: int, total: int, desc: str, emoji: str = "🔄"):
     print(f"  {C_GREEN}✅ Done {C_DIM}({_format_elapsed(elapsed)}){C_RESET}")
 
 
+@contextmanager
+def substep(desc: str, emoji: str = "🔄"):
+    """Context manager that prints sub-step and elapsed time."""
+    print(f"    {emoji}  {desc}")
+    t = time.time()
+    yield
+    elapsed = time.time() - t
+    print(f"      {C_DIM}({_format_elapsed(elapsed)}){C_RESET}")
+
+
 def ok(msg: str) -> None:
     """Print a success sub-status line."""
     print(f"  {C_GREEN}✔{C_RESET}  {msg}")
@@ -198,6 +213,20 @@ def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path
         f"Extracting track {track_index}",
     )
     return output_path
+
+
+def probe_audio_tracks(file_path: Path) -> list[int]:
+    """Return list of audio stream indices in the file using ffmpeg -i."""
+    result = subprocess.run(
+        [_FFMPEG_BIN, "-i", str(file_path), "-hide_banner"],
+        capture_output=True,
+        text=True,
+    )
+    # ffmpeg -i exits with 1 when no output specified, but still prints stream info to stderr
+    indices = []
+    for m in re.finditer(r"Stream #0:(\d+).*?: Audio:", result.stderr):
+        indices.append(int(m.group(1)))
+    return indices
 
 
 def save_unknown_samples(
@@ -251,14 +280,30 @@ def format_ts(ms: int) -> str:
     return f"{ms // 60000:02d}:{(ms // 1000) % 60:02d}"
 
 
-def merge_transcripts(host_segs: list, guest_segs: list) -> tuple[str, int]:
+def merge_transcripts(segments: list) -> tuple[str, int]:
     """Merge transcripts into dialogue sorted by time."""
-    all_segs = host_segs + guest_segs
-    all_segs.sort(key=lambda x: x.start_ms)
+    segments.sort(key=lambda x: x.start_ms)
     dialogue = "\n\n".join(
-        f"**[{format_ts(s.start_ms)}] {s.speaker or 'Unknown'}:** {s.text}" for s in all_segs
+        f"**[{format_ts(s.start_ms)}] {s.speaker or 'Unknown'}:** {s.text}" for s in segments
     )
-    return dialogue, len(all_segs)
+    return dialogue, len(segments)
+
+
+def parse_track_args(extra_args: list[str]) -> dict[int, str]:
+    """Parse --trackN 'Name' arguments from extra args. Returns {track_num: name}."""
+    track_names = {}
+    i = 0
+    while i < len(extra_args):
+        m = re.match(r"^--track(\d+)$", extra_args[i])
+        if m:
+            track_num = int(m.group(1))
+            if i + 1 >= len(extra_args):
+                raise ValueError(f"--track{track_num} requires a name argument")
+            track_names[track_num] = extra_args[i + 1]
+            i += 2
+        else:
+            raise ValueError(f"Unknown argument: {extra_args[i]}")
+    return track_names
 
 
 # === Pipeline helpers ===
@@ -376,98 +421,217 @@ def cmd_list(args):
     print()
 
 
-def cmd_transcribe(args):
-    """Transcribe meeting with diarization."""
+def cmd_extract(args):
+    """Extract audio tracks from a video file."""
     video_path = Path(args.video)
+    if not video_path.exists():
+        raise FileNotFoundError(f"File not found: {video_path}")
+
+    output_dir = Path(args.output) if args.output else video_path.parent / video_path.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  🎵 {C_BOLD}Extract Audio Tracks{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  📹 Input:  {C_BOLD}{video_path.name}{C_RESET}")
+    print(f"  📂 Output: {C_DIM}{output_dir}{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+
+    track_indices = probe_audio_tracks(video_path)
+    if not track_indices:
+        warn("No audio tracks found")
+        return
+
+    ok(f"Found {len(track_indices)} audio track(s)")
+
+    t = time.time()
+    for i, stream_idx in enumerate(track_indices, 1):
+        out_file = output_dir / f"track_{i}.wav"
+        with substep(f"Track {i} (stream {stream_idx})", "🎵"):
+            extract_audio(video_path, out_file, stream_idx)
+            ok(f"→ {out_file.name}")
+
+    elapsed = time.time() - t
+    print(f"\n  {C_GREEN}✅ Extracted {len(track_indices)} track(s)"
+          f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}\n")
+
+
+def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
+    """Resolve input arguments: expand directories and glob patterns to audio files."""
+    audio_exts = (".wav", ".mp3", ".flac", ".ogg", ".m4a")
+    resolved = []
+    for raw in raw_inputs:
+        p = Path(raw)
+        if p.is_dir():
+            # Directory: collect audio files sorted by name
+            files = sorted(f for f in p.iterdir() if f.suffix.lower() in audio_exts)
+            if not files:
+                raise FileNotFoundError(f"No audio files found in {p}")
+            resolved.extend(files)
+        elif "*" in raw or "?" in raw:
+            # Glob pattern: expand
+            files = sorted(Path(f) for f in glob.glob(raw) if Path(f).suffix.lower() in audio_exts)
+            if not files:
+                raise FileNotFoundError(f"No audio files matching: {raw}")
+            resolved.extend(files)
+        else:
+            resolved.append(p)
+    return resolved
+
+
+def cmd_transcribe(args, extra_args: list[str]):
+    """Transcribe meeting with diarization. Supports multi-track video/audio."""
+    input_paths = _resolve_inputs(args.input)
     output_path = Path(args.output)
 
-    if not video_path.exists():
-        raise FileNotFoundError(f"Video not found: {video_path}")
+    for p in input_paths:
+        if not p.exists():
+            raise FileNotFoundError(f"File not found: {p}")
+
+    track_names = parse_track_args(extra_args)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     if output_path.is_dir():
         output_path = output_path / f"{date_str}-meeting.md"
 
+    # Determine if input is a single video (probe for tracks) or audio files
+    is_single_video = len(input_paths) == 1 and input_paths[0].suffix.lower() in (
+        ".mp4",
+        ".mkv",
+        ".avi",
+        ".mov",
+        ".webm",
+        ".flv",
+        ".wmv",
+    )
+
     print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
     print(f"  🎙️  {C_BOLD}MeetScribe{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  📹 Video:  {C_BOLD}{video_path.name}{C_RESET}")
-    print(f"  🎤 Host:   {C_CYAN}{args.host}{C_RESET}")
+    if is_single_video:
+        print(f"  📹 Input:  {C_BOLD}{input_paths[0].name}{C_RESET}")
+    else:
+        print(f"  🎵 Input:  {C_BOLD}{len(input_paths)} audio file(s){C_RESET}")
+    if track_names:
+        for tn, name in sorted(track_names.items()):
+            print(f"  🏷️  Track {tn}: {C_CYAN}{name}{C_RESET}")
     print(f"  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
     print(f"  📄 Output: {C_DIM}{output_path}{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
     total_start = time.time()
 
-    with step(0, 7, "Loading models", "🧠"):
-        vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
-        transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
-
+    # Determine track files
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        with step(1, 7, "Extracting audio", "🎵"):
-            track1 = extract_audio(video_path, work_dir / "host.wav", 1)
-            track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
+        if is_single_video:
+            stream_indices = probe_audio_tracks(input_paths[0])
+            if not stream_indices:
+                raise RuntimeError("No audio tracks found in video")
+            track_files = []
+            for i, stream_idx in enumerate(stream_indices, 1):
+                out = work_dir / f"track_{i}.wav"
+                with substep(f"Track {i} (stream {stream_idx})", "🎵"):
+                    extract_audio(input_paths[0], out, stream_idx)
+                track_files.append(out)
+            ok(f"Extracted {len(track_files)} audio track(s)")
+        else:
+            # Audio files: each is a track, convert to 16kHz mono wav
+            track_files = []
+            for i, path in enumerate(input_paths, 1):
+                if path.suffix.lower() == ".wav":
+                    track_files.append(path)
+                else:
+                    out = work_dir / f"track_{i}.wav"
+                    with substep(f"Converting {path.name}", "🎵"):
+                        run_cmd(
+                            [
+                                _FFMPEG_BIN,
+                                "-y",
+                                "-i",
+                                str(path),
+                                "-ac",
+                                "1",
+                                "-ar",
+                                "16000",
+                                str(out),
+                            ],
+                            f"Converting {path.name} to wav",
+                        )
+                    track_files.append(out)
 
-        # Host pipeline
-        with step(2, 7, "VAD on host track", "🎤"):
-            host_speech = _run_vad(vad, track1)
+        num_tracks = len(track_files)
 
-        with step(3, 7, "Transcribing host", "✍️"):
-            if host_speech:
-                host_vad_segs = [(s.start_ms, s.end_ms) for s in host_speech]
-                host_speaker_segs = [(s.start_ms, s.end_ms, args.host) for s in host_speech]
-                host_segs = _run_transcription(
-                    transcriber, host_vad_segs, host_speaker_segs, track1, args.language
-                )
-            else:
-                host_segs = []
+        # Load models
+        with step(1, 3, "Loading models", "🧠"):
+            vad, extractor, clusterer, identifier = _load_pipeline(
+                args.max_speakers, args.threshold
+            )
+            transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
 
-        # Guest pipeline
-        with step(4, 7, "VAD on guests track", "🎤"):
-            speech_segs = _run_vad(vad, track2)
+        # Process each track
+        all_segments = []
+        with step(2, 3, f"Processing {num_tracks} track(s)", "🎤"):
+            for track_num in range(1, num_tracks + 1):
+                track_path = track_files[track_num - 1]
+                speaker_name = track_names.get(track_num)
 
-        with step(5, 7, "Extracting embeddings", "🔊"):
-            if speech_segs:
-                embeddings = _run_embeddings(vad, extractor, speech_segs, track2)
-            else:
-                embeddings = []
+                print(f"\n    {C_BLUE}── Track {track_num} ", end="")
+                if speaker_name:
+                    print(f"({speaker_name}) ──{C_RESET}")
+                else:
+                    print(f"(diarize) ──{C_RESET}")
 
-        with step(6, 7, "Diarization", "👥"):
-            if speech_segs:
-                diarized, cluster_names = _run_clustering(
-                    clusterer, identifier, speech_segs, embeddings
-                )
-            else:
-                diarized, cluster_names = [], {}
-        save_unknown_samples(track2, speech_segs, cluster_names, date_str)
+                # VAD
+                with substep("VAD", "🎤"):
+                    speech_segs = _run_vad(vad, track_path)
+                if not speech_segs:
+                    warn(f"No speech in track {track_num}")
+                    continue
 
-        with step(7, 7, "Transcribing guests", "✍️"):
-            if speech_segs:
-                vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-                speaker_segs = [
-                    (d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized
-                ]
-                guest_segs = _run_transcription(
-                    transcriber, vad_segs, speaker_segs, track2, args.language
-                )
-            else:
-                guest_segs = []
+                if speaker_name:
+                    # Named track: label all segments with the given name
+                    vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
+                    speaker_segs = [(s.start_ms, s.end_ms, speaker_name) for s in speech_segs]
+                    with substep("Transcription", "✍️"):
+                        segs = _run_transcription(
+                            transcriber, vad_segs, speaker_segs, track_path, args.language
+                        )
+                    all_segments.extend(segs)
+                else:
+                    # Diarize track
+                    with substep("Embeddings", "🔊"):
+                        embeddings = _run_embeddings(vad, extractor, speech_segs, track_path)
+                    if embeddings:
+                        with substep("Diarization", "👥"):
+                            diarized, cluster_names = _run_clustering(
+                                clusterer, identifier, speech_segs, embeddings
+                            )
+                        save_unknown_samples(track_path, speech_segs, cluster_names, date_str)
+                        vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
+                        speaker_segs = [
+                            (d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized
+                        ]
+                        with substep("Transcription", "✍️"):
+                            segs = _run_transcription(
+                                transcriber, vad_segs, speaker_segs, track_path, args.language
+                            )
+                        all_segments.extend(segs)
 
-    # Save
-    dialogue, total = merge_transcripts(host_segs, guest_segs)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(dialogue, encoding="utf-8")
+        # Save
+        with step(3, 3, "Writing output", "💾"):
+            dialogue, total = merge_transcripts(all_segments)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(dialogue, encoding="utf-8")
+            ok(f"{total} segments written")
 
     total_elapsed = time.time() - total_start
     print(f"\n{C_GREEN}{'═' * 60}{C_RESET}")
     elapsed_str = _format_elapsed(total_elapsed)
     print(f"  🎉 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
     print(f"  📄 Output: {output_path}")
-    print(f"  🎤 Host: {len(host_segs)} segments")
-    print(f"  👥 Guests: {len(guest_segs)} segments")
-    print(f"  📊 Total: {total} segments")
+    print(f"  📊 Total: {total} segments across {num_tracks} track(s)")
     print(f"{C_GREEN}{'═' * 60}{C_RESET}\n")
 
 
@@ -489,30 +653,38 @@ def cmd_extract_samples(args):
 
     total_start = time.time()
 
-    with step(0, 4, "Loading models", "🧠"):
+    with step(1, 4, "Loading models", "🧠"):
         vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        with step(1, 4, "Extracting audio", "🎵"):
-            track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
+        with step(2, 4, "Extracting audio", "🎵"):
+            stream_indices = probe_audio_tracks(video_path)
+            if not stream_indices:
+                raise RuntimeError("No audio tracks found in video")
+            track_files = []
+            for i, stream_idx in enumerate(stream_indices, 1):
+                out = work_dir / f"track_{i}.wav"
+                extract_audio(video_path, out, stream_idx)
+                track_files.append(out)
+            ok(f"Extracted {len(track_files)} track(s)")
 
-        with step(2, 4, "VAD on guests track", "🎤"):
-            speech_segs = _run_vad(vad, track2)
+        for track_num, track_path in enumerate(track_files, 1):
+            print(f"\n    {C_BLUE}── Track {track_num} ──{C_RESET}")
 
-        if not speech_segs:
-            warn("No speech detected")
-            return
+            with step(3, 4, f"VAD + embeddings (track {track_num})", "🎤"):
+                speech_segs = _run_vad(vad, track_path)
+                if not speech_segs:
+                    warn(f"No speech in track {track_num}")
+                    continue
+                embeddings = _run_embeddings(vad, extractor, speech_segs, track_path)
 
-        with step(3, 4, "Extracting embeddings", "🔊"):
-            embeddings = _run_embeddings(vad, extractor, speech_segs, track2)
-
-        with step(4, 4, "Diarization & saving samples", "👥"):
-            diarized, cluster_names = _run_clustering(
-                clusterer, identifier, speech_segs, embeddings
-            )
-            save_unknown_samples(track2, speech_segs, cluster_names, date_str)
+            with step(4, 4, f"Diarization & saving (track {track_num})", "👥"):
+                diarized, cluster_names = _run_clustering(
+                    clusterer, identifier, speech_segs, embeddings
+                )
+                save_unknown_samples(track_path, speech_segs, cluster_names, date_str)
 
     total_elapsed = time.time() - total_start
     samples_dir = config.SAMPLES_DIR / "unknown"
@@ -563,10 +735,18 @@ def main():
     p.add_argument("--threshold", type=float, default=0.7, help="ID threshold")
     p.set_defaults(func=cmd_extract_samples)
 
-    # transcribe
-    p = subs.add_parser("transcribe", help="Transcribe meeting")
+    # extract
+    p = subs.add_parser("extract", help="Extract audio tracks from video")
     p.add_argument("video", help="Video file")
-    p.add_argument("-H", "--host", required=True, help="Host name")
+    p.add_argument("-o", "--output", default=None, help="Output directory")
+    p.set_defaults(func=cmd_extract)
+
+    # transcribe
+    p = subs.add_parser(
+        "transcribe",
+        help="Transcribe meeting (use --trackN 'Name' to assign speakers)",
+    )
+    p.add_argument("input", nargs="+", help="Video or audio file(s)")
     p.add_argument("-o", "--output", required=True, help="Output path")
     p.add_argument("-m", "--model", default=DEFAULT_MODEL, help="Whisper model")
     p.add_argument("-l", "--language", default=DEFAULT_LANGUAGE, help="Language")
@@ -578,9 +758,14 @@ def main():
     p = subs.add_parser("info", help="Show configuration and data directories")
     p.set_defaults(func=cmd_info)
 
-    args = parser.parse_args()
+    args, extra = parser.parse_known_args()
     try:
-        args.func(args)
+        if args.func == cmd_transcribe:
+            args.func(args, extra)
+        else:
+            if extra:
+                parser.error(f"Unrecognized arguments: {' '.join(extra)}")
+            args.func(args)
     except Exception as e:
         print(f"\n  {C_RED}❌ Error:{C_RESET} {e}")
         raise SystemExit(1)
