@@ -11,65 +11,82 @@ Usage:
     meetscribe list-speakers
 """
 
-import os
-import sys
+import argparse
 import logging
+import os
+import subprocess
+import sys
+import tempfile
 import warnings
-from datetime import datetime as _dt
-from pathlib import Path as _LogPath
+from datetime import datetime
+from pathlib import Path
+
+import torch
+import torchaudio
 
 from . import config
+from .pipeline import (
+    EmbeddingExtractor,
+    SpeakerIdentifier,
+    SpectralClusterer,
+    Transcriber,
+    VADProcessor,
+)
 
 # Ensure directories exist
 config.ensure_dirs()
 
-# === Logging setup (before other imports) ===
-_log_file = config.LOGS_DIR / f"{_dt.now():%Y-%m-%d_%H-%M-%S}.log"
+# === Logging setup ===
+_log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
 
-# File handler: all messages (DEBUG+)
 _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
 _file_handler.setLevel(logging.DEBUG)
 _file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
-# Console handler: ERROR+ only
 _console_handler = logging.StreamHandler()
 _console_handler.setLevel(logging.ERROR)
 _console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
 
-# Root logger
 logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handler])
-
-# All warnings -> log file (via py.warnings logger), console only ERROR+
 logging.captureWarnings(True)
 warnings.filterwarnings("default")
 
-# Windows: disable symlinks, use COPY strategy
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "copy"
-os.environ["HF_HUB_CACHE"] = os.path.expanduser("~/.cache/huggingface/hub")
+# Defaults
+DEFAULT_MODEL = "medium"
+DEFAULT_LANGUAGE = "ru"
+DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Add NVIDIA DLLs to PATH for Windows CUDA
-if sys.platform == "win32":
-    from pathlib import Path as WinPath
-
-    site_packages = WinPath(sys.prefix) / "Lib" / "site-packages" / "nvidia"
-    if site_packages.exists():
-        for lib_dir in site_packages.iterdir():
-            bin_dir = lib_dir / "bin"
-            if bin_dir.exists():
-                os.add_dll_directory(str(bin_dir))
-                os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
-
-# Patch Whisper to use imageio-ffmpeg binary
-import imageio_ffmpeg
-
-_FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
+# Module-level state (populated by setup_environment)
+_FFMPEG_BIN = None
 
 
-def _patch_whisper_ffmpeg():
-    """Patch whisper.audio.load_audio to use imageio_ffmpeg binary."""
+def setup_environment():
+    """Configure runtime environment: env vars, CUDA DLLs, Whisper FFmpeg patch."""
+    global _FFMPEG_BIN
+
+    # Windows: disable symlinks, use COPY strategy
+    os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+    os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "copy"
+    os.environ["HF_HUB_CACHE"] = os.path.expanduser("~/.cache/huggingface/hub")
+
+    # Add NVIDIA DLLs to PATH for Windows CUDA
+    if sys.platform == "win32":
+        site_packages = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
+        if site_packages.exists():
+            for lib_dir in site_packages.iterdir():
+                bin_dir = lib_dir / "bin"
+                if bin_dir.exists():
+                    os.add_dll_directory(str(bin_dir))
+                    os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+
+    # Patch Whisper to use imageio-ffmpeg binary
+    import imageio_ffmpeg
+
+    _FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
+
+    from subprocess import CalledProcessError, run
+
     import numpy as np
-    from subprocess import run, CalledProcessError
 
     def load_audio_patched(file: str, sr: int = 16000):
         cmd = [
@@ -100,30 +117,7 @@ def _patch_whisper_ffmpeg():
     whisper.audio.load_audio = load_audio_patched
 
 
-_patch_whisper_ffmpeg()
-
-
-import argparse
-import subprocess
-import tempfile
-from datetime import datetime
-from pathlib import Path
-
-import torch
-import torchaudio
-
-from .pipeline import (
-    VADProcessor,
-    EmbeddingExtractor,
-    SpectralClusterer,
-    SpeakerIdentifier,
-    Transcriber,
-)
-
-# Defaults
-DEFAULT_MODEL = "medium"
-DEFAULT_LANGUAGE = "ru"
-DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# === Helpers ===
 
 
 def run_cmd(cmd: list[str], desc: str) -> None:
@@ -198,7 +192,8 @@ def save_unknown_samples(
             )
 
         print(
-            f"  -> Saved {min(len(cluster_segs), max_samples)} samples for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms / 1000:.1f}s)"
+            f"  -> Saved {min(len(cluster_segs), max_samples)} samples"
+            f" for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms / 1000:.1f}s)"
         )
 
 
@@ -215,6 +210,90 @@ def merge_transcripts(host_segs: list, guest_segs: list) -> tuple[str, int]:
         f"**[{format_ts(s.start_ms)}] {s.speaker or 'Unknown'}:** {s.text}" for s in all_segs
     )
     return dialogue, len(all_segs)
+
+
+# === Pipeline helpers ===
+
+
+def _load_pipeline(max_speakers: int, threshold: float):
+    """Load diarization pipeline models (VAD, embeddings, clustering, identification)."""
+    vad = VADProcessor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
+    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
+    clusterer = SpectralClusterer(min_speakers=2, max_speakers=max_speakers)
+    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor, threshold=threshold)
+    return vad, extractor, clusterer, identifier
+
+
+def _run_diarization(vad, extractor, clusterer, identifier, audio_path: Path):
+    """Run VAD + embeddings + clustering + identification on an audio track.
+
+    Returns (speech_segs, diarized, cluster_names).
+    """
+    speech_segs = vad.process(audio_path)
+    print(f"  [OK] {len(speech_segs)} speech segments")
+
+    if not speech_segs:
+        return speech_segs, [], {}
+
+    # Embeddings
+    embeddings = []
+    for seg in speech_segs:
+        audio = vad.extract_segment_audio(audio_path, seg)
+        embeddings.append(extractor.extract_from_tensor(audio))
+    print(f"  [OK] {len(embeddings)} embeddings")
+
+    # Clustering
+    time_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
+    diarized = clusterer.cluster(embeddings, time_segs)
+
+    # Identification
+    centroids = clusterer.get_cluster_centroids(diarized)
+    matches = identifier.identify_clusters(centroids)
+
+    cluster_names = {cid: m.name for cid, m in matches.items()}
+    known = sum(1 for m in matches.values() if m.is_known)
+    print(f"  [OK] {len(centroids)} clusters ({known} known)")
+
+    for cid, m in matches.items():
+        status = "[OK]" if m.is_known else "[?]"
+        print(f"    {status} Cluster {cid}: {m.name} ({m.confidence:.2f})")
+
+    # Update segments with cluster IDs
+    for seg, diar in zip(speech_segs, diarized):
+        seg.cluster_id = diar.cluster_id
+
+    return speech_segs, diarized, cluster_names
+
+
+def _transcribe_host(vad, transcriber, track: Path, host: str, language: str):
+    """Run VAD and transcription on host track."""
+    host_speech = vad.process(track)
+    print(f"  [OK] {len(host_speech)} speech segments")
+
+    if not host_speech:
+        return []
+
+    host_vad_segs = [(s.start_ms, s.end_ms) for s in host_speech]
+    host_speaker_segs = [(s.start_ms, s.end_ms, host) for s in host_speech]
+    host_segs = transcriber.transcribe_vad_segments(
+        track, host_vad_segs, host_speaker_segs, language
+    )
+    print(f"  [OK] {len(host_segs)} segments")
+    return host_segs
+
+
+def _transcribe_guests(
+    transcriber, speech_segs, diarized, cluster_names, track: Path, language: str
+):
+    """Transcribe guest speech segments using diarization results."""
+    if not speech_segs:
+        return []
+
+    vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
+    speaker_segs = [(d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized]
+    guest_segs = transcriber.transcribe_vad_segments(track, vad_segs, speaker_segs, language)
+    print(f"  [OK] {len(guest_segs)} segments")
+    return guest_segs
 
 
 # === Commands ===
@@ -249,7 +328,7 @@ def cmd_enroll(args):
 def cmd_list(args):
     """List enrolled speakers."""
     print(f"\n{'=' * 60}")
-    print(f"  Enrolled Speakers")
+    print("  Enrolled Speakers")
     print(f"{'=' * 60}\n")
 
     if not config.VOICEPRINTS_FILE.exists():
@@ -277,7 +356,7 @@ def cmd_transcribe(args):
         output_path = output_path / f"{date_str}-meeting.md"
 
     print(f"\n{'=' * 60}")
-    print(f"  MeetScribe")
+    print("  MeetScribe")
     print(f"{'=' * 60}")
     print(f"  Video:  {video_path.name}")
     print(f"  Host:   {args.host}")
@@ -287,10 +366,7 @@ def cmd_transcribe(args):
 
     # Load models
     print("[0/7] Loading models...")
-    vad = VADProcessor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    clusterer = SpectralClusterer(min_speakers=2, max_speakers=args.max_speakers)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor, threshold=args.threshold)
+    vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
     transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
     print("  [OK] Models loaded")
 
@@ -304,66 +380,23 @@ def cmd_transcribe(args):
 
         # Host: VAD + transcription
         print("\n[2/7] VAD on host track...")
-        host_speech = vad.process(track1)
-        print(f"  [OK] {len(host_speech)} speech segments")
+        print("\n[3/7] Transcribing host...")
+        host_segs = _transcribe_host(vad, transcriber, track1, args.host, args.language)
 
-        if host_speech:
-            print("\n[3/7] Transcribing host...")
-            host_vad_segs = [(s.start_ms, s.end_ms) for s in host_speech]
-            host_speaker_segs = [(s.start_ms, s.end_ms, args.host) for s in host_speech]
-            host_segs = transcriber.transcribe_vad_segments(
-                track1, host_vad_segs, host_speaker_segs, args.language
-            )
-            print(f"  [OK] {len(host_segs)} segments")
-        else:
-            host_segs = []
-
-        # Guests: VAD
+        # Guests: VAD + diarization
         print("\n[4/7] VAD on guests track...")
-        speech_segs = vad.process(track2)
-        print(f"  [OK] {len(speech_segs)} speech segments")
+        print("\n[5/7] Extracting embeddings...")
+        print("\n[6/7] Diarization...")
+        speech_segs, diarized, cluster_names = _run_diarization(
+            vad, extractor, clusterer, identifier, track2
+        )
+        save_unknown_samples(track2, speech_segs, cluster_names, date_str)
 
-        if not speech_segs:
-            print("  [!] No speech detected")
-            guest_segs = []
-        else:
-            # Embeddings
-            print("\n[5/7] Extracting embeddings...")
-            embeddings = []
-            for seg in speech_segs:
-                audio = vad.extract_segment_audio(track2, seg)
-                embeddings.append(extractor.extract_from_tensor(audio))
-            print(f"  [OK] {len(embeddings)} embeddings")
-
-            # Diarization
-            print("\n[6/7] Diarization...")
-            time_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-            diarized = clusterer.cluster(embeddings, time_segs)
-
-            centroids = clusterer.get_cluster_centroids(diarized)
-            matches = identifier.identify_clusters(centroids)
-
-            cluster_names = {cid: m.name for cid, m in matches.items()}
-            known = sum(1 for m in matches.values() if m.is_known)
-            print(f"  [OK] {len(centroids)} clusters ({known} known)")
-
-            for cid, m in matches.items():
-                status = "[OK]" if m.is_known else "[?]"
-                print(f"    {status} Cluster {cid}: {m.name} ({m.confidence:.2f})")
-
-            # Update segments with cluster IDs and save unknown
-            for seg, diar in zip(speech_segs, diarized):
-                seg.cluster_id = diar.cluster_id
-            save_unknown_samples(track2, speech_segs, cluster_names, date_str)
-
-            # Transcribe guests
-            print("\n[7/7] Transcribing guests...")
-            vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-            speaker_segs = [(d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized]
-            guest_segs = transcriber.transcribe_vad_segments(
-                track2, vad_segs, speaker_segs, args.language
-            )
-            print(f"  [OK] {len(guest_segs)} segments")
+        # Transcribe guests
+        print("\n[7/7] Transcribing guests...")
+        guest_segs = _transcribe_guests(
+            transcriber, speech_segs, diarized, cluster_names, track2, args.language
+        )
 
     # Save
     dialogue, total = merge_transcripts(host_segs, guest_segs)
@@ -388,7 +421,7 @@ def cmd_extract_samples(args):
     date_str = datetime.now().strftime("%Y-%m-%d")
 
     print(f"\n{'=' * 60}")
-    print(f"  Extract Speaker Samples (no transcription)")
+    print("  Extract Speaker Samples (no transcription)")
     print(f"{'=' * 60}")
     print(f"  Video:  {video_path.name}")
     print(f"  Device: {DEFAULT_DEVICE}")
@@ -396,10 +429,7 @@ def cmd_extract_samples(args):
 
     # Load models (no Whisper needed)
     print("[0/4] Loading models...")
-    vad = VADProcessor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    clusterer = SpectralClusterer(min_speakers=2, max_speakers=args.max_speakers)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor, threshold=args.threshold)
+    vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
     print("  [OK] Models loaded")
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -409,42 +439,18 @@ def cmd_extract_samples(args):
         print("\n[1/4] Extracting audio...")
         track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
 
-        # VAD
+        # VAD + diarization
         print("\n[2/4] VAD on guests track...")
-        speech_segs = vad.process(track2)
-        print(f"  [OK] {len(speech_segs)} speech segments")
+        print("\n[3/4] Extracting embeddings...")
+        print("\n[4/4] Diarization & saving samples...")
+        speech_segs, diarized, cluster_names = _run_diarization(
+            vad, extractor, clusterer, identifier, track2
+        )
 
         if not speech_segs:
             print("  [!] No speech detected")
             return
 
-        # Embeddings
-        print("\n[3/4] Extracting embeddings...")
-        embeddings = []
-        for seg in speech_segs:
-            audio = vad.extract_segment_audio(track2, seg)
-            embeddings.append(extractor.extract_from_tensor(audio))
-        print(f"  [OK] {len(embeddings)} embeddings")
-
-        # Diarization
-        print("\n[4/4] Diarization & saving samples...")
-        time_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-        diarized = clusterer.cluster(embeddings, time_segs)
-
-        centroids = clusterer.get_cluster_centroids(diarized)
-        matches = identifier.identify_clusters(centroids)
-
-        cluster_names = {cid: m.name for cid, m in matches.items()}
-        known = sum(1 for m in matches.values() if m.is_known)
-        print(f"  [OK] {len(centroids)} clusters ({known} known)")
-
-        for cid, m in matches.items():
-            status = "[OK]" if m.is_known else "[?]"
-            print(f"    {status} Cluster {cid}: {m.name} ({m.confidence:.2f})")
-
-        # Update segments with cluster IDs and save
-        for seg, diar in zip(speech_segs, diarized):
-            seg.cluster_id = diar.cluster_id
         save_unknown_samples(track2, speech_segs, cluster_names, date_str)
 
     samples_dir = config.SAMPLES_DIR / "unknown"
@@ -456,7 +462,7 @@ def cmd_extract_samples(args):
 def cmd_info(args):
     """Show data directories and configuration."""
     print(f"\n{'=' * 60}")
-    print(f"  MeetScribe Configuration")
+    print("  MeetScribe Configuration")
     print(f"{'=' * 60}\n")
     print(f"  Data directory:       {config.DATA_DIR}")
     print(f"  Cache directory:      {config.CACHE_DIR}")
@@ -469,6 +475,8 @@ def cmd_info(args):
 
 
 def main():
+    setup_environment()
+
     parser = argparse.ArgumentParser(
         description="MeetScribe - Meeting transcription with speaker diarization"
     )

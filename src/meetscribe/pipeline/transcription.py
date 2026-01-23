@@ -1,9 +1,8 @@
 """Audio transcription using OpenAI Whisper."""
 
-from pathlib import Path
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
 import tempfile
+from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 import torchaudio
@@ -35,15 +34,7 @@ def merge_close_segments(
 
 
 def is_silent(waveform: torch.Tensor, threshold_db: float = -40.0) -> bool:
-    """Check if audio segment is silent based on RMS energy.
-
-    Args:
-        waveform: Audio tensor [channels, samples]
-        threshold_db: Volume threshold in dB (default -40 dB)
-
-    Returns:
-        True if audio is below threshold (silent)
-    """
+    """Check if audio segment is silent based on RMS energy."""
     rms = torch.sqrt(torch.mean(waveform**2))
 
     if rms < 1e-10:
@@ -63,21 +54,19 @@ class TranscriptSegment:
     speaker: str | None = None
 
 
-class BaseTranscriber(ABC):
-    """Abstract base class for Whisper transcribers."""
+class Transcriber:
+    """Transcription using openai-whisper (PyTorch)."""
 
-    # Model defaults
     DEFAULT_MODEL = "medium"
     DEFAULT_LANGUAGE = "ru"
 
-    # Shared transcription parameters (symmetric for both backends)
     BEAM_SIZE = 5
     CONDITION_ON_PREVIOUS_TEXT = False
     TEMPERATURE = 0.0
-    NO_SPEECH_THRESHOLD = 0.5  # lower = more aggressive silence detection
+    NO_SPEECH_THRESHOLD = 0.5
     COMPRESSION_RATIO_THRESHOLD = 2.4
-    HALLUCINATION_SILENCE_THRESHOLD = 2.0  # skip hallucinations after 2s silence
-    SILENCE_THRESHOLD_DB = -40.0  # dB threshold for silence detection
+    HALLUCINATION_SILENCE_THRESHOLD = 2.0
+    SILENCE_THRESHOLD_DB = -40.0
 
     def __init__(self, model_size: str = DEFAULT_MODEL, device: str = "cuda"):
         self.model_size = model_size
@@ -85,17 +74,45 @@ class BaseTranscriber(ABC):
         self._model = None
         self._load_model()
 
-    @abstractmethod
     def _load_model(self):
-        """Load the Whisper model."""
-        pass
+        import whisper
 
-    @abstractmethod
+        self._model = whisper.load_model(self.model_size, device=self.device)
+
     def transcribe(
-        self, audio_path: Path, language: str = DEFAULT_LANGUAGE, speaker: str | None = None
+        self,
+        audio_path: Path,
+        language: str = DEFAULT_LANGUAGE,
+        speaker: str | None = None,
     ) -> list[TranscriptSegment]:
         """Transcribe audio file."""
-        pass
+        result = self._model.transcribe(
+            str(audio_path),
+            language=language,
+            beam_size=self.BEAM_SIZE,
+            condition_on_previous_text=self.CONDITION_ON_PREVIOUS_TEXT,
+            temperature=self.TEMPERATURE,
+            no_speech_threshold=self.NO_SPEECH_THRESHOLD,
+            compression_ratio_threshold=self.COMPRESSION_RATIO_THRESHOLD,
+            verbose=None,
+            word_timestamps=True,
+            hallucination_silence_threshold=self.HALLUCINATION_SILENCE_THRESHOLD,
+        )
+
+        segments = []
+        for seg in result["segments"]:
+            text = seg["text"].strip()
+            if text:
+                segments.append(
+                    TranscriptSegment(
+                        start_ms=int(seg["start"] * 1000),
+                        end_ms=int(seg["end"] * 1000),
+                        text=text,
+                        speaker=speaker,
+                    )
+                )
+
+        return segments
 
     def transcribe_vad_segments(
         self,
@@ -167,53 +184,3 @@ class BaseTranscriber(ABC):
                 best_speaker = speaker
 
         return best_speaker
-
-
-class OpenAIWhisperTranscriber(BaseTranscriber):
-    """Transcription using openai-whisper (PyTorch).
-
-    Reference implementation, more stable but slower.
-    """
-
-    def _load_model(self):
-        import whisper
-
-        self._model = whisper.load_model(self.model_size, device=self.device)
-
-    def transcribe(
-        self,
-        audio_path: Path,
-        language: str = BaseTranscriber.DEFAULT_LANGUAGE,
-        speaker: str | None = None,
-    ) -> list[TranscriptSegment]:
-        result = self._model.transcribe(
-            str(audio_path),
-            language=language,
-            beam_size=self.BEAM_SIZE,
-            condition_on_previous_text=self.CONDITION_ON_PREVIOUS_TEXT,
-            temperature=self.TEMPERATURE,
-            no_speech_threshold=self.NO_SPEECH_THRESHOLD,
-            compression_ratio_threshold=self.COMPRESSION_RATIO_THRESHOLD,
-            verbose=None,  # None = no progress bar, no text output
-            word_timestamps=True,  # required for hallucination detection
-            hallucination_silence_threshold=self.HALLUCINATION_SILENCE_THRESHOLD,
-        )
-
-        segments = []
-        for seg in result["segments"]:
-            text = seg["text"].strip()
-            if text:
-                segments.append(
-                    TranscriptSegment(
-                        start_ms=int(seg["start"] * 1000),
-                        end_ms=int(seg["end"] * 1000),
-                        text=text,
-                        speaker=speaker,
-                    )
-                )
-
-        return segments
-
-
-# Alias for convenience
-Transcriber = OpenAIWhisperTranscriber

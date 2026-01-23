@@ -62,14 +62,6 @@ class SpectralClusterer:
 
         return results
 
-    def _cosine_affinity(self, embeddings: np.ndarray) -> np.ndarray:
-        """Compute cosine similarity affinity matrix."""
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1, norms)
-        normalized = embeddings / norms
-        affinity = np.dot(normalized, normalized.T)
-        return (affinity + 1) / 2
-
     def get_cluster_centroids(self, segments: list[DiarizedSegment]) -> dict[int, np.ndarray]:
         """Compute centroid embedding for each cluster."""
         clusters: dict[int, list[np.ndarray]] = {}
