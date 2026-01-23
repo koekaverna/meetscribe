@@ -17,10 +17,13 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import warnings
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import colorama
 import torch
 import torchaudio
 
@@ -32,6 +35,20 @@ from .pipeline import (
     Transcriber,
     VADProcessor,
 )
+
+# Enable ANSI colors on Windows
+colorama.just_fix_windows_console()
+
+# === Colors ===
+C_RESET = "\033[0m"
+C_BOLD = "\033[1m"
+C_DIM = "\033[2m"
+C_GREEN = "\033[92m"
+C_CYAN = "\033[96m"
+C_YELLOW = "\033[93m"
+C_RED = "\033[91m"
+C_MAGENTA = "\033[95m"
+C_BLUE = "\033[94m"
 
 # Ensure directories exist
 config.ensure_dirs()
@@ -120,9 +137,43 @@ def setup_environment():
 # === Helpers ===
 
 
+def _format_elapsed(seconds: float) -> str:
+    """Format elapsed seconds as human-readable string."""
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes = int(seconds // 60)
+    secs = seconds % 60
+    return f"{minutes}m {secs:.1f}s"
+
+
+@contextmanager
+def step(num: int, total: int, desc: str, emoji: str = "🔄"):
+    """Context manager that prints step header and elapsed time on completion."""
+    print(f"\n{C_CYAN}[{num}/{total}]{C_RESET} {emoji}  {C_BOLD}{desc}{C_RESET}")
+    t = time.time()
+    yield
+    elapsed = time.time() - t
+    print(f"  {C_GREEN}✅ Done {C_DIM}({_format_elapsed(elapsed)}){C_RESET}")
+
+
+def ok(msg: str) -> None:
+    """Print a success sub-status line."""
+    print(f"  {C_GREEN}✔{C_RESET}  {msg}")
+
+
+def warn(msg: str) -> None:
+    """Print a warning sub-status line."""
+    print(f"  {C_YELLOW}⚠️{C_RESET}  {msg}")
+
+
+def info(msg: str) -> None:
+    """Print an info sub-status line."""
+    print(f"  {C_DIM}→{C_RESET}  {msg}")
+
+
 def run_cmd(cmd: list[str], desc: str) -> None:
     """Run command with error handling."""
-    print(f"  -> {desc}...")
+    info(desc)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"{desc} failed: {result.stderr}")
@@ -174,9 +225,7 @@ def save_unknown_samples(
         cluster_segs.sort(key=lambda s: s.duration_ms, reverse=True)
 
         if not cluster_segs:
-            print(
-                f"  -> No samples >= {min_duration_ms / 1000:.0f}s for {cluster_names[cluster_id]}"
-            )
+            warn(f"No samples >= {min_duration_ms / 1000:.0f}s for {cluster_names[cluster_id]}")
             continue
 
         cluster_dir.mkdir(parents=True, exist_ok=True)
@@ -191,8 +240,8 @@ def save_unknown_samples(
                 sr,
             )
 
-        print(
-            f"  -> Saved {min(len(cluster_segs), max_samples)} samples"
+        info(
+            f"Saved {min(len(cluster_segs), max_samples)} samples"
             f" for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms / 1000:.1f}s)"
         )
 
@@ -224,76 +273,53 @@ def _load_pipeline(max_speakers: int, threshold: float):
     return vad, extractor, clusterer, identifier
 
 
-def _run_diarization(vad, extractor, clusterer, identifier, audio_path: Path):
-    """Run VAD + embeddings + clustering + identification on an audio track.
-
-    Returns (speech_segs, diarized, cluster_names).
-    """
+def _run_vad(vad, audio_path: Path):
+    """Run VAD on an audio track. Returns speech segments."""
     speech_segs = vad.process(audio_path)
-    print(f"  [OK] {len(speech_segs)} speech segments")
+    ok(f"{len(speech_segs)} speech segments")
+    return speech_segs
 
-    if not speech_segs:
-        return speech_segs, [], {}
 
-    # Embeddings
+def _run_embeddings(vad, extractor, speech_segs, audio_path: Path):
+    """Extract embeddings for speech segments."""
     embeddings = []
     for seg in speech_segs:
         audio = vad.extract_segment_audio(audio_path, seg)
         embeddings.append(extractor.extract_from_tensor(audio))
-    print(f"  [OK] {len(embeddings)} embeddings")
+    ok(f"{len(embeddings)} embeddings")
+    return embeddings
 
-    # Clustering
+
+def _run_clustering(clusterer, identifier, speech_segs, embeddings):
+    """Run clustering and identification. Returns (diarized, cluster_names)."""
     time_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
     diarized = clusterer.cluster(embeddings, time_segs)
 
-    # Identification
     centroids = clusterer.get_cluster_centroids(diarized)
     matches = identifier.identify_clusters(centroids)
 
     cluster_names = {cid: m.name for cid, m in matches.items()}
     known = sum(1 for m in matches.values() if m.is_known)
-    print(f"  [OK] {len(centroids)} clusters ({known} known)")
+    ok(f"{len(centroids)} clusters ({known} known)")
 
     for cid, m in matches.items():
-        status = "[OK]" if m.is_known else "[?]"
-        print(f"    {status} Cluster {cid}: {m.name} ({m.confidence:.2f})")
+        if m.is_known:
+            print(f"    {C_GREEN}✔{C_RESET} Cluster {cid}: {m.name} ({m.confidence:.2f})")
+        else:
+            print(f"    {C_YELLOW}❓{C_RESET} Cluster {cid}: {m.name} ({m.confidence:.2f})")
 
     # Update segments with cluster IDs
     for seg, diar in zip(speech_segs, diarized):
         seg.cluster_id = diar.cluster_id
 
-    return speech_segs, diarized, cluster_names
+    return diarized, cluster_names
 
 
-def _transcribe_host(vad, transcriber, track: Path, host: str, language: str):
-    """Run VAD and transcription on host track."""
-    host_speech = vad.process(track)
-    print(f"  [OK] {len(host_speech)} speech segments")
-
-    if not host_speech:
-        return []
-
-    host_vad_segs = [(s.start_ms, s.end_ms) for s in host_speech]
-    host_speaker_segs = [(s.start_ms, s.end_ms, host) for s in host_speech]
-    host_segs = transcriber.transcribe_vad_segments(
-        track, host_vad_segs, host_speaker_segs, language
-    )
-    print(f"  [OK] {len(host_segs)} segments")
-    return host_segs
-
-
-def _transcribe_guests(
-    transcriber, speech_segs, diarized, cluster_names, track: Path, language: str
-):
-    """Transcribe guest speech segments using diarization results."""
-    if not speech_segs:
-        return []
-
-    vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-    speaker_segs = [(d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized]
-    guest_segs = transcriber.transcribe_vad_segments(track, vad_segs, speaker_segs, language)
-    print(f"  [OK] {len(guest_segs)} segments")
-    return guest_segs
+def _run_transcription(transcriber, vad_segs, speaker_segs, track: Path, language: str):
+    """Run transcription on pre-processed segments."""
+    segs = transcriber.transcribe_vad_segments(track, vad_segs, speaker_segs, language)
+    ok(f"{len(segs)} transcribed segments")
+    return segs
 
 
 # === Commands ===
@@ -310,36 +336,43 @@ def cmd_enroll(args):
     else:
         audio_files = [samples_path]
 
-    print(f"\n{'=' * 60}")
-    print(f"  Speaker Enrollment: {args.name}")
-    print(f"  Samples: {len(audio_files)} files")
-    print(f"{'=' * 60}\n")
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  🎙️  {C_BOLD}Speaker Enrollment{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  👤 Name:    {C_CYAN}{args.name}{C_RESET}")
+    print(f"  📁 Samples: {len(audio_files)} files")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+
+    t = time.time()
 
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
     identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor)
-
     voiceprint = identifier.enroll(args.name, audio_files)
 
-    print(f"\n  [OK] Enrolled: {args.name}")
-    print(f"  Embedding dim: {len(voiceprint)}")
-    print(f"  Saved to: {config.VOICEPRINTS_FILE}\n")
+    elapsed = time.time() - t
+    print(
+        f"\n  {C_GREEN}✅ Enrolled:{C_RESET} {C_BOLD}{args.name}{C_RESET}"
+        f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}"
+    )
+    print(f"  📐 Embedding dim: {len(voiceprint)}")
+    print(f"  💾 Saved to: {C_DIM}{config.VOICEPRINTS_FILE}{C_RESET}\n")
 
 
 def cmd_list(args):
     """List enrolled speakers."""
-    print(f"\n{'=' * 60}")
-    print("  Enrolled Speakers")
-    print(f"{'=' * 60}\n")
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  👥 {C_BOLD}Enrolled Speakers{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
 
     if not config.VOICEPRINTS_FILE.exists():
-        print("  No speakers enrolled.\n")
+        warn("No speakers enrolled.")
         return
 
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
     identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor)
 
     for i, name in enumerate(identifier.list_speakers(), 1):
-        print(f"  {i}. {name}")
+        print(f"  {C_GREEN}✔{C_RESET} {i}. {name}")
     print()
 
 
@@ -355,60 +388,87 @@ def cmd_transcribe(args):
     if output_path.is_dir():
         output_path = output_path / f"{date_str}-meeting.md"
 
-    print(f"\n{'=' * 60}")
-    print("  MeetScribe")
-    print(f"{'=' * 60}")
-    print(f"  Video:  {video_path.name}")
-    print(f"  Host:   {args.host}")
-    print(f"  Device: {DEFAULT_DEVICE}")
-    print(f"  Output: {output_path}")
-    print(f"{'=' * 60}\n")
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  🎙️  {C_BOLD}MeetScribe{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  📹 Video:  {C_BOLD}{video_path.name}{C_RESET}")
+    print(f"  🎤 Host:   {C_CYAN}{args.host}{C_RESET}")
+    print(f"  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
+    print(f"  📄 Output: {C_DIM}{output_path}{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
-    # Load models
-    print("[0/7] Loading models...")
-    vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
-    transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
-    print("  [OK] Models loaded")
+    total_start = time.time()
+
+    with step(0, 7, "Loading models", "🧠"):
+        vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
+        transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        # Extract tracks
-        print("\n[1/7] Extracting audio...")
-        track1 = extract_audio(video_path, work_dir / "host.wav", 1)
-        track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
+        with step(1, 7, "Extracting audio", "🎵"):
+            track1 = extract_audio(video_path, work_dir / "host.wav", 1)
+            track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
 
-        # Host: VAD + transcription
-        print("\n[2/7] VAD on host track...")
-        print("\n[3/7] Transcribing host...")
-        host_segs = _transcribe_host(vad, transcriber, track1, args.host, args.language)
+        # Host pipeline
+        with step(2, 7, "VAD on host track", "🎤"):
+            host_speech = _run_vad(vad, track1)
 
-        # Guests: VAD + diarization
-        print("\n[4/7] VAD on guests track...")
-        print("\n[5/7] Extracting embeddings...")
-        print("\n[6/7] Diarization...")
-        speech_segs, diarized, cluster_names = _run_diarization(
-            vad, extractor, clusterer, identifier, track2
-        )
+        with step(3, 7, "Transcribing host", "✍️"):
+            if host_speech:
+                host_vad_segs = [(s.start_ms, s.end_ms) for s in host_speech]
+                host_speaker_segs = [(s.start_ms, s.end_ms, args.host) for s in host_speech]
+                host_segs = _run_transcription(
+                    transcriber, host_vad_segs, host_speaker_segs, track1, args.language
+                )
+            else:
+                host_segs = []
+
+        # Guest pipeline
+        with step(4, 7, "VAD on guests track", "🎤"):
+            speech_segs = _run_vad(vad, track2)
+
+        with step(5, 7, "Extracting embeddings", "🔊"):
+            if speech_segs:
+                embeddings = _run_embeddings(vad, extractor, speech_segs, track2)
+            else:
+                embeddings = []
+
+        with step(6, 7, "Diarization", "👥"):
+            if speech_segs:
+                diarized, cluster_names = _run_clustering(
+                    clusterer, identifier, speech_segs, embeddings
+                )
+            else:
+                diarized, cluster_names = [], {}
         save_unknown_samples(track2, speech_segs, cluster_names, date_str)
 
-        # Transcribe guests
-        print("\n[7/7] Transcribing guests...")
-        guest_segs = _transcribe_guests(
-            transcriber, speech_segs, diarized, cluster_names, track2, args.language
-        )
+        with step(7, 7, "Transcribing guests", "✍️"):
+            if speech_segs:
+                vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
+                speaker_segs = [
+                    (d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized
+                ]
+                guest_segs = _run_transcription(
+                    transcriber, vad_segs, speaker_segs, track2, args.language
+                )
+            else:
+                guest_segs = []
 
     # Save
     dialogue, total = merge_transcripts(host_segs, guest_segs)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(dialogue, encoding="utf-8")
 
-    print(f"\n{'=' * 60}")
-    print(f"  [OK] Done: {output_path}")
-    print(f"  Host segments: {len(host_segs)}")
-    print(f"  Guest segments: {len(guest_segs)}")
-    print(f"  Total: {total} segments")
-    print(f"{'=' * 60}\n")
+    total_elapsed = time.time() - total_start
+    print(f"\n{C_GREEN}{'═' * 60}{C_RESET}")
+    elapsed_str = _format_elapsed(total_elapsed)
+    print(f"  🎉 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
+    print(f"  📄 Output: {output_path}")
+    print(f"  🎤 Host: {len(host_segs)} segments")
+    print(f"  👥 Guests: {len(guest_segs)} segments")
+    print(f"  📊 Total: {total} segments")
+    print(f"{C_GREEN}{'═' * 60}{C_RESET}\n")
 
 
 def cmd_extract_samples(args):
@@ -420,57 +480,61 @@ def cmd_extract_samples(args):
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
-    print(f"\n{'=' * 60}")
-    print("  Extract Speaker Samples (no transcription)")
-    print(f"{'=' * 60}")
-    print(f"  Video:  {video_path.name}")
-    print(f"  Device: {DEFAULT_DEVICE}")
-    print(f"{'=' * 60}\n")
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  🔊 {C_BOLD}Extract Speaker Samples{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  📹 Video:  {C_BOLD}{video_path.name}{C_RESET}")
+    print(f"  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
-    # Load models (no Whisper needed)
-    print("[0/4] Loading models...")
-    vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
-    print("  [OK] Models loaded")
+    total_start = time.time()
+
+    with step(0, 4, "Loading models", "🧠"):
+        vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        # Extract only guests track
-        print("\n[1/4] Extracting audio...")
-        track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
+        with step(1, 4, "Extracting audio", "🎵"):
+            track2 = extract_audio(video_path, work_dir / "guests.wav", 2)
 
-        # VAD + diarization
-        print("\n[2/4] VAD on guests track...")
-        print("\n[3/4] Extracting embeddings...")
-        print("\n[4/4] Diarization & saving samples...")
-        speech_segs, diarized, cluster_names = _run_diarization(
-            vad, extractor, clusterer, identifier, track2
-        )
+        with step(2, 4, "VAD on guests track", "🎤"):
+            speech_segs = _run_vad(vad, track2)
 
         if not speech_segs:
-            print("  [!] No speech detected")
+            warn("No speech detected")
             return
 
-        save_unknown_samples(track2, speech_segs, cluster_names, date_str)
+        with step(3, 4, "Extracting embeddings", "🔊"):
+            embeddings = _run_embeddings(vad, extractor, speech_segs, track2)
 
+        with step(4, 4, "Diarization & saving samples", "👥"):
+            diarized, cluster_names = _run_clustering(
+                clusterer, identifier, speech_segs, embeddings
+            )
+            save_unknown_samples(track2, speech_segs, cluster_names, date_str)
+
+    total_elapsed = time.time() - total_start
     samples_dir = config.SAMPLES_DIR / "unknown"
-    print(f"\n{'=' * 60}")
-    print(f"  [OK] Done! Samples saved to: {samples_dir}")
-    print(f"{'=' * 60}\n")
+    print(f"\n{C_GREEN}{'═' * 60}{C_RESET}")
+    elapsed_str = _format_elapsed(total_elapsed)
+    print(f"  🎉 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
+    print(f"  📂 Samples: {samples_dir}")
+    print(f"{C_GREEN}{'═' * 60}{C_RESET}\n")
 
 
 def cmd_info(args):
     """Show data directories and configuration."""
-    print(f"\n{'=' * 60}")
-    print("  MeetScribe Configuration")
-    print(f"{'=' * 60}\n")
-    print(f"  Data directory:       {config.DATA_DIR}")
-    print(f"  Cache directory:      {config.CACHE_DIR}")
-    print(f"  Models directory:     {config.MODELS_DIR}")
-    print(f"  Voiceprints:          {config.VOICEPRINTS_FILE}")
-    print(f"  Samples directory:    {config.SAMPLES_DIR}")
-    print(f"  Logs directory:       {config.LOGS_DIR}")
-    print(f"\n  Device: {DEFAULT_DEVICE}")
+    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"  ℹ️  {C_BOLD}MeetScribe Configuration{C_RESET}")
+    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
+    print(f"  📂 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
+    print(f"  📦 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
+    print(f"  🧠 Models:     {C_DIM}{config.MODELS_DIR}{C_RESET}")
+    print(f"  🔑 Voiceprints:{C_DIM} {config.VOICEPRINTS_FILE}{C_RESET}")
+    print(f"  🎤 Samples:    {C_DIM}{config.SAMPLES_DIR}{C_RESET}")
+    print(f"  📋 Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
+    print(f"\n  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
     print()
 
 
@@ -518,7 +582,7 @@ def main():
     try:
         args.func(args)
     except Exception as e:
-        print(f"\n[ERROR] {e}")
+        print(f"\n  {C_RED}❌ Error:{C_RESET} {e}")
         raise SystemExit(1)
 
 
