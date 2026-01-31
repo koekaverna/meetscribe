@@ -45,13 +45,22 @@ CACHE_DIR = get_cache_dir()
 MODELS_DIR = CACHE_DIR / "models"
 VOICEPRINTS_DIR = DATA_DIR / "voiceprints"
 SAMPLES_DIR = DATA_DIR / "samples"
+ENROLLED_SAMPLES_DIR = SAMPLES_DIR / "enrolled"
 LOGS_DIR = DATA_DIR / "logs"
+SESSIONS_DIR = CACHE_DIR / "sessions"
 
-# File paths
-VOICEPRINTS_FILE = VOICEPRINTS_DIR / "speakers.json"
 
 
 def ensure_dirs() -> None:
     """Create all necessary directories."""
-    for d in [DATA_DIR, CACHE_DIR, MODELS_DIR, VOICEPRINTS_DIR, SAMPLES_DIR, LOGS_DIR]:
+    for d in [
+        DATA_DIR,
+        CACHE_DIR,
+        MODELS_DIR,
+        VOICEPRINTS_DIR,
+        SAMPLES_DIR,
+        ENROLLED_SAMPLES_DIR,
+        LOGS_DIR,
+        SESSIONS_DIR,
+    ]:
         d.mkdir(parents=True, exist_ok=True)

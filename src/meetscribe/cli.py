@@ -19,7 +19,6 @@ import glob
 import logging
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import time
@@ -31,6 +30,7 @@ from pathlib import Path
 import colorama
 import torch
 import torchaudio
+from tqdm import tqdm
 
 from . import config
 from .pipeline import (
@@ -39,6 +39,7 @@ from .pipeline import (
     SpectralClusterer,
     Transcriber,
     VADProcessor,
+    audio,
 )
 
 # Enable ANSI colors on Windows
@@ -78,14 +79,9 @@ DEFAULT_MODEL = "medium"
 DEFAULT_LANGUAGE = "ru"
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Module-level state (populated by setup_environment)
-_FFMPEG_BIN = None
-
 
 def setup_environment():
     """Configure runtime environment: env vars, CUDA DLLs, Whisper FFmpeg patch."""
-    global _FFMPEG_BIN
-
     # Windows: disable symlinks, use COPY strategy
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
     os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "copy"
@@ -101,42 +97,10 @@ def setup_environment():
                     os.add_dll_directory(str(bin_dir))
                     os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
 
-    # Patch Whisper to use imageio-ffmpeg binary
-    import imageio_ffmpeg
-
-    _FFMPEG_BIN = imageio_ffmpeg.get_ffmpeg_exe()
-
-    from subprocess import CalledProcessError, run
-
-    import numpy as np
-
-    def load_audio_patched(file: str, sr: int = 16000):
-        cmd = [
-            _FFMPEG_BIN,
-            "-nostdin",
-            "-threads",
-            "0",
-            "-i",
-            file,
-            "-f",
-            "s16le",
-            "-ac",
-            "1",
-            "-acodec",
-            "pcm_s16le",
-            "-ar",
-            str(sr),
-            "-",
-        ]
-        try:
-            out = run(cmd, capture_output=True, check=True).stdout
-        except CalledProcessError as e:
-            raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
-        return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
-
+    # Patch Whisper to use our FFmpeg-based audio loader
     import whisper.audio
 
-    whisper.audio.load_audio = load_audio_patched
+    whisper.audio.load_audio = audio.load_audio
 
 
 # === Helpers ===
@@ -184,49 +148,6 @@ def warn(msg: str) -> None:
 def info(msg: str) -> None:
     """Print an info sub-status line."""
     print(f"  {C_DIM}→{C_RESET}  {msg}")
-
-
-def run_cmd(cmd: list[str], desc: str) -> None:
-    """Run command with error handling."""
-    info(desc)
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"{desc} failed: {result.stderr}")
-
-
-def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path:
-    """Extract audio track from video."""
-    run_cmd(
-        [
-            _FFMPEG_BIN,
-            "-y",
-            "-i",
-            str(video_path),
-            "-map",
-            f"0:{track_index}",
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            str(output_path),
-        ],
-        f"Extracting track {track_index}",
-    )
-    return output_path
-
-
-def probe_audio_tracks(file_path: Path) -> list[int]:
-    """Return list of audio stream indices in the file using ffmpeg -i."""
-    result = subprocess.run(
-        [_FFMPEG_BIN, "-i", str(file_path), "-hide_banner"],
-        capture_output=True,
-        text=True,
-    )
-    # ffmpeg -i exits with 1 when no output specified, but still prints stream info to stderr
-    indices = []
-    for m in re.finditer(r"Stream #0:(\d+).*?: Audio:", result.stderr):
-        indices.append(int(m.group(1)))
-    return indices
 
 
 def save_unknown_samples(
@@ -314,24 +235,26 @@ def _load_pipeline(max_speakers: int, threshold: float):
     vad = VADProcessor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
     clusterer = SpectralClusterer(min_speakers=2, max_speakers=max_speakers)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor, threshold=threshold)
+    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor, threshold=threshold)
     return vad, extractor, clusterer, identifier
 
 
 def _run_vad(vad, audio_path: Path):
     """Run VAD on an audio track. Returns speech segments."""
-    speech_segs = vad.process(audio_path)
-    ok(f"{len(speech_segs)} speech segments")
+    with substep("VAD segmentation", "🔊"):
+        speech_segs = vad.process(audio_path, show_progress=True)
+        ok(f"{len(speech_segs)} speech segments")
     return speech_segs
 
 
 def _run_embeddings(vad, extractor, speech_segs, audio_path: Path):
     """Extract embeddings for speech segments."""
-    embeddings = []
-    for seg in speech_segs:
-        audio = vad.extract_segment_audio(audio_path, seg)
-        embeddings.append(extractor.extract_from_tensor(audio))
-    ok(f"{len(embeddings)} embeddings")
+    with substep("Extracting embeddings", "🧬"):
+        embeddings = []
+        for seg in tqdm(speech_segs, desc="    Embeddings", leave=False, unit="seg"):
+            audio = vad.extract_segment_audio(audio_path, seg)
+            embeddings.append(extractor.extract_from_tensor(audio))
+        ok(f"{len(embeddings)} embeddings")
     return embeddings
 
 
@@ -391,7 +314,7 @@ def cmd_enroll(args):
     t = time.time()
 
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor)
+    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor)
     voiceprint = identifier.enroll(args.name, audio_files)
 
     elapsed = time.time() - t
@@ -400,7 +323,7 @@ def cmd_enroll(args):
         f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}"
     )
     print(f"  📐 Embedding dim: {len(voiceprint)}")
-    print(f"  💾 Saved to: {C_DIM}{config.VOICEPRINTS_FILE}{C_RESET}\n")
+    print(f"  💾 Saved to: {C_DIM}{config.VOICEPRINTS_DIR / f'{args.name}.json'}{C_RESET}\n")
 
 
 def cmd_list(args):
@@ -409,12 +332,12 @@ def cmd_list(args):
     print(f"  👥 {C_BOLD}Enrolled Speakers{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
 
-    if not config.VOICEPRINTS_FILE.exists():
+    if not config.VOICEPRINTS_DIR.exists() or not any(config.VOICEPRINTS_DIR.glob("*.json")):
         warn("No speakers enrolled.")
         return
 
     extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_FILE, extractor)
+    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor)
 
     for i, name in enumerate(identifier.list_speakers(), 1):
         print(f"  {C_GREEN}✔{C_RESET} {i}. {name}")
@@ -437,7 +360,7 @@ def cmd_extract(args):
     print(f"  📂 Output: {C_DIM}{output_dir}{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
-    track_indices = probe_audio_tracks(video_path)
+    track_indices = audio.probe_audio_tracks(video_path)
     if not track_indices:
         warn("No audio tracks found")
         return
@@ -448,12 +371,14 @@ def cmd_extract(args):
     for i, stream_idx in enumerate(track_indices, 1):
         out_file = output_dir / f"track_{i}.wav"
         with substep(f"Track {i} (stream {stream_idx})", "🎵"):
-            extract_audio(video_path, out_file, stream_idx)
+            audio.extract_audio(video_path, out_file, stream_idx)
             ok(f"→ {out_file.name}")
 
     elapsed = time.time() - t
-    print(f"\n  {C_GREEN}✅ Extracted {len(track_indices)} track(s)"
-          f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}\n")
+    print(
+        f"\n  {C_GREEN}✅ Extracted {len(track_indices)} track(s)"
+        f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}\n"
+    )
 
 
 def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
@@ -526,14 +451,14 @@ def cmd_transcribe(args, extra_args: list[str]):
         work_dir = Path(tmp)
 
         if is_single_video:
-            stream_indices = probe_audio_tracks(input_paths[0])
+            stream_indices = audio.probe_audio_tracks(input_paths[0])
             if not stream_indices:
                 raise RuntimeError("No audio tracks found in video")
             track_files = []
             for i, stream_idx in enumerate(stream_indices, 1):
                 out = work_dir / f"track_{i}.wav"
                 with substep(f"Track {i} (stream {stream_idx})", "🎵"):
-                    extract_audio(input_paths[0], out, stream_idx)
+                    audio.extract_audio(input_paths[0], out, stream_idx)
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} audio track(s)")
         else:
@@ -545,20 +470,7 @@ def cmd_transcribe(args, extra_args: list[str]):
                 else:
                     out = work_dir / f"track_{i}.wav"
                     with substep(f"Converting {path.name}", "🎵"):
-                        run_cmd(
-                            [
-                                _FFMPEG_BIN,
-                                "-y",
-                                "-i",
-                                str(path),
-                                "-ac",
-                                "1",
-                                "-ar",
-                                "16000",
-                                str(out),
-                            ],
-                            f"Converting {path.name} to wav",
-                        )
+                        audio.convert_to_wav(path, out)
                     track_files.append(out)
 
         num_tracks = len(track_files)
@@ -660,13 +572,13 @@ def cmd_extract_samples(args):
         work_dir = Path(tmp)
 
         with step(2, 4, "Extracting audio", "🎵"):
-            stream_indices = probe_audio_tracks(video_path)
+            stream_indices = audio.probe_audio_tracks(video_path)
             if not stream_indices:
                 raise RuntimeError("No audio tracks found in video")
             track_files = []
             for i, stream_idx in enumerate(stream_indices, 1):
                 out = work_dir / f"track_{i}.wav"
-                extract_audio(video_path, out, stream_idx)
+                audio.extract_audio(video_path, out, stream_idx)
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} track(s)")
 
@@ -703,7 +615,7 @@ def cmd_info(args):
     print(f"  📂 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
     print(f"  📦 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
     print(f"  🧠 Models:     {C_DIM}{config.MODELS_DIR}{C_RESET}")
-    print(f"  🔑 Voiceprints:{C_DIM} {config.VOICEPRINTS_FILE}{C_RESET}")
+    print(f"  🔑 Voiceprints:{C_DIM} {config.VOICEPRINTS_DIR}{C_RESET}")
     print(f"  🎤 Samples:    {C_DIM}{config.SAMPLES_DIR}{C_RESET}")
     print(f"  📋 Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
     print(f"\n  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
