@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeetScribe</title>
+    <!-- TailwindCSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <!-- SortableJS -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#eff6ff',
+                            100: '#dbeafe',
+                            200: '#bfdbfe',
+                            300: '#93c5fd',
+                            400: '#60a5fa',
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                            700: '#1d4ed8',
+                            800: '#1e40af',
+                            900: '#1e3a8a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .step-active { @apply bg-primary-600 text-white; }
+        .step-complete { @apply bg-green-500 text-white; }
+        .step-pending { @apply bg-gray-200 text-gray-600; }
+        .drag-ghost { opacity: 0.5; }
+        .drag-chosen { opacity: 0.8; }
+        /* Material Design ripple effect */
+        .ripple { position: relative; overflow: hidden; }
+        .ripple::after {
+            content: '';
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 0; height: 0;
+            background: rgba(255,255,255,0.3);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.3s, height 0.3s;
+        }
+        .ripple:active::after { width: 200%; height: 200%; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen" x-data="app()" x-init="init()">
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <header class="text-center mb-8 relative">
+            <h1 class="text-3xl font-bold text-gray-800">MeetScribe</h1>
+            <p class="text-gray-600 mt-2">Meeting transcription with speaker diarization</p>
+            <!-- New Session button -->
+            <button
+                @click="if(confirm('Start a new session? Current progress will be lost.')) startNewSession()"
+                class="absolute right-0 top-1/2 -translate-y-1/2 px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Start new session"
+            >
+                <svg class="inline-block w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                </svg>
+                New
+            </button>
+        </header>
+
+        <!-- Stepper -->
+        <nav class="mb-8">
+            <ol class="flex items-center justify-center space-x-4">
+                <template x-for="(step, index) in steps" :key="index">
+                    <li class="flex items-center">
+                        <button
+                            @click="goToStep(index + 1)"
+                            :disabled="!canGoToStep(index + 1)"
+                            :class="{
+                                'bg-primary-600 text-white': currentStep === index + 1,
+                                'bg-green-500 text-white': index + 1 < currentStep,
+                                'bg-gray-200 text-gray-600': index + 1 > currentStep,
+                                'cursor-not-allowed opacity-50': !canGoToStep(index + 1)
+                            }"
+                            class="w-10 h-10 rounded-full flex items-center justify-center font-semibold shadow-md transition-all duration-200 hover:shadow-lg"
+                        >
+                            <span x-show="index + 1 >= currentStep" x-text="index + 1"></span>
+                            <svg x-show="index + 1 < currentStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </button>
+                        <span
+                            class="ml-2 text-sm font-medium hidden sm:inline"
+                            :class="currentStep === index + 1 ? 'text-primary-600' : 'text-gray-500'"
+                            x-text="step.name"
+                        ></span>
+                        <div x-show="index < steps.length - 1" class="w-8 h-0.5 bg-gray-300 mx-2 hidden sm:block"></div>
+                    </li>
+                </template>
+            </ol>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+            {% block content %}{% endblock %}
+        </main>
+
+        <!-- Footer -->
+        <footer class="mt-8 text-center text-gray-500 text-sm">
+            <p>MeetScribe - Meeting transcription with speaker diarization</p>
+        </footer>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!-- Samples Grid Partial (for HTMX updates) -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <!-- Unassigned Samples -->
+    <div class="bg-gray-100 rounded-xl p-4 min-h-[200px]">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-gray-700">Unassigned Samples</h3>
+            {% set unassigned = session.samples | selectattr('speaker_id', 'none') | list %}
+            <span class="text-sm text-gray-500">{{ unassigned | length }} samples</span>
+        </div>
+        <div class="space-y-2 min-h-[100px] p-2 border-2 border-dashed border-gray-300 rounded-lg speaker-bin" data-speaker-id="">
+            {% for sample in unassigned %}
+            <div class="sample-card bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-move" data-sample-id="{{ sample.id }}">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <button class="play-btn w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-200 transition-colors">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </button>
+                        <div>
+                            <p class="text-sm font-medium text-gray-700">Track {{ sample.track_num }} - C{{ sample.cluster_id }}</p>
+                            <p class="text-xs text-gray-500">{{ (sample.duration_ms / 1000) | round(1) }}s</p>
+                        </div>
+                    </div>
+                    <button class="delete-btn text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not unassigned %}
+            <div class="text-center py-8 text-gray-400">
+                <p>No unassigned samples</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Speaker Bins -->
+    {% for speaker in session.speakers %}
+    <div class="bg-blue-50 rounded-xl p-4 min-h-[200px]">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-blue-800">{{ speaker.name }}</h3>
+            {% set speaker_samples = session.samples | selectattr('speaker_id', 'equalto', speaker.id) | list %}
+            <span class="text-sm text-blue-600">{{ speaker_samples | length }} samples</span>
+        </div>
+        <div class="space-y-2 min-h-[100px] p-2 border-2 border-dashed border-blue-300 rounded-lg speaker-bin" data-speaker-id="{{ speaker.id }}">
+            {% for sample in speaker_samples %}
+            <div class="sample-card bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-move" data-sample-id="{{ sample.id }}">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <button class="play-btn w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-200 transition-colors">
+                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M8 5v14l11-7z"/>
+                            </svg>
+                        </button>
+                        <div>
+                            <p class="text-sm font-medium text-gray-700">Track {{ sample.track_num }} - C{{ sample.cluster_id }}</p>
+                            <p class="text-xs text-gray-500">{{ (sample.duration_ms / 1000) | round(1) }}s</p>
+                        </div>
+                    </div>
+                    <button class="delete-btn text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+            {% if not speaker_samples %}
+            <div class="text-center py-8 text-blue-400">
+                <p>Drop samples here</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

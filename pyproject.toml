@@ -47,6 +47,12 @@ dev = [
     "pytest",
     "ruff",
 ]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]",
+    "python-multipart",
+    "jinja2",
+]
 
 [project.urls]
 Homepage = "https://github.com/korobov/meetscribe"
@@ -55,6 +61,7 @@ Issues = "https://github.com/korobov/meetscribe/issues"
 
 [project.scripts]
 meetscribe = "meetscribe.cli:main"
+meetscribe-web = "meetscribe.web.app:run"
 
 [build-system]
 requires = ["hatchling"]

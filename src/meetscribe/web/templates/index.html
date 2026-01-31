@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div x-show="currentStep === 1" x-cloak>
+    {% include "steps/step1_upload.html" %}
+</div>
+
+<div x-show="currentStep === 2" x-cloak>
+    {% include "steps/step2_config.html" %}
+</div>
+
+<div x-show="currentStep === 3" x-cloak>
+    {% include "steps/step3_extract.html" %}
+</div>
+
+<div x-show="currentStep === 4" x-cloak>
+    {% include "steps/step4_samples.html" %}
+</div>
+
+<div x-show="currentStep === 5" x-cloak>
+    {% include "steps/step5_enroll.html" %}
+</div>
+
+<div x-show="currentStep === 6" x-cloak>
+    {% include "steps/step6_transcribe.html" %}
+</div>
+{% endblock %}

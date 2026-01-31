@@ -1,0 +1,177 @@
+<!-- Step 6: Transcribe -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Transcribe Meeting</h2>
+        <p class="text-gray-600 mt-2">Generate transcript with speaker attribution</p>
+    </div>
+
+    <!-- Options -->
+    <div x-show="!transcribing && !transcriptionComplete" class="max-w-xl mx-auto space-y-4">
+        <div class="bg-gray-50 rounded-xl p-5">
+            <h3 class="font-semibold text-gray-700 mb-4">Transcription Settings</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <!-- Model Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-2">Whisper Model</label>
+                    <select
+                        x-model="whisperModel"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                        <option value="tiny">Tiny (fastest)</option>
+                        <option value="base">Base</option>
+                        <option value="small">Small</option>
+                        <option value="medium">Medium (recommended)</option>
+                        <option value="large">Large (best quality)</option>
+                    </select>
+                </div>
+                <!-- Language Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-2">Language</label>
+                    <select
+                        x-model="language"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                        <option value="ru">Russian</option>
+                        <option value="en">English</option>
+                        <option value="de">German</option>
+                        <option value="fr">French</option>
+                        <option value="es">Spanish</option>
+                        <option value="it">Italian</option>
+                        <option value="pt">Portuguese</option>
+                        <option value="zh">Chinese</option>
+                        <option value="ja">Japanese</option>
+                        <option value="ko">Korean</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Track Summary -->
+        <div class="bg-blue-50 rounded-xl p-5">
+            <h3 class="font-semibold text-blue-800 mb-3">Tracks to Transcribe</h3>
+            <div class="space-y-2">
+                <template x-for="track in (session?.tracks || [])" :key="track.track_num">
+                    <div class="flex items-center justify-between text-sm">
+                        <span class="text-blue-700" x-text="'Track ' + track.track_num + ': ' + track.filename"></span>
+                        <span x-show="track.speaker_name && !track.diarize" class="text-blue-600" x-text="track.speaker_name"></span>
+                        <span x-show="track.diarize" class="text-blue-500 italic">Auto-diarize</span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Start Button -->
+        <div class="flex justify-center pt-4">
+            <button
+                @click="startTranscription()"
+                class="px-8 py-4 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-lg hover:shadow-xl transition-all duration-200 ripple"
+            >
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                </svg>
+                Start Transcription
+            </button>
+        </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="max-w-xl mx-auto space-y-6">
+        <div x-show="transcribing" class="space-y-4 text-center">
+            <!-- Spinner -->
+            <div class="flex justify-center">
+                <svg class="animate-spin h-16 w-16 text-primary-600" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <p class="text-lg font-medium text-gray-800" x-text="transcriptionStatus"></p>
+
+            <!-- Progress Bar -->
+            <div class="space-y-2">
+                <div class="flex justify-between text-sm text-gray-600">
+                    <span x-text="'Step ' + transcriptionStep + ' of ' + transcriptionTotal"></span>
+                    <span x-text="Math.round(((transcriptionStep - 1) + transcriptionProgress / 100) / transcriptionTotal * 100) + '%'"></span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                        class="bg-primary-600 h-3 rounded-full transition-all duration-150"
+                        :style="'width: ' + (((transcriptionStep - 1) + transcriptionProgress / 100) / transcriptionTotal * 100) + '%'"
+                    ></div>
+                </div>
+                <!-- Sub-step progress indicator -->
+                <div x-show="transcriptionProgress > 0 && transcriptionProgress < 100" class="text-xs text-gray-500 text-center">
+                    <span x-text="'Transcribing: ' + transcriptionProgress + '%'"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log Output -->
+        <div x-show="transcriptionLogs.length > 0" class="bg-gray-900 rounded-xl p-4 max-h-48 overflow-y-auto">
+            <template x-for="(log, index) in transcriptionLogs" :key="index">
+                <p class="text-green-400 font-mono text-sm" x-text="log"></p>
+            </template>
+        </div>
+    </div>
+
+    <!-- Result -->
+    <div x-show="transcriptionComplete" class="space-y-4">
+        <div class="flex items-center justify-center space-x-2 text-green-600">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <span class="text-xl font-semibold">Transcription Complete!</span>
+        </div>
+
+        <!-- Transcript Viewer -->
+        <div class="bg-gray-50 rounded-xl p-6 max-h-96 overflow-y-auto">
+            <div class="prose prose-sm max-w-none" x-html="formatMarkdown(session?.transcript || '')"></div>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex justify-center space-x-4">
+            <button
+                @click="copyTranscript()"
+                class="px-6 py-3 text-primary-600 font-medium bg-primary-50 rounded-xl hover:bg-primary-100 transition-colors flex items-center gap-2"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                Copy to Clipboard
+            </button>
+            <button
+                @click="downloadTranscript()"
+                class="px-6 py-3 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-md transition-all flex items-center gap-2"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                </svg>
+                Download as Markdown
+            </button>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="flex justify-between pt-4">
+        <button
+            @click="prevStep()"
+            :disabled="transcribing"
+            :class="transcribing ? 'opacity-50 cursor-not-allowed' : ''"
+            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back
+        </button>
+        <button
+            @click="startNewSession()"
+            x-show="transcriptionComplete"
+            class="px-6 py-3 text-white font-medium bg-green-600 rounded-xl hover:bg-green-700 shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            Start New Session
+        </button>
+    </div>
+</div>

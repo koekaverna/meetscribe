@@ -1,0 +1,101 @@
+<!-- Step 3: Extract Samples -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Extract Speaker Samples</h2>
+        <p class="text-gray-600 mt-2">Analyzing audio to find and cluster speakers</p>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="max-w-xl mx-auto space-y-6">
+        <!-- Status -->
+        <div class="text-center">
+            <div x-show="!extracting && !extractionComplete" class="space-y-4">
+                <svg class="mx-auto h-20 w-20 text-primary-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+                </svg>
+                <p class="text-gray-600">Ready to extract speaker samples from your audio tracks.</p>
+                <p class="text-sm text-gray-500">This process uses VAD, speaker embeddings, and clustering to identify speakers.</p>
+            </div>
+
+            <div x-show="extracting" class="space-y-4">
+                <!-- Spinner -->
+                <div class="flex justify-center">
+                    <svg class="animate-spin h-16 w-16 text-primary-600" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <p class="text-lg font-medium text-gray-800" x-text="extractionStatus"></p>
+            </div>
+
+            <div x-show="extractionComplete && !extracting" class="space-y-4">
+                <svg class="mx-auto h-20 w-20 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-lg font-medium text-green-600">Extraction Complete!</p>
+                <p class="text-gray-600" x-text="'Found ' + (session?.samples?.length || 0) + ' audio samples'"></p>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div x-show="extracting" class="space-y-2">
+            <div class="flex justify-between text-sm text-gray-600">
+                <span x-text="'Step ' + extractionStep + ' of ' + extractionTotal"></span>
+                <span x-text="Math.round(extractionStep / extractionTotal * 100) + '%'"></span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-3">
+                <div
+                    class="bg-primary-600 h-3 rounded-full transition-all duration-300"
+                    :style="'width: ' + (extractionStep / extractionTotal * 100) + '%'"
+                ></div>
+            </div>
+        </div>
+
+        <!-- Log Output -->
+        <div x-show="extractionLogs.length > 0" class="bg-gray-900 rounded-xl p-4 max-h-48 overflow-y-auto">
+            <template x-for="(log, index) in extractionLogs" :key="index">
+                <p class="text-green-400 font-mono text-sm" x-text="log"></p>
+            </template>
+        </div>
+
+        <!-- Start Button -->
+        <div x-show="!extracting && !extractionComplete" class="flex justify-center">
+            <button
+                @click="startExtraction()"
+                class="px-8 py-4 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-lg hover:shadow-xl transition-all duration-200 ripple"
+            >
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                Start Extraction
+            </button>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="flex justify-between pt-4">
+        <button
+            @click="prevStep()"
+            :disabled="extracting"
+            :class="extracting ? 'opacity-50 cursor-not-allowed' : ''"
+            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back
+        </button>
+        <button
+            @click="nextStep()"
+            :disabled="!extractionComplete"
+            :class="extractionComplete ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-300 cursor-not-allowed'"
+            class="px-6 py-3 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            Next: Organize Samples
+            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </button>
+    </div>
+</div>

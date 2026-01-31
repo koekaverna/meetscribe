@@ -1,0 +1,314 @@
+<!-- Step 4: Organize Samples -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Organize Speaker Samples</h2>
+        <p class="text-gray-600 mt-2">Drag samples to speaker bins to organize them for enrollment</p>
+    </div>
+
+    <!-- Add Speaker Button / Input -->
+    <div class="flex justify-center">
+        <!-- Button (initial state) -->
+        <button
+            x-show="!addingSpeaker"
+            @click="showAddSpeakerInput()"
+            class="px-4 py-2 text-primary-600 font-medium bg-primary-50 rounded-lg hover:bg-primary-100 transition-colors flex items-center gap-2"
+        >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            Add Speaker
+        </button>
+
+        <!-- Input form with autocomplete -->
+        <div x-show="addingSpeaker" x-transition class="flex items-center gap-2">
+            <div class="relative">
+                <input
+                    type="text"
+                    x-ref="speakerInput"
+                    x-model="newSpeakerName"
+                    @input="filterSpeakers()"
+                    @keydown.enter.prevent="confirmAddSpeaker()"
+                    @keydown.escape="cancelAddSpeaker()"
+                    placeholder="Speaker name..."
+                    class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-48"
+                >
+                <!-- Dropdown suggestions -->
+                <div
+                    x-show="speakerSuggestions.length > 0 && newSpeakerName.length > 0"
+                    x-transition
+                    class="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto"
+                >
+                    <template x-for="speaker in speakerSuggestions" :key="speaker.name">
+                        <button
+                            type="button"
+                            @click="selectSpeaker(speaker.name); confirmAddSpeaker()"
+                            class="w-full px-3 py-2 text-left hover:bg-primary-50 text-gray-700"
+                            x-text="speaker.name"
+                        ></button>
+                    </template>
+                </div>
+            </div>
+            <button
+                @click="confirmAddSpeaker()"
+                class="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+            >
+                Add
+            </button>
+            <button
+                @click="cancelAddSpeaker()"
+                class="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+            >
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- Two-Column Layout -->
+    <div class="flex gap-6">
+        <!-- Left Column: Unassigned Samples -->
+        <div class="w-1/3 flex-shrink-0">
+            <div class="bg-gray-100 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-semibold text-gray-700">Unassigned Samples</h3>
+                    <span class="text-sm text-gray-500" x-text="unassignedSamples.length + ' samples'"></span>
+                </div>
+                <div
+                    class="speaker-bin space-y-2 min-h-[100px] max-h-[500px] overflow-y-auto p-2 border-2 border-dashed border-gray-300 rounded-lg"
+                    data-speaker-id=""
+                >
+                    <template x-for="sample in unassignedSamples" :key="sample.id">
+                        <div
+                            class="sample-card bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-move"
+                            :data-sample-id="sample.id"
+                        >
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center space-x-3">
+                                    <button
+                                        @click="playSample(sample.id)"
+                                        class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-200 transition-colors"
+                                    >
+                                        <svg x-show="playingSample !== sample.id" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z"/>
+                                        </svg>
+                                        <svg x-show="playingSample === sample.id" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                        </svg>
+                                    </button>
+                                    <div>
+                                        <p class="text-sm font-medium text-gray-700" x-text="'Track ' + sample.track_num + ' - C' + sample.cluster_id"></p>
+                                        <p class="text-xs text-gray-500" x-text="(sample.duration_ms / 1000).toFixed(1) + 's'"></p>
+                                    </div>
+                                </div>
+                                <button
+                                    @click="deleteSample(sample.id)"
+                                    class="text-gray-400 hover:text-red-500 transition-colors"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+                    <div x-show="unassignedSamples.length === 0" class="text-center py-8 text-gray-400">
+                        <p>No unassigned samples</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Speaker Bins -->
+        <div class="w-2/3 max-h-[500px] overflow-y-auto flex flex-wrap gap-4 items-start content-start">
+            <template x-for="speaker in (session?.speakers || [])" :key="speaker.id">
+                <div class="bg-blue-50 rounded-xl p-4 min-w-[250px] flex-grow max-w-[calc(50%-0.5rem)]">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-2">
+                            <input
+                                type="text"
+                                :value="speaker.name"
+                                @blur="renameSpeaker(speaker.id, $event.target.value)"
+                                @keyup.enter="$event.target.blur()"
+                                class="font-semibold text-blue-800 bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 focus:outline-none px-1 w-full"
+                            >
+                        </div>
+                        <div class="flex items-center space-x-2 flex-shrink-0">
+                            <span class="text-sm text-blue-600" x-text="getSpeakerSamples(speaker.id).length + ' samples'"></span>
+                            <button
+                                @click="deleteSpeakerBin(speaker.id)"
+                                class="text-blue-400 hover:text-red-500 transition-colors"
+                            >
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div
+                        class="speaker-bin space-y-2 min-h-[80px] max-h-[300px] overflow-y-auto p-2 border-2 border-dashed border-blue-300 rounded-lg"
+                        :data-speaker-id="speaker.id"
+                    >
+                        <template x-for="sample in getSpeakerSamples(speaker.id)" :key="sample.id">
+                            <div
+                                class="sample-card bg-white rounded-lg p-3 shadow-sm hover:shadow-md transition-shadow cursor-move"
+                                :data-sample-id="sample.id"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-3">
+                                        <button
+                                            @click="playSample(sample.id)"
+                                            class="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-200 transition-colors"
+                                        >
+                                            <svg x-show="playingSample !== sample.id" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M8 5v14l11-7z"/>
+                                            </svg>
+                                            <svg x-show="playingSample === sample.id" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                                            </svg>
+                                        </button>
+                                        <div>
+                                            <p class="text-sm font-medium text-gray-700" x-text="'Track ' + sample.track_num + ' - C' + sample.cluster_id"></p>
+                                            <p class="text-xs text-gray-500" x-text="(sample.duration_ms / 1000).toFixed(1) + 's'"></p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        @click="deleteSample(sample.id)"
+                                        class="text-gray-400 hover:text-red-500 transition-colors"
+                                    >
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                        </svg>
+                                    </button>
+                                </div>
+                            </div>
+                        </template>
+                        <div x-show="getSpeakerSamples(speaker.id).length === 0" class="text-center py-6 text-blue-400">
+                            <p>Drop samples here</p>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            <!-- Empty state when no speakers -->
+            <div x-show="!session?.speakers?.length" class="w-full text-center py-12 text-gray-400 border-2 border-dashed border-gray-300 rounded-xl">
+                <p>Click "Add Speaker" to create speaker bins</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Mini Player -->
+    <div
+        x-show="playingSample !== null"
+        x-transition
+        class="sticky bottom-0 bg-white border-t border-gray-200 rounded-xl shadow-lg p-4 mt-4"
+    >
+        <div class="flex items-center gap-4">
+            <!-- Sample Info -->
+            <div class="flex-shrink-0 min-w-[120px]">
+                <p class="text-sm font-medium text-gray-700" x-text="currentSampleInfo ? 'Track ' + currentSampleInfo.trackNum + ' - C' + currentSampleInfo.clusterId : ''"></p>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="flex-grow">
+                <div
+                    @click="seekToPercent($event)"
+                    class="h-2 bg-gray-200 rounded-full cursor-pointer relative overflow-hidden"
+                >
+                    <div
+                        class="absolute top-0 left-0 h-full bg-primary-500 rounded-full transition-all duration-100"
+                        :style="'width: ' + sampleProgress + '%'"
+                    ></div>
+                </div>
+                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                    <span x-text="formatTime(sampleCurrentTime)"></span>
+                    <span x-text="formatTime(sampleDuration)"></span>
+                </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <!-- Rewind -5s -->
+                <button
+                    @click="seekSample(-5)"
+                    class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors text-xs font-medium"
+                    title="Rewind 5s"
+                >
+                    -5s
+                </button>
+
+                <!-- Play/Pause -->
+                <button
+                    @click="playingSample ? playSample(playingSample) : null"
+                    class="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center text-primary-600 hover:bg-primary-200 transition-colors"
+                >
+                    <svg x-show="playingSample" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+                    </svg>
+                </button>
+
+                <!-- Forward +5s -->
+                <button
+                    @click="seekSample(5)"
+                    class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors text-xs font-medium"
+                    title="Forward 5s"
+                >
+                    +5s
+                </button>
+
+                <!-- Speed Controls -->
+                <div class="flex items-center gap-1 ml-2 border-l border-gray-200 pl-2">
+                    <button
+                        @click="setPlaybackSpeed(1)"
+                        :class="playbackRate === 1 ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        class="px-2 py-1 rounded text-xs font-medium transition-colors"
+                    >
+                        1x
+                    </button>
+                    <button
+                        @click="setPlaybackSpeed(1.5)"
+                        :class="playbackRate === 1.5 ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        class="px-2 py-1 rounded text-xs font-medium transition-colors"
+                    >
+                        1.5x
+                    </button>
+                    <button
+                        @click="setPlaybackSpeed(2)"
+                        :class="playbackRate === 2 ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                        class="px-2 py-1 rounded text-xs font-medium transition-colors"
+                    >
+                        2x
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Player -->
+    <audio
+        x-ref="samplePlayer"
+        @ended="stopSample()"
+        @timeupdate="updateSampleProgress()"
+        @loadedmetadata="updateSampleProgress()"
+        class="hidden"
+    ></audio>
+
+    <!-- Navigation -->
+    <div class="flex justify-between pt-4">
+        <button
+            @click="prevStep()"
+            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back
+        </button>
+        <button
+            @click="nextStep()"
+            class="px-6 py-3 text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            Next: Enroll Speakers
+            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </button>
+    </div>
+</div>
