@@ -35,12 +35,11 @@ dependencies = [
     "openai-whisper",
     "torch>=2.7.0",
     "torchaudio>=2.7.0,<2.9",
-    "imageio-ffmpeg",
     "soundfile",
     "scikit-learn",
     "huggingface_hub<1.0",
     "tqdm",
-    "colorama",
+    "colorama"
 ]
 
 [project.optional-dependencies]

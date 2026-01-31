@@ -1,6 +1,7 @@
 """Audio transcription using OpenAI Whisper."""
 
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -120,8 +121,13 @@ class Transcriber:
         vad_segments: list[tuple[int, int]],
         speaker_segments: list[tuple[int, int, str]],
         language: str = DEFAULT_LANGUAGE,
+        progress_callback: Callable[[int], None] | None = None,
     ) -> list[TranscriptSegment]:
-        """Transcribe only speech segments detected by VAD."""
+        """Transcribe only speech segments detected by VAD.
+
+        Args:
+            progress_callback: Optional callback(percent: int) called with progress 0-100
+        """
         merged_segments = merge_close_segments(vad_segments)
 
         if not merged_segments:
@@ -132,6 +138,7 @@ class Transcriber:
 
         # Calculate total duration for progress bar
         total_ms = sum(end - start for start, end in merged_segments)
+        processed_ms = 0
         pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
 
         for vad_start, vad_end in merged_segments:
@@ -142,16 +149,23 @@ class Transcriber:
 
             if chunk.shape[1] < sr * 0.1:
                 pbar.update(chunk_duration)
+                processed_ms += chunk_duration
+                if progress_callback:
+                    progress_callback(int(processed_ms * 100 / total_ms))
                 continue
 
             # Skip silent chunks (prevents hallucinations)
             if is_silent(chunk, threshold_db=self.SILENCE_THRESHOLD_DB):
                 pbar.update(chunk_duration)
+                processed_ms += chunk_duration
+                if progress_callback:
+                    progress_callback(int(processed_ms * 100 / total_ms))
                 continue
 
+            # Create temp file and close it before writing (Windows compatibility)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                torchaudio.save(f.name, chunk, sr)
                 chunk_path = Path(f.name)
+            torchaudio.save(str(chunk_path), chunk, sr)
 
             try:
                 segments = self.transcribe(chunk_path, language)
@@ -166,6 +180,9 @@ class Transcriber:
                 chunk_path.unlink(missing_ok=True)
 
             pbar.update(chunk_duration)
+            processed_ms += chunk_duration
+            if progress_callback:
+                progress_callback(int(processed_ms * 100 / total_ms))
 
         pbar.close()
         return results
