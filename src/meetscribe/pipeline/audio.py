@@ -1,16 +1,43 @@
 """FFmpeg utilities for audio extraction and conversion.
 
-All functions use system FFmpeg binary. Install with:
-    winget install "FFmpeg (Shared)"
+All functions use system FFmpeg binary.
 """
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import numpy as np
 
 FFMPEG_BIN = "ffmpeg"
+
+FFMPEG_INSTALL_HELP = """
+FFmpeg is required but not found. Install it:
+
+  Windows:   winget install "FFmpeg (Shared)"
+  macOS:     brew install ffmpeg
+  Linux:     sudo apt install ffmpeg
+
+After installation, restart your terminal.
+""".strip()
+
+
+class FFmpegNotFoundError(RuntimeError):
+    """Raised when FFmpeg is not available."""
+
+    def __init__(self):
+        super().__init__(FFMPEG_INSTALL_HELP)
+
+
+def check_ffmpeg() -> None:
+    """Check if FFmpeg is available in PATH.
+
+    Raises:
+        FFmpegNotFoundError: If FFmpeg is not found.
+    """
+    if shutil.which(FFMPEG_BIN) is None:
+        raise FFmpegNotFoundError()
 
 
 def load_audio(file: str, sr: int = 16000) -> np.ndarray:

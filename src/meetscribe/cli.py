@@ -41,6 +41,7 @@ from .pipeline import (
     VADProcessor,
     audio,
 )
+from .pipeline.audio import FFmpegNotFoundError
 
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
@@ -82,6 +83,9 @@ DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 def setup_environment():
     """Configure runtime environment: env vars, CUDA DLLs, Whisper FFmpeg patch."""
+    # Check FFmpeg availability
+    audio.check_ffmpeg()
+
     # Windows: disable symlinks, use COPY strategy
     os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
     os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "copy"
@@ -623,7 +627,19 @@ def cmd_info(args):
 
 
 def main():
-    setup_environment()
+    # Enable colors early for error messages
+    colorama.just_fix_windows_console()
+
+    try:
+        setup_environment()
+    except FFmpegNotFoundError:
+        print(f"\n{C_RED}[ERROR] FFmpeg not found{C_RESET}\n")
+        print("FFmpeg is required for audio processing. Install it:\n")
+        print(f"  {C_CYAN}Windows:{C_RESET}  winget install \"FFmpeg (Shared)\"")
+        print(f"  {C_CYAN}macOS:{C_RESET}    brew install ffmpeg")
+        print(f"  {C_CYAN}Linux:{C_RESET}    sudo apt install ffmpeg")
+        print("\nAfter installation, restart your terminal.\n")
+        raise SystemExit(1)
 
     parser = argparse.ArgumentParser(
         description="MeetScribe - Meeting transcription with speaker diarization"
