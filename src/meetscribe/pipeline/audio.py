@@ -8,8 +8,6 @@ import shutil
 import subprocess
 from pathlib import Path
 
-import numpy as np
-
 FFMPEG_BIN = "ffmpeg"
 
 FFMPEG_INSTALL_HELP = """
@@ -40,37 +38,14 @@ def check_ffmpeg() -> None:
         raise FFmpegNotFoundError()
 
 
-def load_audio(file: str, sr: int = 16000) -> np.ndarray:
-    """Load audio file and convert to float32 array at specified sample rate.
+class FFmpegNotFoundError(Exception):
+    """Raised when FFmpeg is not found in PATH."""
 
-    Uses FFmpeg to decode any audio format to raw PCM.
 
-    Args:
-        file: Path to audio file.
-        sr: Target sample rate (default 16000 Hz).
-
-    Returns:
-        Audio samples as float32 numpy array, normalized to [-1, 1].
-
-    Raises:
-        RuntimeError: If FFmpeg fails to decode the file.
-    """
-    cmd = [
-        FFMPEG_BIN,
-        "-nostdin",
-        "-threads", "0",
-        "-i", file,
-        "-f", "s16le",
-        "-ac", "1",
-        "-acodec", "pcm_s16le",
-        "-ar", str(sr),
-        "-",
-    ]
-    try:
-        out = subprocess.run(cmd, capture_output=True, check=True).stdout
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to load audio: {e.stderr.decode()}") from e
-    return np.frombuffer(out, np.int16).flatten().astype(np.float32) / 32768.0
+def check_ffmpeg() -> None:
+    """Check if FFmpeg is available in PATH."""
+    if shutil.which(FFMPEG_BIN) is None:
+        raise FFmpegNotFoundError()
 
 
 def probe_audio_tracks(file_path: Path) -> list[int]:
