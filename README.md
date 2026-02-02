@@ -12,7 +12,33 @@ Meeting transcription with speaker diarization. Combines OpenAI Whisper for tran
 
 ## Installation
 
-Requires Python 3.12+.
+### Requirements
+
+- Python 3.12+
+- FFmpeg (for audio extraction and conversion)
+
+### FFmpeg
+
+FFmpeg is required for processing audio and video files.
+
+**Windows:**
+```bash
+winget install "FFmpeg (Shared)"
+```
+
+**macOS:**
+```bash
+brew install ffmpeg
+```
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt install ffmpeg
+```
+
+After installation, restart your terminal to update PATH.
+
+### Python package
 
 ```bash
 uv venv
