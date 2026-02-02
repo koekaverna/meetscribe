@@ -17,9 +17,7 @@ Usage:
 import argparse
 import glob
 import logging
-import os
 import re
-import sys
 import tempfile
 import time
 import warnings
@@ -28,39 +26,16 @@ from datetime import datetime
 from pathlib import Path
 
 import colorama
-import torch
-import torchaudio
-from tqdm import tqdm
 
 from . import config
-from .pipeline import (
-    EmbeddingExtractor,
-    SpeakerIdentifier,
-    SpectralClusterer,
-    Transcriber,
-    VADProcessor,
-    audio,
-)
-from .pipeline.audio import FFmpegNotFoundError
 
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
 
-# === Colors ===
-C_RESET = "\033[0m"
-C_BOLD = "\033[1m"
-C_DIM = "\033[2m"
-C_GREEN = "\033[92m"
-C_CYAN = "\033[96m"
-C_YELLOW = "\033[93m"
-C_RED = "\033[91m"
-C_MAGENTA = "\033[95m"
-C_BLUE = "\033[94m"
-
 # Ensure directories exist
 config.ensure_dirs()
 
-# === Logging setup ===
+# === Logging setup (before heavy imports to capture their warnings) ===
 _log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
 
 _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
@@ -75,41 +50,39 @@ logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handl
 logging.captureWarnings(True)
 warnings.filterwarnings("default")
 
+# === Heavy imports (after logging setup) ===
+import torch  # noqa: E402
+import torchaudio  # noqa: E402
+from tqdm import tqdm  # noqa: E402
+
+from .pipeline import (  # noqa: E402
+    EmbeddingExtractor,
+    SpeakerIdentifier,
+    SpectralClusterer,
+    Transcriber,
+    VADProcessor,
+    audio,
+)
+from .pipeline.audio import FFmpegNotFoundError  # noqa: E402
+
+# === Colors ===
+C_RESET = "\033[0m"
+C_BOLD = "\033[1m"
+C_DIM = "\033[2m"
+C_GREEN = "\033[92m"
+C_CYAN = "\033[96m"
+C_YELLOW = "\033[93m"
+C_RED = "\033[91m"
+C_MAGENTA = "\033[95m"
+C_BLUE = "\033[94m"
+
 # Defaults
 DEFAULT_MODEL = "medium"
 DEFAULT_LANGUAGE = "ru"
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def setup_environment():
-    """Configure runtime environment: env vars, CUDA DLLs, Whisper FFmpeg patch."""
-    # Check FFmpeg availability
-    audio.check_ffmpeg()
-
-    # Windows: disable symlinks, use COPY strategy
-    os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-    os.environ["SPEECHBRAIN_LOCAL_STRATEGY"] = "copy"
-    os.environ["HF_HUB_CACHE"] = os.path.expanduser("~/.cache/huggingface/hub")
-
-    # Add NVIDIA DLLs to PATH for Windows CUDA
-    if sys.platform == "win32":
-        site_packages = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
-        if site_packages.exists():
-            for lib_dir in site_packages.iterdir():
-                bin_dir = lib_dir / "bin"
-                if bin_dir.exists():
-                    os.add_dll_directory(str(bin_dir))
-                    os.environ["PATH"] = str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
-
-    # Patch Whisper to use our FFmpeg-based audio loader
-    import whisper.audio
-
-    whisper.audio.load_audio = audio.load_audio
-
-
 # === Helpers ===
-
-
 def _format_elapsed(seconds: float) -> str:
     """Format elapsed seconds as human-readable string."""
     if seconds < 60:
@@ -627,11 +600,10 @@ def cmd_info(args):
 
 
 def main():
-    # Enable colors early for error messages
     colorama.just_fix_windows_console()
 
     try:
-        setup_environment()
+        audio.check_ffmpeg()
     except FFmpegNotFoundError:
         print(f"\n{C_RED}[ERROR] FFmpeg not found{C_RESET}\n")
         print("FFmpeg is required for audio processing. Install it:\n")
