@@ -34,9 +34,13 @@ from . import config
 from .database import (
     count_voiceprints,
     create_team,
+    create_user,
     delete_team,
+    delete_user,
     get_db,
+    get_team,
     list_teams,
+    list_users,
     load_voiceprints,
     save_voiceprint,
 )
@@ -616,6 +620,92 @@ def cmd_info(args, team_ctx: TeamContext):
     print()
 
 
+def cmd_web(args):
+    """Start the web UI server."""
+    try:
+        from .web.app import run
+    except ImportError:
+        print(
+            f"\n  {C_RED}\u274c Error:{C_RESET} Web dependencies not installed.\n"
+            f'  Install with: pip install -e ".[web]"\n'
+        )
+        raise SystemExit(1)
+    run(host=args.host, port=args.port)
+
+
+# === User management commands ===
+
+
+def cmd_user_create(args):
+    """Create a new user."""
+    import getpass
+
+    from .web.services.auth import hash_password
+
+    conn = get_db(config.DB_PATH)
+    team = get_team(conn, args.team)
+    if not team:
+        print(f"\n  {C_RED}\u274c Error:{C_RESET} Team '{args.team}' not found.\n")
+        raise SystemExit(1)
+
+    password = getpass.getpass("Password: ")
+    if len(password) < 4:
+        print(f"\n  {C_RED}\u274c Error:{C_RESET} Password must be at least 4 characters.\n")
+        raise SystemExit(1)
+    password2 = getpass.getpass("Confirm: ")
+    if password != password2:
+        print(f"\n  {C_RED}\u274c Error:{C_RESET} Passwords do not match.\n")
+        raise SystemExit(1)
+
+    try:
+        pw_hash = hash_password(password)
+        is_admin = getattr(args, "admin", False)
+        create_user(conn, args.username, pw_hash, team["id"], is_admin=is_admin)
+        role = " (admin)" if is_admin else ""
+        print(f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}' created (team: {args.team}){role}\n")
+    except Exception as e:
+        print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}\n")
+        raise SystemExit(1)
+    finally:
+        conn.close()
+
+
+def cmd_user_list(args):
+    """List all users."""
+    conn = get_db(config.DB_PATH)
+    users = list_users(conn)
+    conn.close()
+
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f464 {C_BOLD}Users{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}\n")
+
+    if not users:
+        warn("No users registered.")
+    else:
+        for u in users:
+            print(f"  {C_GREEN}\u2714{C_RESET} {u['username']} {C_DIM}(team: {u['team_name']}){C_RESET}")
+    print()
+
+
+def cmd_user_delete(args):
+    """Delete a user."""
+    if not args.yes:
+        answer = input(f"Delete user '{args.username}'? [y/N] ")
+        if answer.lower() != "y":
+            print("Cancelled.")
+            return
+
+    conn = get_db(config.DB_PATH)
+    deleted = delete_user(conn, args.username)
+    conn.close()
+
+    if deleted:
+        print(f"\n  {C_GREEN}\u2714{C_RESET}  User '{args.username}' deleted.\n")
+    else:
+        print(f"\n  {C_YELLOW}\u26a0\ufe0f{C_RESET}  User '{args.username}' not found.\n")
+
+
 # === Team management commands ===
 
 
@@ -742,6 +832,12 @@ def main():
     p = subs.add_parser("info", help="Show configuration and data directories")
     p.set_defaults(func=cmd_info)
 
+    # web
+    p = subs.add_parser("web", help="Start web UI")
+    p.add_argument("--host", default="127.0.0.1", help="Host to bind")
+    p.add_argument("--port", type=int, default=8080, help="Port to bind")
+    p.set_defaults(func=cmd_web)
+
     # team management
     team_parser = subs.add_parser("team", help="Manage team profiles")
     team_subs = team_parser.add_subparsers(dest="team_command", required=True)
@@ -759,24 +855,41 @@ def main():
     p.add_argument("--yes", action="store_true", help="Skip confirmation")
     p.set_defaults(func=cmd_team_delete)
 
+    # user management
+    user_parser = subs.add_parser("user", help="Manage users")
+    user_subs = user_parser.add_subparsers(dest="user_command", required=True)
+
+    p = user_subs.add_parser("create", help="Create a new user")
+    p.add_argument("username", help="Username")
+    p.add_argument("--team", required=True, help="Team name")
+    p.add_argument("--admin", action="store_true", help="Grant admin privileges")
+    p.set_defaults(func=cmd_user_create)
+
+    p = user_subs.add_parser("list", help="List all users")
+    p.set_defaults(func=cmd_user_list)
+
+    p = user_subs.add_parser("delete", help="Delete a user")
+    p.add_argument("username", help="Username")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation")
+    p.set_defaults(func=cmd_user_delete)
+
     args, extra = parser.parse_known_args()
 
-    # Team management commands don't need team context
-    TEAM_COMMANDS = {cmd_team_create, cmd_team_list, cmd_team_delete}
+    # Commands that don't need team context
+    NO_TEAM_COMMANDS = {
+        cmd_team_create, cmd_team_list, cmd_team_delete,
+        cmd_user_create, cmd_user_list, cmd_user_delete,
+        cmd_extract, cmd_web,
+    }
 
     try:
-        if args.func in TEAM_COMMANDS:
+        if args.func in NO_TEAM_COMMANDS:
             if extra:
                 parser.error(f"Unrecognized arguments: {' '.join(extra)}")
             args.func(args)
         elif args.func == cmd_transcribe:
             team_ctx = resolve_team(args.team)
             args.func(args, extra, team_ctx)
-        elif args.func == cmd_extract:
-            # extract doesn't need team context
-            if extra:
-                parser.error(f"Unrecognized arguments: {' '.join(extra)}")
-            args.func(args)
         else:
             if extra:
                 parser.error(f"Unrecognized arguments: {' '.join(extra)}")

@@ -50,6 +50,9 @@ VOICEPRINTS_DIR = DATA_DIR / "voiceprints"
 SAMPLES_DIR = DATA_DIR / "samples"
 ENROLLED_SAMPLES_DIR = SAMPLES_DIR / "enrolled"
 
+# Upload limits
+MAX_UPLOAD_SIZE = int(os.environ.get("MEETSCRIBE_MAX_UPLOAD_SIZE", 4 * 1024 * 1024 * 1024))  # 4 GB
+
 # Database
 DB_PATH = DATA_DIR / "meetscribe.db"
 

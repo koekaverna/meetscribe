@@ -51,7 +51,64 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(team_id, name)
         );
+
+        CREATE TABLE IF NOT EXISTS users (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            username      TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            team_id       INTEGER NOT NULL REFERENCES teams(id),
+            is_admin      INTEGER NOT NULL DEFAULT 0,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token      TEXT PRIMARY KEY,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            expires_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            id         TEXT PRIMARY KEY,
+            team_id    INTEGER NOT NULL REFERENCES teams(id),
+            status     TEXT NOT NULL DEFAULT 'created',
+            language   TEXT NOT NULL DEFAULT 'ru',
+            transcript TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS session_tracks (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            track_num    INTEGER NOT NULL,
+            filename     TEXT NOT NULL,
+            speaker_name TEXT,
+            diarize      INTEGER NOT NULL DEFAULT 1,
+            UNIQUE(session_id, track_num)
+        );
+
+        CREATE TABLE IF NOT EXISTS session_speakers (
+            id         TEXT NOT NULL,
+            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            name       TEXT NOT NULL,
+            PRIMARY KEY (session_id, id)
+        );
+
+        CREATE TABLE IF NOT EXISTS session_samples (
+            id                 TEXT NOT NULL,
+            session_id         TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+            track_num          INTEGER NOT NULL,
+            cluster_id         INTEGER NOT NULL,
+            filename           TEXT NOT NULL,
+            duration_ms        INTEGER NOT NULL,
+            speaker_id         TEXT,
+            is_known           INTEGER NOT NULL DEFAULT 0,
+            known_speaker_name TEXT,
+            PRIMARY KEY (session_id, id)
+        );
     """)
+
     conn.commit()
 
 
@@ -146,3 +203,96 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
         (team_id,),
     ).fetchone()
     return row["cnt"]
+
+
+# --- User CRUD ---
+
+
+def create_user(
+    conn: sqlite3.Connection,
+    username: str,
+    password_hash: str,
+    team_id: int,
+    is_admin: bool = False,
+) -> int:
+    """Create a user. Returns its id."""
+    cursor = conn.execute(
+        "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
+        (username, password_hash, team_id, int(is_admin)),
+    )
+    conn.commit()
+    return cursor.lastrowid
+
+
+def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
+    """Fetch a user by username (with team name)."""
+    return conn.execute(
+        "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
+        "WHERE u.username = ?",
+        (username,),
+    ).fetchone()
+
+
+def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
+    """Fetch a user by id (with team name)."""
+    return conn.execute(
+        "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
+        "WHERE u.id = ?",
+        (user_id,),
+    ).fetchone()
+
+
+def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """List all users with team names."""
+    return conn.execute(
+        "SELECT u.id, u.username, t.name as team_name, u.created_at "
+        "FROM users u JOIN teams t ON u.team_id = t.id ORDER BY u.username"
+    ).fetchall()
+
+
+def delete_user(conn: sqlite3.Connection, username: str) -> bool:
+    """Delete a user by username. Returns True if deleted."""
+    cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+# --- Auth session CRUD ---
+
+
+def create_auth_session(
+    conn: sqlite3.Connection, user_id: int, token: str, expires_at: str
+) -> None:
+    """Create an auth session."""
+    conn.execute(
+        "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+        (token, user_id, expires_at),
+    )
+    conn.commit()
+
+
+def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+    """Get auth session with user and team info. Returns None if expired or not found."""
+    return conn.execute(
+        "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
+        "u.team_id, u.is_admin, t.name as team_name "
+        "FROM auth_sessions s "
+        "JOIN users u ON s.user_id = u.id "
+        "JOIN teams t ON u.team_id = t.id "
+        "WHERE s.token = ? AND s.expires_at > datetime('now')",
+        (token,),
+    ).fetchone()
+
+
+def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
+    """Delete an auth session. Returns True if deleted."""
+    cursor = conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def delete_expired_sessions(conn: sqlite3.Connection) -> int:
+    """Delete expired auth sessions. Returns count deleted."""
+    cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
+    conn.commit()
+    return cursor.rowcount

@@ -1,0 +1,120 @@
+<!-- Step 2: Configure Tracks -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Configure Tracks</h2>
+        <p class="text-gray-600 mt-2">Assign speakers to tracks or enable automatic diarization</p>
+    </div>
+
+    <!-- Global Speakers -->
+    <div class="bg-blue-50 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-blue-800">Enrolled Speakers</h3>
+            <button
+                @click="loadGlobalSpeakers()"
+                class="text-blue-600 hover:text-blue-800 text-sm"
+            >
+                Refresh
+            </button>
+        </div>
+        <div x-show="globalSpeakers.length === 0" class="text-blue-600 text-sm">
+            No speakers enrolled yet. You can enroll speakers after extracting samples.
+        </div>
+        <div x-show="globalSpeakers.length > 0" class="flex flex-wrap gap-2">
+            <template x-for="speaker in globalSpeakers" :key="speaker.name">
+                <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm font-medium">
+                    <span x-text="speaker.name"></span>
+                </span>
+            </template>
+        </div>
+    </div>
+
+    <!-- Track Configuration -->
+    <div class="space-y-4">
+        <template x-for="track in (session?.tracks || [])" :key="track.track_num">
+            <div class="bg-gray-50 rounded-xl p-5 shadow-sm">
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center">
+                            <span class="text-primary-600 font-bold" x-text="track.track_num"></span>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800" x-text="track.filename"></p>
+                            <button
+                                @click="playTrack(track.track_num)"
+                                class="text-sm text-primary-600 hover:text-primary-800 flex items-center gap-1"
+                            >
+                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                                Play preview
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                        <!-- Diarize Toggle -->
+                        <label class="flex items-center space-x-2 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                :checked="track.diarize"
+                                @change="updateTrackConfig(track.track_num, track.speaker_name, $event.target.checked)"
+                                class="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                            >
+                            <span class="text-sm text-gray-700">Auto-diarize</span>
+                        </label>
+
+                        <!-- Speaker Name -->
+                        <div class="flex items-center">
+                            <span class="text-sm text-gray-500 mr-2">or assign:</span>
+                            <div class="relative">
+                                <input
+                                    type="text"
+                                    :value="track.speaker_name || ''"
+                                    @blur="updateTrackConfig(track.track_num, $event.target.value || null, false)"
+                                    @keyup.enter="$event.target.blur()"
+                                    placeholder="Speaker name"
+                                    :disabled="track.diarize"
+                                    :class="track.diarize ? 'bg-gray-100 text-gray-400' : 'bg-white'"
+                                    class="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                                    list="speaker-suggestions"
+                                >
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Speaker Datalist -->
+    <datalist id="speaker-suggestions">
+        <template x-for="speaker in globalSpeakers" :key="speaker.name">
+            <option :value="speaker.name"></option>
+        </template>
+    </datalist>
+
+    <!-- Hidden Audio Player -->
+    <audio x-ref="audioPlayer" class="hidden"></audio>
+
+    <!-- Navigation -->
+    <div class="flex justify-between pt-4">
+        <button
+            @click="prevStep()"
+            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back
+        </button>
+        <button
+            @click="nextStep()"
+            class="px-6 py-3 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            <span x-text="needsDiarization() ? 'Next: Extract Samples' : 'Next: Transcribe'"></span>
+            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </button>
+    </div>
+</div>

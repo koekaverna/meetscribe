@@ -1,0 +1,101 @@
+<!-- Step 1: Upload -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Upload Audio/Video</h2>
+        <p class="text-gray-600 mt-2">Upload a video file with multiple audio tracks or individual audio files</p>
+    </div>
+
+    <!-- Drop Zone -->
+    <div
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleDrop($event)"
+        :class="isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300 bg-gray-50'"
+        class="border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer hover:border-primary-400"
+        @click="$refs.fileInput.click()"
+    >
+        <input
+            type="file"
+            x-ref="fileInput"
+            @change="handleFiles($event.target.files)"
+            multiple
+            accept=".mp4,.mkv,.avi,.mov,.webm,.wav,.mp3,.flac,.ogg,.m4a"
+            class="hidden"
+        >
+        <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+        </svg>
+        <p class="mt-4 text-lg font-medium text-gray-700">Drop files here or click to browse</p>
+        <p class="mt-2 text-sm text-gray-500">Supports MP4, MKV, AVI, MOV, WAV, MP3, FLAC</p>
+    </div>
+
+    <!-- Upload Progress -->
+    <div x-show="uploading" class="space-y-2">
+        <div class="flex justify-between text-sm text-gray-600">
+            <span>Uploading...</span>
+            <span x-text="uploadProgress + '%'"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="bg-primary-600 h-2 rounded-full transition-all duration-300" :style="'width: ' + uploadProgress + '%'"></div>
+        </div>
+    </div>
+
+    <!-- Track List -->
+    <div x-show="session && session.tracks && session.tracks.length > 0" class="space-y-3">
+        <h3 class="font-semibold text-gray-700">Uploaded Tracks</h3>
+        <template x-for="track in (session?.tracks || [])" :key="track.track_num">
+            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                <div class="flex items-center space-x-4">
+                    <div class="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                        <svg class="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <p class="font-medium text-gray-800" x-text="'Track ' + track.track_num"></p>
+                        <p class="text-sm text-gray-500" x-text="track.filename"></p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <!-- Play Button -->
+                    <button
+                        @click="playTrack(track.track_num)"
+                        class="p-2 text-gray-500 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-colors"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </button>
+                    <!-- Delete Button -->
+                    <button
+                        @click="deleteTrack(track.track_num)"
+                        class="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Hidden Audio Player -->
+    <audio x-ref="audioPlayer" class="hidden"></audio>
+
+    <!-- Next Button -->
+    <div class="flex justify-end pt-4">
+        <button
+            @click="nextStep()"
+            :disabled="!session || !session.tracks || session.tracks.length === 0"
+            :class="session && session.tracks && session.tracks.length > 0 ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-300 cursor-not-allowed'"
+            class="px-6 py-3 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            Next: Configure Tracks
+            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </button>
+    </div>
+</div>
