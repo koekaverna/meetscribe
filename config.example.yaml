@@ -1,0 +1,119 @@
+# =============================================================================
+# MeetScribe Configuration
+# =============================================================================
+# Copy this file to data/config.yaml (or to MEETSCRIBE_DATA_DIR directory)
+# and adjust for your environment.
+#
+# Data directory path is set via .env:
+#   MEETSCRIBE_DATA_DIR=./data
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Processing servers (speaches API)
+# -----------------------------------------------------------------------------
+# List of remote GPU servers for VAD, embeddings and transcription.
+# Each server has a unique name referenced in sections below.
+# Multiple servers can be used for parallel transcription.
+servers:
+  - url: http://192.168.1.100:8000
+    name: "GPU-1"
+  # - url: http://192.168.1.101:8000
+  #   name: "GPU-2"
+
+# -----------------------------------------------------------------------------
+# Voice Activity Detection (VAD)
+# -----------------------------------------------------------------------------
+# Detects speech segments, filters silence and noise before processing.
+# Reduces transcription hallucinations by only sending speech segments.
+vad:
+  # Server name from the servers section.
+  server: "GPU-1"
+
+  # HTTP request timeout in seconds.
+  # Increase for long audio files (> 1 hour).
+  timeout: 120
+
+# -----------------------------------------------------------------------------
+# Speaker Embeddings
+# -----------------------------------------------------------------------------
+# Neural model converts audio into a fixed-dimension vector.
+# Embeddings are used to compare voices via cosine similarity.
+embeddings:
+  # Server name from the servers section.
+  server: "GPU-1"
+
+  # HTTP request timeout in seconds per segment.
+  timeout: 60
+
+  # Cosine similarity threshold for known speaker identification.
+  # Higher = stricter matching (fewer false positives).
+  # Range: 0.0 — 1.0. Recommended: 0.5 — 0.7.
+  threshold: 0.6
+
+  # Minimum segment duration (ms) for embedding extraction.
+  # Shorter segments produce unreliable embeddings.
+  # Such segments inherit the speaker from the nearest neighbor.
+  min_duration_ms: 1500
+
+  # Threshold for clustering unknown speakers together.
+  # Stricter than the main threshold to avoid merging different people.
+  unknown_cluster_threshold: 0.7
+
+  # "Confident gap": if the best candidate is below threshold,
+  # but the gap to the second candidate >= confident_gap — accept the match.
+  # Helps identify speakers in noisy recordings.
+  confident_gap: 0.2
+
+  # Absolute minimum similarity even with a confident gap.
+  # Below this value, the match is never accepted.
+  min_threshold: 0.45
+
+  # Number of threads for parallel embedding extraction.
+  # Increase if the server supports concurrent requests.
+  max_workers: 4
+
+# -----------------------------------------------------------------------------
+# Transcription
+# -----------------------------------------------------------------------------
+# Speech-to-text via OpenAI-compatible API (speaches).
+transcription:
+  # Server list for parallel transcription.
+  # With multiple servers, segments are distributed round-robin.
+  servers: ["GPU-1"]
+
+  # Transcription model (HuggingFace ID).
+  # The server will try to auto-detect the model via /v1/models,
+  # this value is used as a fallback.
+  # Options: Systran/faster-whisper-{tiny,base,small,medium,large-v3}
+  model: "Systran/faster-whisper-medium"
+
+  # Transcription language (ISO 639-1). Overridden by --language in CLI.
+  language: ru
+
+  # HTTP request timeout in seconds per segment.
+  # For whole-file transcription, max(timeout, 600) is used automatically.
+  timeout: 120
+
+  # Maximum gap (ms) between segments to merge into one chunk.
+  # Small gaps between phrases of the same speaker are merged.
+  max_gap_ms: 500
+
+  # Maximum merged chunk duration (ms).
+  # Limits the audio size sent for transcription at once.
+  # 30000 ms = 30 seconds.
+  max_chunk_ms: 30000
+
+# -----------------------------------------------------------------------------
+# Web UI
+# -----------------------------------------------------------------------------
+# Built-in web interface settings (FastAPI + Uvicorn).
+web:
+  # Bind address. 127.0.0.1 = localhost only, 0.0.0.0 = all interfaces.
+  host: 127.0.0.1
+
+  # Web server port.
+  port: 8080
+
+  # Auth session lifetime in days.
+  # After expiration the user needs to log in again.
+  session_ttl_days: 7

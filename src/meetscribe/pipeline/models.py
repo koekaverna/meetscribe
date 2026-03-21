@@ -28,8 +28,8 @@ class TranscriptSegment:
 
 def merge_close_segments(
     segments: list[SpeechSegment],
-    max_gap_ms: int = 500,
-    max_chunk_ms: int = 30000,
+    max_gap_ms: int,
+    max_chunk_ms: int,
 ) -> list[SpeechSegment]:
     """Merge segments with small gaps into larger chunks for transcription.
 
@@ -58,8 +58,8 @@ def merge_close_segments(
 
 def merge_by_proximity(
     segments: list[SpeechSegment],
-    max_gap_ms: int = 500,
-    max_chunk_ms: int = 30000,
+    max_gap_ms: int,
+    max_chunk_ms: int,
 ) -> list[SpeechSegment]:
     """Merge close segments ignoring speaker, purely by time proximity.
 

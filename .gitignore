@@ -29,6 +29,7 @@ ENV/
 .idea/
 .vscode/
 .claude/settings.local.json
+CLAUDE.md
 *.swp
 *.swo
 *~
@@ -54,6 +55,12 @@ pretrained_models/
 # User data (stored in platform-specific dirs)
 voiceprints/
 samples/
+
+# Environment
+.env
+
+# Local data directory
+data/
 
 # OS
 .DS_Store

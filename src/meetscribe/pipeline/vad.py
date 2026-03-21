@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class VoiceActivityDetector:
     """VAD using speaches POST /v1/audio/speech/timestamps endpoint."""
 
-    def __init__(self, server_url: str, timeout: float = 120.0):
+    def __init__(self, server_url: str, timeout: float):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
 

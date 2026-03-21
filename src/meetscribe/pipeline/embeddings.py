@@ -9,27 +9,20 @@ from pathlib import Path
 import httpx
 from tqdm import tqdm
 
+from .. import config
 from .audio import extract_segment
 from .models import SpeechSegment
 
 logger = logging.getLogger(__name__)
 
-# Minimum segment duration for reliable embedding extraction.
-# Segments shorter than this get None embedding and inherit speaker from neighbors.
-MIN_EMBEDDING_DURATION_MS = 1500
-
-# Stricter threshold for clustering unknown speakers together.
-UNKNOWN_CLUSTER_THRESHOLD = 0.7
-
 
 class EmbeddingExtractor:
     """Speaker embedding extraction via speaches POST /v1/audio/speech/embedding."""
 
-    DEFAULT_MODEL = "Wespeaker/wespeaker-voxceleb-resnet34-LM"
-
-    def __init__(self, server_url: str, timeout: float = 60.0):
+    def __init__(self, server_url: str, timeout: float, min_duration_ms: int):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
+        self.min_duration_ms = min_duration_ms
 
     def extract(self, audio_bytes: bytes, filename: str = "audio.wav") -> list[float]:
         """Extract speaker embedding from audio bytes.
@@ -44,7 +37,6 @@ class EmbeddingExtractor:
         response = httpx.post(
             f"{self.server_url}/v1/audio/speech/embedding",
             files={"file": (filename, audio_bytes, "audio/wav")},
-            data={"model": self.DEFAULT_MODEL},
             timeout=self.timeout,
         )
         if response.status_code != 200:
@@ -62,7 +54,7 @@ class EmbeddingExtractor:
         self, audio_path: Path, seg: SpeechSegment
     ) -> tuple[SpeechSegment, list[float] | None]:
         """Extract embedding for a single segment (used by thread pool)."""
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=config.TMP_DIR) as tmp:
             chunk_path = Path(tmp.name)
 
         try:
@@ -85,12 +77,12 @@ class EmbeddingExtractor:
         self,
         audio_path: Path,
         segments: list[SpeechSegment],
-        max_workers: int = 4,
+        max_workers: int,
     ) -> list[tuple[SpeechSegment, list[float] | None]]:
         """Extract embeddings for each speech segment in parallel.
 
         Cuts audio per segment via FFmpeg, then calls the embedding API.
-        Segments shorter than MIN_EMBEDDING_DURATION_MS get None embedding.
+        Segments shorter than min_duration_ms get None embedding.
 
         Returns:
             List of (segment, embedding_or_None) tuples in original order.
@@ -100,7 +92,7 @@ class EmbeddingExtractor:
         to_extract: list[tuple[int, SpeechSegment]] = []
 
         for i, seg in enumerate(segments):
-            if seg.duration_ms < MIN_EMBEDDING_DURATION_MS:
+            if seg.duration_ms < self.min_duration_ms:
                 logger.debug(
                     "Skipping short segment %d-%dms (%dms)",
                     seg.start_ms,
@@ -140,23 +132,27 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
 class SpeakerIdentifier:
     """Identify speakers by comparing embeddings against stored voiceprints."""
 
-    def __init__(self, voiceprints: dict[str, list[float]], threshold: float = 0.6):
+    def __init__(
+        self,
+        voiceprints: dict[str, list[float]],
+        threshold: float,
+        confident_gap: float,
+        min_threshold: float,
+        unknown_cluster_threshold: float,
+    ):
         self.voiceprints = voiceprints
         self.threshold = threshold
+        self.confident_gap = confident_gap
+        self.min_threshold = min_threshold
+        self.unknown_cluster_threshold = unknown_cluster_threshold
         logger.info("Loaded %d voiceprints (threshold=%.2f)", len(self.voiceprints), threshold)
-
-    # If best match is below threshold but the gap between 1st and 2nd
-    # candidate exceeds this value, accept the match anyway (confident gap).
-    CONFIDENT_GAP = 0.2
-    # Absolute minimum similarity even with a confident gap.
-    MIN_THRESHOLD = 0.45
 
     def identify(self, embedding: list[float]) -> tuple[str | None, float]:
         """Find the best matching known speaker.
 
         Uses two criteria:
         1. Direct match: best_sim >= threshold
-        2. Confident gap: best_sim >= MIN_THRESHOLD and gap to 2nd >= CONFIDENT_GAP
+        2. Confident gap: best_sim >= min_threshold and gap to 2nd >= confident_gap
 
         Returns:
             (speaker_name, similarity) if matched, else (None, best_sim).
@@ -175,7 +171,7 @@ class SpeakerIdentifier:
 
         # Confident gap: large margin over 2nd candidate
         gap = best_sim - second_sim
-        if best_sim >= self.MIN_THRESHOLD and gap >= self.CONFIDENT_GAP:
+        if best_sim >= self.min_threshold and gap >= self.confident_gap:
             logger.debug(
                 "Accepted %s via confident gap: sim=%.3f, gap=%.3f",
                 best_name,
@@ -258,7 +254,7 @@ class SpeakerIdentifier:
                 best_sim = sim
                 best_idx = i
 
-        if best_sim >= UNKNOWN_CLUSTER_THRESHOLD and best_idx >= 0:
+        if best_sim >= self.unknown_cluster_threshold and best_idx >= 0:
             return best_idx
 
         # New cluster

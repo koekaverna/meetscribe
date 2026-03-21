@@ -52,33 +52,58 @@ uv pip install -e ".[web]"
 
 The `[web]` extra installs FastAPI, Uvicorn, Jinja2 and other web dependencies. Omit it for CLI-only usage.
 
-## Server Configuration
+## Configuration
 
-MeetScribe requires at least one speaches API server for processing. Copy `servers.example.yaml` to your data directory as `servers.yaml`:
+MeetScribe uses two configuration files:
 
-- **Windows:** `%LOCALAPPDATA%/meetscribe/servers.yaml`
-- **macOS:** `~/Library/Application Support/meetscribe/servers.yaml`
-- **Linux:** `~/.local/share/meetscribe/servers.yaml`
+| File | Purpose |
+|------|---------|
+| `.env` | Data directory path and environment settings |
+| `data/config.yaml` | Servers, pipeline parameters, web UI settings |
 
-Run `meetscribe info` to see the exact path.
+### Quick start
 
-```yaml
-servers:
-  - url: http://192.168.1.100:8000
-    name: "GPU-1"
+```bash
+# 1. Set up environment
+cp .env.example .env
 
-vad:
-  server: "GPU-1"
+# 2. Set up config
+cp config.example.yaml data/config.yaml
+# Edit data/config.yaml — set your server URL
 
-embeddings:
-  server: "GPU-1"
-
-transcribe:
-  servers:
-    - "GPU-1"
+# 3. Initialize database and create admin user
+meetscribe team create default
+meetscribe user create admin --team default --admin
 ```
 
-Multiple transcription servers enable parallel processing of audio chunks.
+### `.env`
+
+Controls where MeetScribe stores its data. See [.env.example](.env.example).
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MEETSCRIBE_DATA_DIR` | Root directory for DB, logs, sessions, samples | Platform-specific (see below) |
+| `MEETSCRIBE_TMP_DIR` | Temp files directory | `DATA_DIR/tmp` |
+| `MEETSCRIBE_MAX_UPLOAD_SIZE` | Max upload size in bytes | `4294967296` (4 GB) |
+
+Default data directory without `MEETSCRIBE_DATA_DIR`:
+- **Windows:** `%LOCALAPPDATA%/meetscribe`
+- **macOS:** `~/Library/Application Support/meetscribe`
+- **Linux:** `~/.local/share/meetscribe`
+
+Setting `MEETSCRIBE_DATA_DIR=./data` keeps everything in the project directory — convenient for development and debugging.
+
+### `config.yaml`
+
+Located at `MEETSCRIBE_DATA_DIR/config.yaml` (by default `./data/config.yaml`). All application settings in one file. See [config.example.yaml](config.example.yaml) for a fully documented example.
+
+**Sections:**
+
+- **`servers`** — List of speaches API servers (URL + name)
+- **`vad`** — Voice Activity Detection: server, timeout
+- **`embeddings`** — Speaker embeddings: server, timeout, identification thresholds, clustering parameters
+- **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging
+- **`web`** — Web UI: host, port, session TTL
 
 ## Web UI
 
@@ -88,6 +113,8 @@ Start the web interface:
 meetscribe web
 meetscribe web --host 0.0.0.0 --port 8080
 ```
+
+Host and port can also be set in `config.yaml` under the `web` section. CLI arguments take priority.
 
 ### First-time setup
 
@@ -171,9 +198,9 @@ Tracks without a `--trackN` assignment are diarized automatically.
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `-t, --team` | Team to use for speaker identification | default |
+| `-t, --team` | Team to use for speaker identification | `default` |
 | `-o, --output` | Output file or directory | required |
-| `-l, --language` | Language code | ru |
+| `-l, --language` | Language code (overrides config.yaml) | from config |
 | `--trackN` | Assign speaker name to track N | diarize |
 
 ### `meetscribe enroll`
@@ -221,7 +248,7 @@ meetscribe web --host 0.0.0.0 --port 8080
 
 ### `meetscribe info`
 
-Display data directories, server configuration, and settings:
+Display data directories, configuration, and settings:
 
 ```bash
 meetscribe info

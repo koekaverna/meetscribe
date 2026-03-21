@@ -19,12 +19,18 @@ from meetscribe.database import (
     get_team,
     get_user_by_username,
 )
+from meetscribe.servers import load_config
 
 logger = logging.getLogger(__name__)
 
-SESSION_TTL_DAYS = 7
 COOKIE_NAME = "meetscribe_session"
 PBKDF2_ITERATIONS = 600_000
+
+
+def _get_session_ttl_days() -> int:
+    """Get session TTL from config."""
+    cfg = load_config(config.CONFIG_FILE)
+    return cfg.web.session_ttl_days
 
 
 @dataclass
@@ -84,7 +90,7 @@ class AuthService:
             user_id = create_user(conn, username, pw_hash, team["id"])
 
             token = secrets.token_hex(32)
-            expires = datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS)
+            expires = datetime.now(UTC) + timedelta(days=_get_session_ttl_days())
             create_auth_session(conn, user_id, token, expires.isoformat())
 
             user = AuthUser(
@@ -114,7 +120,7 @@ class AuthService:
             delete_expired_sessions(conn)
 
             token = secrets.token_hex(32)
-            expires = datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS)
+            expires = datetime.now(UTC) + timedelta(days=_get_session_ttl_days())
             create_auth_session(conn, row["id"], token, expires.isoformat())
 
             user = AuthUser(

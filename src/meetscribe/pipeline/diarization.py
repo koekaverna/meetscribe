@@ -24,11 +24,21 @@ class DiarizationPipeline:
         vad_url: str,
         embedding_url: str,
         voiceprints: dict[str, list[float]],
-        threshold: float = 0.6,
+        threshold: float,
+        vad_timeout: float,
+        embedding_timeout: float,
+        min_duration_ms: int,
+        unknown_cluster_threshold: float,
+        confident_gap: float,
+        min_threshold: float,
+        max_workers: int,
     ):
-        self.vad = VoiceActivityDetector(vad_url)
-        self.embeddings = EmbeddingExtractor(embedding_url)
-        self.identifier = SpeakerIdentifier(voiceprints, threshold)
+        self.vad = VoiceActivityDetector(vad_url, vad_timeout)
+        self.embeddings = EmbeddingExtractor(embedding_url, embedding_timeout, min_duration_ms)
+        self.identifier = SpeakerIdentifier(
+            voiceprints, threshold, confident_gap, min_threshold, unknown_cluster_threshold
+        )
+        self.max_workers = max_workers
 
     def diarize(self, audio_path: Path) -> list[SpeechSegment]:
         """Run full diarization pipeline on an audio file.
@@ -47,7 +57,9 @@ class DiarizationPipeline:
         logger.info("VAD: %d speech segments", len(segments))
 
         # 2. Extract embeddings
-        segments_with_embeddings = self.embeddings.extract_segments(audio_path, segments)
+        segments_with_embeddings = self.embeddings.extract_segments(
+            audio_path, segments, self.max_workers
+        )
         logger.info("Embeddings: extracted for %d segments", len(segments_with_embeddings))
 
         # 3. Identify speakers

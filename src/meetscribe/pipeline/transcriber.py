@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 from tqdm import tqdm
 
+from .. import config
 from .audio import extract_segment
 from .models import SpeechSegment, TranscriptSegment, merge_close_segments
 
@@ -16,12 +17,10 @@ logger = logging.getLogger(__name__)
 class RemoteTranscriber:
     """Single-server transcription client using OpenAI-compatible /v1/audio/transcriptions."""
 
-    DEFAULT_MODEL = "Systran/faster-whisper-medium"
-
-    def __init__(self, server_url: str, timeout: float = 120.0):
+    def __init__(self, server_url: str, timeout: float, model: str):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
-        self.model = self._detect_model() or self.DEFAULT_MODEL
+        self.model = self._detect_model() or model
 
     def _detect_model(self) -> str | None:
         """Try to detect available ASR model from server."""
@@ -38,7 +37,7 @@ class RemoteTranscriber:
     def transcribe(
         self,
         audio_path: Path,
-        language: str = "ru",
+        language: str,
     ) -> list[TranscriptSegment]:
         """Transcribe an audio file via the remote API.
 
@@ -80,11 +79,21 @@ class Transcriber:
     via remote speaches API servers.
     """
 
-    def __init__(self, server_urls: list[str], language: str = "ru", timeout: float = 120.0):
+    def __init__(
+        self,
+        server_urls: list[str],
+        language: str,
+        timeout: float,
+        model: str,
+        max_gap_ms: int,
+        max_chunk_ms: int,
+    ):
         if not server_urls:
             raise ValueError("At least one transcription server URL is required")
-        self.clients = [RemoteTranscriber(url, timeout) for url in server_urls]
+        self.clients = [RemoteTranscriber(url, timeout, model) for url in server_urls]
         self.language = language
+        self.max_gap_ms = max_gap_ms
+        self.max_chunk_ms = max_chunk_ms
 
     def transcribe_file(
         self,
@@ -128,16 +137,20 @@ class Transcriber:
         if not segments:
             return []
 
-        merged = merge_close_segments(segments)
+        merged = merge_close_segments(segments, self.max_gap_ms, self.max_chunk_ms)
         results: list[TranscriptSegment] = []
 
         total_ms = sum(s.duration_ms for s in merged)
-        pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
+        pbar = tqdm(
+            total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False
+        )
 
         for i, chunk in enumerate(merged):
             client = self.clients[i % len(self.clients)]
 
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            with tempfile.NamedTemporaryFile(
+                suffix=".wav", delete=False, dir=config.TMP_DIR
+            ) as tmp:
                 chunk_path = Path(tmp.name)
 
             try:
