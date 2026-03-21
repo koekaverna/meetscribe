@@ -6,13 +6,17 @@ Supports video files with multiple audio tracks and audio files directly.
 Per-track mode: diarize (default) or assign speaker name via --trackN.
 
 Usage:
-    meetscribe enroll "John" samples/*.wav
     meetscribe transcribe video.mp4 -o output.md
     meetscribe transcribe video.mp4 -o output.md --track1 "Host"
     meetscribe transcribe audio1.wav audio2.wav -o output.md --track1 "Name"
+    meetscribe enroll "John" samples/*.wav
     meetscribe extract video.mp4 -o output_dir/
+    meetscribe extract-samples meeting.mp4
     meetscribe list-speakers
+    meetscribe info
+    meetscribe web
     meetscribe team create my-team
+    meetscribe user create admin --team default --admin
     meetscribe -t my-team enroll "John" samples/*.wav
 """
 
@@ -88,10 +92,6 @@ C_YELLOW = "\033[93m"
 C_RED = "\033[91m"
 C_MAGENTA = "\033[95m"
 C_BLUE = "\033[94m"
-
-# Defaults
-DEFAULT_LANGUAGE = "ru"
-
 
 # === Helpers ===
 def _format_elapsed(seconds: float) -> str:
@@ -231,8 +231,8 @@ def cmd_enroll(args, team_ctx: TeamContext):
         if not f.exists():
             raise FileNotFoundError(f"File not found: {f}")
 
-    # Load server config for embedding extraction
-    servers_cfg = load_config(config.SERVERS_CONFIG)
+    # Load config
+    cfg = load_config(config.CONFIG_FILE)
 
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \U0001f399\ufe0f  {C_BOLD}Speaker Enrollment{C_RESET}")
@@ -264,7 +264,11 @@ def cmd_enroll(args, team_ctx: TeamContext):
 
     # Compute voiceprint via remote embeddings API
     with substep("Computing voiceprint", "\U0001f511"):
-        extractor = EmbeddingExtractor(servers_cfg.get_embeddings_url())
+        extractor = EmbeddingExtractor(
+            cfg.get_embeddings_url(),
+            cfg.embeddings.timeout,
+            cfg.embeddings.min_duration_ms,
+        )
         embeddings: list[list[float]] = []
         for wav_file in wav_files:
             emb = extractor.extract_from_file(wav_file)
@@ -274,7 +278,7 @@ def cmd_enroll(args, team_ctx: TeamContext):
         # Average embeddings across samples
         avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
         save_voiceprint(
-            team_ctx.conn, team_ctx.id, args.name, avg_embedding, EmbeddingExtractor.DEFAULT_MODEL
+            team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.transcription.model
         )
 
     elapsed = time.time() - t
@@ -377,8 +381,9 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
 
     track_names = parse_track_args(extra_args)
 
-    # Load server config
-    servers_cfg = load_config(config.SERVERS_CONFIG)
+    # Load config
+    cfg = load_config(config.CONFIG_FILE)
+    language = args.language or cfg.transcription.language
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     if output_path.is_dir():
@@ -416,16 +421,28 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
 
     # Create pipeline components
     diarization = DiarizationPipeline(
-        vad_url=servers_cfg.get_vad_url(),
-        embedding_url=servers_cfg.get_embeddings_url(),
+        vad_url=cfg.get_vad_url(),
+        embedding_url=cfg.get_embeddings_url(),
         voiceprints=voiceprints,
+        threshold=cfg.embeddings.threshold,
+        vad_timeout=cfg.vad.timeout,
+        embedding_timeout=cfg.embeddings.timeout,
+        min_duration_ms=cfg.embeddings.min_duration_ms,
+        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
+        confident_gap=cfg.embeddings.confident_gap,
+        min_threshold=cfg.embeddings.min_threshold,
+        max_workers=cfg.embeddings.max_workers,
     )
     transcriber = Transcriber(
-        servers_cfg.get_transcription_urls(),
-        language=args.language,
+        cfg.get_transcription_urls(),
+        language=language,
+        timeout=cfg.transcription.timeout,
+        model=cfg.transcription.model,
+        max_gap_ms=cfg.transcription.max_gap_ms,
+        max_chunk_ms=cfg.transcription.max_chunk_ms,
     )
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
         work_dir = Path(tmp)
 
         if is_single_video:
@@ -482,7 +499,7 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
 
                     with substep("Speaker embeddings", "\U0001f511"):
                         segments_with_emb = diarization.embeddings.extract_segments(
-                            track_path, segments
+                            track_path, segments, diarization.max_workers
                         )
                         ok(f"{len(segments_with_emb)} embeddings extracted")
 
@@ -528,8 +545,8 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
-    # Load server config
-    servers_cfg = load_config(config.SERVERS_CONFIG)
+    # Load config
+    cfg = load_config(config.CONFIG_FILE)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -545,12 +562,20 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
 
     total_start = time.time()
     diarization = DiarizationPipeline(
-        vad_url=servers_cfg.get_vad_url(),
-        embedding_url=servers_cfg.get_embeddings_url(),
+        vad_url=cfg.get_vad_url(),
+        embedding_url=cfg.get_embeddings_url(),
         voiceprints=voiceprints,
+        threshold=cfg.embeddings.threshold,
+        vad_timeout=cfg.vad.timeout,
+        embedding_timeout=cfg.embeddings.timeout,
+        min_duration_ms=cfg.embeddings.min_duration_ms,
+        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
+        confident_gap=cfg.embeddings.confident_gap,
+        min_threshold=cfg.embeddings.min_threshold,
+        max_workers=cfg.embeddings.max_workers,
     )
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
         work_dir = Path(tmp)
 
         with step(1, 2, "Extracting audio", "\U0001f3b5"):
@@ -577,7 +602,7 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
 
                 with substep("Speaker embeddings", "\U0001f511"):
                     segments_with_emb = diarization.embeddings.extract_segments(
-                        track_path, segments
+                        track_path, segments, diarization.max_workers
                     )
                     ok(f"{len(segments_with_emb)} embeddings extracted")
 
@@ -607,14 +632,14 @@ def cmd_info(args, team_ctx: TeamContext):
     print(f"{C_MAGENTA}{'=' * 60}{C_RESET}\n")
     _print_team_header(team_ctx)
     print(f"  \U0001f4c2 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
-    print(f"  \U0001f4e6 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
     print(f"  \U0001f5c3\ufe0f  Database:   {C_DIM}{config.DB_PATH}{C_RESET}")
     print(f"  \U0001f3a4 Enrolled:   {C_DIM}{team_ctx.enrolled_samples_dir}{C_RESET}")
     print(f"  \U0001f50a Unknown:    {C_DIM}{team_ctx.unknown_samples_dir}{C_RESET}")
     vp_count = count_voiceprints(team_ctx.conn, team_ctx.id)
     print(f"  \U0001f511 Voiceprints:{C_DIM} {vp_count} in DB (team: {team_ctx.name}){C_RESET}")
+    print(f"  \U0001f5d1\ufe0f  Temp:       {C_DIM}{config.TMP_DIR}{C_RESET}")
     print(f"  \U0001f4cb Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
-    print(f"  \u2699\ufe0f  Config:     {C_DIM}{config.SERVERS_CONFIG}{C_RESET}")
+    print(f"  \u2699\ufe0f  Config:     {C_DIM}{config.CONFIG_FILE}{C_RESET}")
     print()
 
 
@@ -628,7 +653,10 @@ def cmd_web(args):
             f'  Install with: pip install -e ".[web]"\n'
         )
         raise SystemExit(1)
-    run(host=args.host, port=args.port)
+    cfg = load_config(config.CONFIG_FILE)
+    host = args.host or cfg.web.host
+    port = args.port or cfg.web.port
+    run(host=host, port=port)
 
 
 # === User management commands ===
@@ -829,7 +857,7 @@ def main():
     )
     p.add_argument("input", nargs="+", help="Video or audio file(s)")
     p.add_argument("-o", "--output", required=True, help="Output path")
-    p.add_argument("-l", "--language", default=DEFAULT_LANGUAGE, help="Language")
+    p.add_argument("-l", "--language", default=None, help="Language (default: from config.yaml)")
     p.set_defaults(func=cmd_transcribe)
 
     # info
@@ -838,8 +866,8 @@ def main():
 
     # web
     p = subs.add_parser("web", help="Start web UI")
-    p.add_argument("--host", default="127.0.0.1", help="Host to bind")
-    p.add_argument("--port", type=int, default=8080, help="Port to bind")
+    p.add_argument("--host", default=None, help="Host to bind (default: from config.yaml)")
+    p.add_argument("--port", type=int, default=None, help="Port (default: from config.yaml)")
     p.set_defaults(func=cmd_web)
 
     # team management

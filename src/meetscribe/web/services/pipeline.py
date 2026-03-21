@@ -20,15 +20,15 @@ from meetscribe.pipeline import (
     Transcriber,
     audio,
 )
-from meetscribe.servers import ServersConfig, load_config
+from meetscribe.servers import AppConfig, load_config
 from meetscribe.team import TeamContext, resolve_team
 
 logger = logging.getLogger(__name__)
 
 
-def _load_servers_config() -> ServersConfig:
-    """Load the server configuration."""
-    return load_config(config.SERVERS_CONFIG)
+def _load_config() -> AppConfig:
+    """Load the application configuration."""
+    return load_config(config.CONFIG_FILE)
 
 
 class PipelineRunner:
@@ -40,32 +40,44 @@ class PipelineRunner:
 
     def __init__(self, team_name: str | None = None):
         self.team_name = team_name
-        self._servers_cfg: ServersConfig | None = None
+        self._cfg: AppConfig | None = None
 
     def _resolve(self) -> TeamContext:
         """Resolve team context (opens a fresh DB connection for this thread)."""
         return resolve_team(self.team_name)
 
     @property
-    def servers_cfg(self) -> ServersConfig:
-        if self._servers_cfg is None:
-            self._servers_cfg = _load_servers_config()
-        return self._servers_cfg
+    def cfg(self) -> AppConfig:
+        if self._cfg is None:
+            self._cfg = _load_config()
+        return self._cfg
 
     def _create_diarization(self, team_ctx: TeamContext) -> DiarizationPipeline:
         """Create a diarization pipeline with current voiceprints."""
         voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
         return DiarizationPipeline(
-            vad_url=self.servers_cfg.get_vad_url(),
-            embedding_url=self.servers_cfg.get_embeddings_url(),
+            vad_url=self.cfg.get_vad_url(),
+            embedding_url=self.cfg.get_embeddings_url(),
             voiceprints=voiceprints,
+            threshold=self.cfg.embeddings.threshold,
+            vad_timeout=self.cfg.vad.timeout,
+            embedding_timeout=self.cfg.embeddings.timeout,
+            min_duration_ms=self.cfg.embeddings.min_duration_ms,
+            unknown_cluster_threshold=self.cfg.embeddings.unknown_cluster_threshold,
+            confident_gap=self.cfg.embeddings.confident_gap,
+            min_threshold=self.cfg.embeddings.min_threshold,
+            max_workers=self.cfg.embeddings.max_workers,
         )
 
-    def _create_transcriber(self, language: str = "ru") -> Transcriber:
+    def _create_transcriber(self, language: str) -> Transcriber:
         """Create a transcriber with remote servers."""
         return Transcriber(
-            self.servers_cfg.get_transcription_urls(),
+            self.cfg.get_transcription_urls(),
             language=language,
+            timeout=self.cfg.transcription.timeout,
+            model=self.cfg.transcription.model,
+            max_gap_ms=self.cfg.transcription.max_gap_ms,
+            max_chunk_ms=self.cfg.transcription.max_chunk_ms,
         )
 
     def extract_samples(
@@ -126,7 +138,9 @@ class PipelineRunner:
                     msg = f"Track {track_num}: Extracting embeddings ({seg_count} segments)..."
                     yield {"step": step, "total": total_steps, "message": msg}
 
-                segments_with_emb = diarization.embeddings.extract_segments(track_path, segments)
+                segments_with_emb = diarization.embeddings.extract_segments(
+                    track_path, segments, diarization.max_workers
+                )
 
                 # Identification
                 step += 1
@@ -156,7 +170,9 @@ class PipelineRunner:
 
                     for i, seg in enumerate(segs[:max_samples_per_speaker]):
                         # Extract segment audio via FFmpeg
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                        with tempfile.NamedTemporaryFile(
+                            suffix=".wav", delete=False, dir=config.TMP_DIR
+                        ) as tmp:
                             chunk_path = Path(tmp.name)
 
                         try:
@@ -217,7 +233,11 @@ class PipelineRunner:
         total_steps = 2
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to server..."}
-        extractor = EmbeddingExtractor(self.servers_cfg.get_embeddings_url())
+        extractor = EmbeddingExtractor(
+            self.cfg.get_embeddings_url(),
+            self.cfg.embeddings.timeout,
+            self.cfg.embeddings.min_duration_ms,
+        )
 
         sample_count = len(sample_paths)
         yield {
@@ -240,7 +260,7 @@ class PipelineRunner:
                 team_ctx.id,
                 name,
                 avg_embedding,
-                EmbeddingExtractor.DEFAULT_MODEL,
+                self.cfg.transcription.model,
             )
         finally:
             team_ctx.conn.close()
@@ -256,18 +276,19 @@ class PipelineRunner:
         self,
         track_paths: list[Path],
         track_speakers: dict[int, str | None],
-        language: str = "ru",
+        language: str | None = None,
         progress_callback: Any | None = None,
         progress_queue: Any | None = None,
     ) -> Generator[dict, None, None]:
         """Transcribe tracks. Yields progress and results."""
+        effective_language = language or self.cfg.transcription.language
         total_steps = len(track_paths) * 2 + 2
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to servers..."}
         team_ctx = self._resolve()
         try:
             diarization = self._create_diarization(team_ctx)
-            transcriber = self._create_transcriber(language)
+            transcriber = self._create_transcriber(effective_language)
 
             step = 1
             all_segments = []
@@ -302,7 +323,7 @@ class PipelineRunner:
                 else:
                     # Diarize: embeddings -> identification (VAD already done above)
                     segments_with_emb = diarization.embeddings.extract_segments(
-                        track_path, segments
+                        track_path, segments, diarization.max_workers
                     )
                     labeled = diarization.identifier.identify_segments(segments_with_emb)
 

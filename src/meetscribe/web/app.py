@@ -176,7 +176,7 @@ def create_app() -> FastAPI:
     return app
 
 
-def run(host: str = "127.0.0.1", port: int = 8080) -> None:
+def run(host: str = "127.0.0.1", port: int = 8080) -> None:  # defaults for direct invocation
     """Run the web server."""
     import uvicorn
 

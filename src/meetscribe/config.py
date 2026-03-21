@@ -4,14 +4,21 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def get_data_dir() -> Path:
-    """Get platform-specific data directory for MeetScribe.
+    """Get data directory for MeetScribe.
 
-    Windows: %LOCALAPPDATA%/meetscribe
-    macOS: ~/Library/Application Support/meetscribe
-    Linux: ~/.local/share/meetscribe (XDG_DATA_HOME)
+    Override with MEETSCRIBE_DATA_DIR environment variable.
+    Default: platform-specific location.
     """
+    override = os.environ.get("MEETSCRIBE_DATA_DIR")
+    if override:
+        return Path(override).resolve()
+
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     elif sys.platform == "darwin":
@@ -22,26 +29,22 @@ def get_data_dir() -> Path:
     return base / "meetscribe"
 
 
-def get_cache_dir() -> Path:
-    """Get platform-specific cache directory for MeetScribe.
 
-    Windows: %LOCALAPPDATA%/meetscribe/cache
-    macOS: ~/Library/Caches/meetscribe
-    Linux: ~/.cache/meetscribe (XDG_CACHE_HOME)
+def get_tmp_dir() -> Path:
+    """Get temp directory for MeetScribe.
+
+    Override with MEETSCRIBE_TMP_DIR environment variable.
+    Default: DATA_DIR/tmp (ensures temp files are on the same disk as data).
     """
-    if sys.platform == "win32":
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
-        return base / "meetscribe" / "cache"
-    elif sys.platform == "darwin":
-        return Path.home() / "Library" / "Caches" / "meetscribe"
-    else:
-        base = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-        return base / "meetscribe"
+    override = os.environ.get("MEETSCRIBE_TMP_DIR")
+    if override:
+        return Path(override).resolve()
+    return get_data_dir() / "tmp"
 
 
 # Directory paths
 DATA_DIR = get_data_dir()
-CACHE_DIR = get_cache_dir()
+TMP_DIR = get_tmp_dir()
 LOGS_DIR = DATA_DIR / "logs"
 TEAMS_DIR = DATA_DIR / "teams"
 
@@ -56,8 +59,8 @@ MAX_UPLOAD_SIZE = int(os.environ.get("MEETSCRIBE_MAX_UPLOAD_SIZE", 4 * 1024 * 10
 # Database
 DB_PATH = DATA_DIR / "meetscribe.db"
 
-# Server config file (global, shared across teams)
-SERVERS_CONFIG = DATA_DIR / "servers.yaml"
+# Application config file
+CONFIG_FILE = DATA_DIR / "config.yaml"
 
 
 def get_team_samples_dir(team_name: str) -> Path:
@@ -77,7 +80,7 @@ def get_team_unknown_dir(team_name: str) -> Path:
 
 def ensure_dirs() -> None:
     """Create global directories (not team-specific)."""
-    for d in [DATA_DIR, CACHE_DIR, LOGS_DIR, TEAMS_DIR]:
+    for d in [DATA_DIR, TMP_DIR, LOGS_DIR, TEAMS_DIR]:
         d.mkdir(parents=True, exist_ok=True)
 
 

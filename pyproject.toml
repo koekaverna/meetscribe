@@ -33,6 +33,7 @@ dependencies = [
     "pyyaml",
     "tqdm",
     "colorama",
+    "python-dotenv",
 ]
 
 [project.optional-dependencies]
