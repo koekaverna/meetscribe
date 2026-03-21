@@ -42,6 +42,9 @@ embeddings:
   # Server name from the servers section.
   server: "GPU-1"
 
+  # Speaker embedding model (HuggingFace ID).
+  model: "pyannote/wespeaker-voxceleb-resnet34-LM"
+
   # HTTP request timeout in seconds per segment.
   timeout: 60
 

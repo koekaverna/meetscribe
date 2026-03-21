@@ -19,10 +19,11 @@ logger = logging.getLogger(__name__)
 class EmbeddingExtractor:
     """Speaker embedding extraction via speaches POST /v1/audio/speech/embedding."""
 
-    def __init__(self, server_url: str, timeout: float, min_duration_ms: int):
+    def __init__(self, server_url: str, timeout: float, min_duration_ms: int, model: str):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
         self.min_duration_ms = min_duration_ms
+        self.model = model
 
     def extract(self, audio_bytes: bytes, filename: str = "audio.wav") -> list[float]:
         """Extract speaker embedding from audio bytes.
@@ -37,6 +38,7 @@ class EmbeddingExtractor:
         response = httpx.post(
             f"{self.server_url}/v1/audio/speech/embedding",
             files={"file": (filename, audio_bytes, "audio/wav")},
+            data={"model": self.model},
             timeout=self.timeout,
         )
         if response.status_code != 200:

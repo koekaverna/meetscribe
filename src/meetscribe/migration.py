@@ -7,7 +7,6 @@ import sqlite3
 
 from . import config
 from .database import get_db, get_team, save_voiceprint
-from .pipeline.embeddings import EmbeddingExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ def migrate(conn: sqlite3.Connection) -> MigrationResult:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 name = data["name"]
                 embedding = data["embedding"]
-                model = data.get("model", EmbeddingExtractor.DEFAULT_MODEL)
+                model = data.get("model", "pyannote/wespeaker-voxceleb-resnet34-LM")
                 save_voiceprint(conn, team_id, name, embedding, model)
                 migrated_vp += 1
                 logger.info("Migrated voiceprint: %s", name)

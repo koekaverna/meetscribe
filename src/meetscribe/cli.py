@@ -268,6 +268,7 @@ def cmd_enroll(args, team_ctx: TeamContext):
             cfg.get_embeddings_url(),
             cfg.embeddings.timeout,
             cfg.embeddings.min_duration_ms,
+            model=cfg.embeddings.model,
         )
         embeddings: list[list[float]] = []
         for wav_file in wav_files:
@@ -432,6 +433,7 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
         confident_gap=cfg.embeddings.confident_gap,
         min_threshold=cfg.embeddings.min_threshold,
         max_workers=cfg.embeddings.max_workers,
+        embedding_model=cfg.embeddings.model,
     )
     transcriber = Transcriber(
         cfg.get_transcription_urls(),
@@ -573,6 +575,7 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
         confident_gap=cfg.embeddings.confident_gap,
         min_threshold=cfg.embeddings.min_threshold,
         max_workers=cfg.embeddings.max_workers,
+        embedding_model=cfg.embeddings.model,
     )
 
     with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
