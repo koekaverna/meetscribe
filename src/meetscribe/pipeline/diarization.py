@@ -1,73 +1,58 @@
-"""Speaker diarization using Spectral Clustering."""
+"""Speaker diarization pipeline: VAD -> embeddings -> identification."""
 
-from dataclasses import dataclass
+import logging
+from pathlib import Path
 
-import numpy as np
-from speechbrain.processing.diarization import Spec_Clust_unorm
+from .embeddings import EmbeddingExtractor, SpeakerIdentifier
+from .models import SpeechSegment
+from .vad import VoiceActivityDetector
 
-
-@dataclass
-class DiarizedSegment:
-    """Speech segment with cluster assignment."""
-
-    start_ms: int
-    end_ms: int
-    cluster_id: int
-    embedding: np.ndarray
+logger = logging.getLogger(__name__)
 
 
-class SpectralClusterer:
-    """Speaker clustering using spectral clustering."""
+class DiarizationPipeline:
+    """Decomposed speaker diarization pipeline.
 
-    def __init__(self, min_speakers: int = 2, max_speakers: int = 10):
-        self.min_speakers = min_speakers
-        self.max_speakers = max_speakers
+    Steps:
+        1. VAD (remote) — detect speech segments
+        2. Speaker embeddings (remote) — extract embedding per segment
+        3. Identification (local) — cosine similarity with stored voiceprints
+    """
 
-    def cluster(
+    def __init__(
         self,
-        embeddings: list[np.ndarray],
-        segments: list[tuple[int, int]],
-        num_speakers: int | None = None,
-    ) -> list[DiarizedSegment]:
-        """Cluster embeddings into speaker groups."""
-        if len(embeddings) == 0:
+        vad_url: str,
+        embedding_url: str,
+        voiceprints_dir: Path,
+        threshold: float = 0.6,
+    ):
+        self.vad = VoiceActivityDetector(vad_url)
+        self.embeddings = EmbeddingExtractor(embedding_url)
+        self.identifier = SpeakerIdentifier(voiceprints_dir, threshold)
+
+    def diarize(self, audio_path: Path) -> list[SpeechSegment]:
+        """Run full diarization pipeline on an audio file.
+
+        Args:
+            audio_path: Path to audio file (WAV).
+
+        Returns:
+            List of SpeechSegment with speaker labels assigned.
+        """
+        # 1. VAD
+        segments = self.vad.detect(audio_path)
+        if not segments:
             return []
 
-        if len(embeddings) == 1:
-            return [
-                DiarizedSegment(
-                    start_ms=segments[0][0],
-                    end_ms=segments[0][1],
-                    cluster_id=0,
-                    embedding=embeddings[0],
-                )
-            ]
+        logger.info("VAD: %d speech segments", len(segments))
 
-        emb_matrix = np.stack(embeddings)
-        clusterer = Spec_Clust_unorm(
-            min_num_spkrs=self.min_speakers, max_num_spkrs=self.max_speakers
-        )
+        # 2. Extract embeddings
+        segments_with_embeddings = self.embeddings.extract_segments(audio_path, segments)
+        logger.info("Embeddings: extracted for %d segments", len(segments_with_embeddings))
 
-        k = num_speakers if num_speakers is not None else self.max_speakers
-        clusterer.cluster_embs(emb_matrix, k)
-        labels = clusterer.labels_
+        # 3. Identify speakers
+        labeled = self.identifier.identify_segments(segments_with_embeddings)
+        speakers = {s.speaker for s in labeled if s.speaker}
+        logger.info("Identification: %d speakers found", len(speakers))
 
-        results = []
-        for i, (emb, (start, end)) in enumerate(zip(embeddings, segments)):
-            results.append(
-                DiarizedSegment(
-                    start_ms=start, end_ms=end, cluster_id=int(labels[i]), embedding=emb
-                )
-            )
-
-        return results
-
-    def get_cluster_centroids(self, segments: list[DiarizedSegment]) -> dict[int, np.ndarray]:
-        """Compute centroid embedding for each cluster."""
-        clusters: dict[int, list[np.ndarray]] = {}
-        for seg in segments:
-            if seg.cluster_id not in clusters:
-                clusters[seg.cluster_id] = []
-            clusters[seg.cluster_id].append(seg.embedding)
-
-        return {cid: np.mean(embs, axis=0) for cid, embs in clusters.items()}
+        return labeled

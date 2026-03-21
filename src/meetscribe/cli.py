@@ -18,6 +18,7 @@ import argparse
 import glob
 import logging
 import re
+import shutil
 import tempfile
 import time
 import warnings
@@ -28,6 +29,7 @@ from pathlib import Path
 import colorama
 
 from . import config
+from .servers import load_config
 
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
@@ -50,18 +52,13 @@ logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handl
 logging.captureWarnings(True)
 warnings.filterwarnings("default")
 
-# === Heavy imports (after logging setup) ===
-import torch  # noqa: E402
-import torchaudio  # noqa: E402
-from tqdm import tqdm  # noqa: E402
-
 from .pipeline import (  # noqa: E402
+    DiarizationPipeline,
     EmbeddingExtractor,
-    SpeakerIdentifier,
-    SpectralClusterer,
+    SpeechSegment,
     Transcriber,
-    VADProcessor,
     audio,
+    save_voiceprint,
 )
 from .pipeline.audio import FFmpegNotFoundError  # noqa: E402
 
@@ -77,9 +74,7 @@ C_MAGENTA = "\033[95m"
 C_BLUE = "\033[94m"
 
 # Defaults
-DEFAULT_MODEL = "medium"
 DEFAULT_LANGUAGE = "ru"
-DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 # === Helpers ===
@@ -129,47 +124,36 @@ def info(msg: str) -> None:
 
 def save_unknown_samples(
     audio_path: Path,
-    segments: list,
-    cluster_names: dict[int, str],
+    segments: list[SpeechSegment],
     date_str: str,
     min_duration_ms: int = 3000,
     max_samples: int = 5,
 ) -> None:
-    """Save audio samples for unknown speakers."""
-    unknown_clusters = {cid for cid, name in cluster_names.items() if name.startswith("Unknown")}
-    if not unknown_clusters:
+    """Save audio samples for unknown speakers using FFmpeg."""
+    unknown_speakers: dict[str, list[SpeechSegment]] = {}
+    for seg in segments:
+        if seg.speaker and seg.speaker.startswith("Unknown") and seg.duration_ms >= min_duration_ms:
+            unknown_speakers.setdefault(seg.speaker, []).append(seg)
+
+    if not unknown_speakers:
         return
 
-    waveform, sr = torchaudio.load(str(audio_path))
     samples_dir = config.SAMPLES_DIR / "unknown"
 
-    for cluster_id in unknown_clusters:
-        cluster_dir = samples_dir / f"{date_str}-speaker{cluster_id}"
-
-        # Filter and sort by duration (longest first)
-        cluster_segs = [s for s in segments if getattr(s, "cluster_id", None) == cluster_id]
-        cluster_segs = [s for s in cluster_segs if s.duration_ms >= min_duration_ms]
-        cluster_segs.sort(key=lambda s: s.duration_ms, reverse=True)
-
-        if not cluster_segs:
-            warn(f"No samples >= {min_duration_ms / 1000:.0f}s for {cluster_names[cluster_id]}")
-            continue
+    for speaker_label, segs in unknown_speakers.items():
+        cluster_dir = samples_dir / f"{date_str}-{speaker_label.replace(' ', '_').lower()}"
+        segs.sort(key=lambda s: s.duration_ms, reverse=True)
 
         cluster_dir.mkdir(parents=True, exist_ok=True)
 
-        for i, seg in enumerate(cluster_segs[:max_samples]):
-            start = int(seg.start_ms * sr / 1000)
-            end = int(seg.end_ms * sr / 1000)
+        for i, seg in enumerate(segs[:max_samples]):
             duration_s = seg.duration_ms / 1000
-            torchaudio.save(
-                str(cluster_dir / f"sample_{i:02d}_{duration_s:.1f}s.wav"),
-                waveform[:, start:end],
-                sr,
-            )
+            out_file = cluster_dir / f"sample_{i:02d}_{duration_s:.1f}s.wav"
+            audio.extract_segment(audio_path, out_file, seg.start_ms, seg.end_ms)
 
         info(
-            f"Saved {min(len(cluster_segs), max_samples)} samples"
-            f" for {cluster_names[cluster_id]} (longest: {cluster_segs[0].duration_ms / 1000:.1f}s)"
+            f"Saved {min(len(segs), max_samples)} samples"
+            f" for {speaker_label} (longest: {segs[0].duration_ms / 1000:.1f}s)"
         )
 
 
@@ -204,82 +188,30 @@ def parse_track_args(extra_args: list[str]) -> dict[int, str]:
     return track_names
 
 
-# === Pipeline helpers ===
-
-
-def _load_pipeline(max_speakers: int, threshold: float):
-    """Load diarization pipeline models (VAD, embeddings, clustering, identification)."""
-    vad = VADProcessor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    clusterer = SpectralClusterer(min_speakers=2, max_speakers=max_speakers)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor, threshold=threshold)
-    return vad, extractor, clusterer, identifier
-
-
-def _run_vad(vad, audio_path: Path):
-    """Run VAD on an audio track. Returns speech segments."""
-    with substep("VAD segmentation", "🔊"):
-        speech_segs = vad.process(audio_path, show_progress=True)
-        ok(f"{len(speech_segs)} speech segments")
-    return speech_segs
-
-
-def _run_embeddings(vad, extractor, speech_segs, audio_path: Path):
-    """Extract embeddings for speech segments."""
-    with substep("Extracting embeddings", "🧬"):
-        embeddings = []
-        for seg in tqdm(speech_segs, desc="    Embeddings", leave=False, unit="seg"):
-            audio = vad.extract_segment_audio(audio_path, seg)
-            embeddings.append(extractor.extract_from_tensor(audio))
-        ok(f"{len(embeddings)} embeddings")
-    return embeddings
-
-
-def _run_clustering(clusterer, identifier, speech_segs, embeddings):
-    """Run clustering and identification. Returns (diarized, cluster_names)."""
-    time_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-    diarized = clusterer.cluster(embeddings, time_segs)
-
-    centroids = clusterer.get_cluster_centroids(diarized)
-    matches = identifier.identify_clusters(centroids)
-
-    cluster_names = {cid: m.name for cid, m in matches.items()}
-    known = sum(1 for m in matches.values() if m.is_known)
-    ok(f"{len(centroids)} clusters ({known} known)")
-
-    for cid, m in matches.items():
-        if m.is_known:
-            print(f"    {C_GREEN}✔{C_RESET} Cluster {cid}: {m.name} ({m.confidence:.2f})")
-        else:
-            print(f"    {C_YELLOW}❓{C_RESET} Cluster {cid}: {m.name} ({m.confidence:.2f})")
-
-    # Update segments with cluster IDs
-    for seg, diar in zip(speech_segs, diarized):
-        seg.cluster_id = diar.cluster_id
-
-    return diarized, cluster_names
-
-
-def _run_transcription(transcriber, vad_segs, speaker_segs, track: Path, language: str):
-    """Run transcription on pre-processed segments."""
-    segs = transcriber.transcribe_vad_segments(track, vad_segs, speaker_segs, language)
-    ok(f"{len(segs)} transcribed segments")
-    return segs
-
-
 # === Commands ===
 
 
 def cmd_enroll(args):
-    """Enroll a speaker."""
+    """Enroll a speaker by copying audio samples and computing voiceprint."""
     samples_path = Path(args.samples_path)
 
     if samples_path.is_dir():
-        audio_files = list(samples_path.glob("*.wav")) + list(samples_path.glob("*.mp3"))
+        audio_files = sorted(
+            f
+            for f in samples_path.iterdir()
+            if f.suffix.lower() in (".wav", ".mp3", ".flac", ".ogg", ".m4a")
+        )
         if not audio_files:
             raise FileNotFoundError(f"No audio files found in {samples_path}")
     else:
         audio_files = [samples_path]
+
+    for f in audio_files:
+        if not f.exists():
+            raise FileNotFoundError(f"File not found: {f}")
+
+    # Load server config for embedding extraction
+    servers_cfg = load_config(config.SERVERS_CONFIG)
 
     print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
     print(f"  🎙️  {C_BOLD}Speaker Enrollment{C_RESET}")
@@ -290,17 +222,44 @@ def cmd_enroll(args):
 
     t = time.time()
 
-    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor)
-    voiceprint = identifier.enroll(args.name, audio_files)
+    # Copy samples to enrolled directory
+    enrolled_dir = config.ENROLLED_SAMPLES_DIR / args.name
+    enrolled_dir.mkdir(parents=True, exist_ok=True)
+
+    wav_files: list[Path] = []
+    for audio_file in audio_files:
+        dest = enrolled_dir / audio_file.name
+        if audio_file.suffix.lower() == ".wav":
+            if audio_file.resolve() != dest.resolve():
+                shutil.copy2(audio_file, dest)
+            wav_files.append(dest)
+        else:
+            wav_dest = dest.with_suffix(".wav")
+            audio.convert_to_wav(audio_file, wav_dest)
+            wav_files.append(wav_dest)
+
+    ok(f"{len(wav_files)} sample(s) in {enrolled_dir}")
+
+    # Compute voiceprint via remote embeddings API
+    with substep("Computing voiceprint", "🔑"):
+        extractor = EmbeddingExtractor(servers_cfg.get_embeddings_url())
+        embeddings: list[list[float]] = []
+        for wav_file in wav_files:
+            emb = extractor.extract_from_file(wav_file)
+            embeddings.append(emb)
+            info(f"Embedding extracted from {wav_file.name}")
+
+        # Average embeddings across samples
+        avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
+        save_voiceprint(config.VOICEPRINTS_DIR, args.name, avg_embedding)
 
     elapsed = time.time() - t
     print(
         f"\n  {C_GREEN}✅ Enrolled:{C_RESET} {C_BOLD}{args.name}{C_RESET}"
         f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}"
     )
-    print(f"  📐 Embedding dim: {len(voiceprint)}")
-    print(f"  💾 Saved to: {C_DIM}{config.VOICEPRINTS_DIR / f'{args.name}.json'}{C_RESET}\n")
+    print(f"  💾 Samples:    {C_DIM}{enrolled_dir}{C_RESET}")
+    print(f"  🔑 Voiceprint: {C_DIM}{config.VOICEPRINTS_DIR / f'{args.name}.json'}{C_RESET}\n")
 
 
 def cmd_list(args):
@@ -309,15 +268,21 @@ def cmd_list(args):
     print(f"  👥 {C_BOLD}Enrolled Speakers{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
 
-    if not config.VOICEPRINTS_DIR.exists() or not any(config.VOICEPRINTS_DIR.glob("*.json")):
+    if not config.ENROLLED_SAMPLES_DIR.exists():
         warn("No speakers enrolled.")
         return
 
-    extractor = EmbeddingExtractor(device=DEFAULT_DEVICE, cache_dir=config.MODELS_DIR)
-    identifier = SpeakerIdentifier(config.VOICEPRINTS_DIR, extractor)
+    speakers = sorted(
+        d.name for d in config.ENROLLED_SAMPLES_DIR.iterdir() if d.is_dir() and any(d.glob("*.wav"))
+    )
 
-    for i, name in enumerate(identifier.list_speakers(), 1):
-        print(f"  {C_GREEN}✔{C_RESET} {i}. {name}")
+    if not speakers:
+        warn("No speakers enrolled.")
+        return
+
+    for i, name in enumerate(speakers, 1):
+        sample_count = len(list((config.ENROLLED_SAMPLES_DIR / name).glob("*.wav")))
+        print(f"  {C_GREEN}✔{C_RESET} {i}. {name} ({sample_count} samples)")
     print()
 
 
@@ -365,13 +330,11 @@ def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
     for raw in raw_inputs:
         p = Path(raw)
         if p.is_dir():
-            # Directory: collect audio files sorted by name
             files = sorted(f for f in p.iterdir() if f.suffix.lower() in audio_exts)
             if not files:
                 raise FileNotFoundError(f"No audio files found in {p}")
             resolved.extend(files)
         elif "*" in raw or "?" in raw:
-            # Glob pattern: expand
             files = sorted(Path(f) for f in glob.glob(raw) if Path(f).suffix.lower() in audio_exts)
             if not files:
                 raise FileNotFoundError(f"No audio files matching: {raw}")
@@ -382,7 +345,7 @@ def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
 
 
 def cmd_transcribe(args, extra_args: list[str]):
-    """Transcribe meeting with diarization. Supports multi-track video/audio."""
+    """Transcribe meeting with diarization using remote servers."""
     input_paths = _resolve_inputs(args.input)
     output_path = Path(args.output)
 
@@ -391,6 +354,9 @@ def cmd_transcribe(args, extra_args: list[str]):
             raise FileNotFoundError(f"File not found: {p}")
 
     track_names = parse_track_args(extra_args)
+
+    # Load server config
+    servers_cfg = load_config(config.SERVERS_CONFIG)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
     if output_path.is_dir():
@@ -417,13 +383,22 @@ def cmd_transcribe(args, extra_args: list[str]):
     if track_names:
         for tn, name in sorted(track_names.items()):
             print(f"  🏷️  Track {tn}: {C_CYAN}{name}{C_RESET}")
-    print(f"  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
     print(f"  📄 Output: {C_DIM}{output_path}{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
     total_start = time.time()
 
-    # Determine track files
+    # Create pipeline components
+    diarization = DiarizationPipeline(
+        vad_url=servers_cfg.get_vad_url(),
+        embedding_url=servers_cfg.get_embeddings_url(),
+        voiceprints_dir=config.VOICEPRINTS_DIR,
+    )
+    transcriber = Transcriber(
+        servers_cfg.get_transcription_urls(),
+        language=args.language,
+    )
+
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
@@ -439,7 +414,6 @@ def cmd_transcribe(args, extra_args: list[str]):
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} audio track(s)")
         else:
-            # Audio files: each is a track, convert to 16kHz mono wav
             track_files = []
             for i, path in enumerate(input_paths, 1):
                 if path.suffix.lower() == ".wav":
@@ -452,16 +426,9 @@ def cmd_transcribe(args, extra_args: list[str]):
 
         num_tracks = len(track_files)
 
-        # Load models
-        with step(1, 3, "Loading models", "🧠"):
-            vad, extractor, clusterer, identifier = _load_pipeline(
-                args.max_speakers, args.threshold
-            )
-            transcriber = Transcriber(model_size=args.model, device=DEFAULT_DEVICE)
-
         # Process each track
         all_segments = []
-        with step(2, 3, f"Processing {num_tracks} track(s)", "🎤"):
+        with step(1, 2, f"Processing {num_tracks} track(s)", "🎤"):
             for track_num in range(1, num_tracks + 1):
                 track_path = track_files[track_num - 1]
                 speaker_name = track_names.get(track_num)
@@ -472,44 +439,46 @@ def cmd_transcribe(args, extra_args: list[str]):
                 else:
                     print(f"(diarize) ──{C_RESET}")
 
-                # VAD
-                with substep("VAD", "🎤"):
-                    speech_segs = _run_vad(vad, track_path)
-                if not speech_segs:
-                    warn(f"No speech in track {track_num}")
-                    continue
-
                 if speaker_name:
-                    # Named track: label all segments with the given name
-                    vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-                    speaker_segs = [(s.start_ms, s.end_ms, speaker_name) for s in speech_segs]
-                    with substep("Transcription", "✍️"):
-                        segs = _run_transcription(
-                            transcriber, vad_segs, speaker_segs, track_path, args.language
-                        )
+                    # Named track: transcribe whole file, assign speaker
+                    with substep("Transcription (named track)", "✍️"):
+                        segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
+                        ok(f"{len(segs)} transcribed segments")
                     all_segments.extend(segs)
                 else:
-                    # Diarize track
-                    with substep("Embeddings", "🔊"):
-                        embeddings = _run_embeddings(vad, extractor, speech_segs, track_path)
-                    if embeddings:
-                        with substep("Diarization", "👥"):
-                            diarized, cluster_names = _run_clustering(
-                                clusterer, identifier, speech_segs, embeddings
-                            )
-                        save_unknown_samples(track_path, speech_segs, cluster_names, date_str)
-                        vad_segs = [(s.start_ms, s.end_ms) for s in speech_segs]
-                        speaker_segs = [
-                            (d.start_ms, d.end_ms, cluster_names[d.cluster_id]) for d in diarized
-                        ]
-                        with substep("Transcription", "✍️"):
-                            segs = _run_transcription(
-                                transcriber, vad_segs, speaker_segs, track_path, args.language
-                            )
-                        all_segments.extend(segs)
+                    # Diarize track: VAD -> embeddings -> identification
+                    with substep("Voice activity detection", "🔍"):
+                        segments = diarization.vad.detect(track_path)
+                        if not segments:
+                            warn(f"No speech in track {track_num}")
+                            continue
+                        ok(f"{len(segments)} speech segments")
+
+                    with substep("Speaker embeddings", "🔑"):
+                        segments_with_emb = diarization.embeddings.extract_segments(
+                            track_path, segments
+                        )
+                        ok(f"{len(segments_with_emb)} embeddings extracted")
+
+                    with substep("Speaker identification", "👥"):
+                        segments = diarization.identifier.identify_segments(segments_with_emb)
+                        speakers = {s.speaker for s in segments if s.speaker}
+                        ok(f"{len(speakers)} speaker(s) identified")
+                        for spk in sorted(speakers):
+                            is_known = not spk.startswith("Unknown")
+                            marker = f"{C_GREEN}✔" if is_known else f"{C_YELLOW}❓"
+                            print(f"    {marker}{C_RESET} {spk}")
+
+                    save_unknown_samples(track_path, segments, date_str)
+
+                    # Transcribe diarized segments
+                    with substep("Transcription", "✍️"):
+                        segs = transcriber.transcribe_segments(track_path, segments)
+                        ok(f"{len(segs)} transcribed segments")
+                    all_segments.extend(segs)
 
         # Save
-        with step(3, 3, "Writing output", "💾"):
+        with step(2, 2, "Writing output", "💾"):
             dialogue, total = merge_transcripts(all_segments)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(dialogue, encoding="utf-8")
@@ -531,24 +500,28 @@ def cmd_extract_samples(args):
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
 
+    # Load server config
+    servers_cfg = load_config(config.SERVERS_CONFIG)
+
     date_str = datetime.now().strftime("%Y-%m-%d")
 
     print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
     print(f"  🔊 {C_BOLD}Extract Speaker Samples{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  📹 Video:  {C_BOLD}{video_path.name}{C_RESET}")
-    print(f"  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
+    print(f"  🎵 Input:  {C_BOLD}{video_path.name}{C_RESET}")
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
 
     total_start = time.time()
-
-    with step(1, 4, "Loading models", "🧠"):
-        vad, extractor, clusterer, identifier = _load_pipeline(args.max_speakers, args.threshold)
+    diarization = DiarizationPipeline(
+        vad_url=servers_cfg.get_vad_url(),
+        embedding_url=servers_cfg.get_embeddings_url(),
+        voiceprints_dir=config.VOICEPRINTS_DIR,
+    )
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        with step(2, 4, "Extracting audio", "🎵"):
+        with step(1, 2, "Extracting audio", "🎵"):
             stream_indices = audio.probe_audio_tracks(video_path)
             if not stream_indices:
                 raise RuntimeError("No audio tracks found in video")
@@ -559,21 +532,33 @@ def cmd_extract_samples(args):
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} track(s)")
 
-        for track_num, track_path in enumerate(track_files, 1):
-            print(f"\n    {C_BLUE}── Track {track_num} ──{C_RESET}")
+        with step(2, 2, "Diarizing & saving samples", "👥"):
+            for track_num, track_path in enumerate(track_files, 1):
+                print(f"\n    {C_BLUE}── Track {track_num} ──{C_RESET}")
 
-            with step(3, 4, f"VAD + embeddings (track {track_num})", "🎤"):
-                speech_segs = _run_vad(vad, track_path)
-                if not speech_segs:
-                    warn(f"No speech in track {track_num}")
-                    continue
-                embeddings = _run_embeddings(vad, extractor, speech_segs, track_path)
+                with substep("Voice activity detection", "🔍"):
+                    segments = diarization.vad.detect(track_path)
+                    if not segments:
+                        warn(f"No speech in track {track_num}")
+                        continue
+                    ok(f"{len(segments)} speech segments")
 
-            with step(4, 4, f"Diarization & saving (track {track_num})", "👥"):
-                diarized, cluster_names = _run_clustering(
-                    clusterer, identifier, speech_segs, embeddings
-                )
-                save_unknown_samples(track_path, speech_segs, cluster_names, date_str)
+                with substep("Speaker embeddings", "🔑"):
+                    segments_with_emb = diarization.embeddings.extract_segments(
+                        track_path, segments
+                    )
+                    ok(f"{len(segments_with_emb)} embeddings extracted")
+
+                with substep("Speaker identification", "👥"):
+                    segments = diarization.identifier.identify_segments(segments_with_emb)
+                    speakers = {s.speaker for s in segments if s.speaker}
+                    ok(f"{len(speakers)} speaker(s) identified")
+                    for spk in sorted(speakers):
+                        is_known = not spk.startswith("Unknown")
+                        marker = f"{C_GREEN}✔" if is_known else f"{C_YELLOW}❓"
+                        print(f"    {marker}{C_RESET} {spk}")
+
+                save_unknown_samples(track_path, segments, date_str)
 
     total_elapsed = time.time() - total_start
     samples_dir = config.SAMPLES_DIR / "unknown"
@@ -591,11 +576,11 @@ def cmd_info(args):
     print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
     print(f"  📂 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
     print(f"  📦 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
-    print(f"  🧠 Models:     {C_DIM}{config.MODELS_DIR}{C_RESET}")
     print(f"  🔑 Voiceprints:{C_DIM} {config.VOICEPRINTS_DIR}{C_RESET}")
     print(f"  🎤 Samples:    {C_DIM}{config.SAMPLES_DIR}{C_RESET}")
+    print(f"  🎤 Enrolled:   {C_DIM}{config.ENROLLED_SAMPLES_DIR}{C_RESET}")
     print(f"  📋 Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
-    print(f"\n  💻 Device: {C_CYAN}{DEFAULT_DEVICE}{C_RESET}")
+    print(f"  ⚙️  Config:     {C_DIM}{config.SERVERS_CONFIG}{C_RESET}")
     print()
 
 
@@ -607,7 +592,7 @@ def main():
     except FFmpegNotFoundError:
         print(f"\n{C_RED}[ERROR] FFmpeg not found{C_RESET}\n")
         print("FFmpeg is required for audio processing. Install it:\n")
-        print(f"  {C_CYAN}Windows:{C_RESET}  winget install \"FFmpeg (Shared)\"")
+        print(f'  {C_CYAN}Windows:{C_RESET}  winget install "FFmpeg (Shared)"')
         print(f"  {C_CYAN}macOS:{C_RESET}    brew install ffmpeg")
         print(f"  {C_CYAN}Linux:{C_RESET}    sudo apt install ffmpeg")
         print("\nAfter installation, restart your terminal.\n")
@@ -631,8 +616,6 @@ def main():
     # extract-samples
     p = subs.add_parser("extract-samples", help="Extract speaker samples (fast, no transcription)")
     p.add_argument("video", help="Video file")
-    p.add_argument("--max-speakers", type=int, default=10, help="Max speakers")
-    p.add_argument("--threshold", type=float, default=0.7, help="ID threshold")
     p.set_defaults(func=cmd_extract_samples)
 
     # extract
@@ -648,10 +631,7 @@ def main():
     )
     p.add_argument("input", nargs="+", help="Video or audio file(s)")
     p.add_argument("-o", "--output", required=True, help="Output path")
-    p.add_argument("-m", "--model", default=DEFAULT_MODEL, help="Whisper model")
     p.add_argument("-l", "--language", default=DEFAULT_LANGUAGE, help="Language")
-    p.add_argument("--max-speakers", type=int, default=10, help="Max speakers")
-    p.add_argument("--threshold", type=float, default=0.7, help="ID threshold")
     p.set_defaults(func=cmd_transcribe)
 
     # info
