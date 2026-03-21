@@ -8,6 +8,7 @@ Meeting transcription with speaker diarization using remote [speaches](https://g
 - **Multi-track processing**: Handle video files with multiple audio tracks or individual audio files
 - **Speaker enrollment**: Register speakers with voice samples for automatic identification
 - **Speaker diarization**: Automatically separate and identify speakers without enrollment
+- **Multi-team support**: Separate speaker databases per team, project, or client
 - **Parallel transcription**: Distribute chunks across multiple servers
 - **Flexible input**: Video files, audio files, directories, or glob patterns
 
@@ -75,6 +76,38 @@ transcribe:
 
 Multiple transcription servers enable parallel processing of audio chunks.
 
+## Teams
+
+MeetScribe supports multiple teams, each with its own set of enrolled speakers and voice samples. This enables separate speaker databases for different projects, clients, or departments.
+
+All commands accept `-t/--team` flag to specify the team (defaults to `default`):
+
+```bash
+# Enroll a speaker into a specific team
+meetscribe -t sales enroll "John Doe" ./samples/john/
+
+# Transcribe using a team's speaker database
+meetscribe -t sales transcribe meeting.mp4 -o output.md
+
+# List speakers in a team
+meetscribe -t sales list-speakers
+```
+
+### Team management
+
+```bash
+# Create a new team
+meetscribe team create sales
+
+# List all teams with speaker counts
+meetscribe team list
+
+# Delete a team (cannot delete "default")
+meetscribe team delete sales
+```
+
+Team data is stored in `teams/<name>/samples/` under the data directory. Voiceprints are stored in a shared SQLite database (`meetscribe.db`), scoped per team.
+
 ## Commands
 
 ### `meetscribe transcribe`
@@ -99,6 +132,7 @@ Tracks without a `--trackN` assignment are diarized automatically.
 
 | Option | Description | Default |
 |--------|-------------|---------|
+| `-t, --team` | Team to use for speaker identification | default |
 | `-o, --output` | Output file or directory | required |
 | `-l, --language` | Language code | ru |
 | `--trackN` | Assign speaker name to track N (e.g. `--track1 "Name"`) | diarize |
@@ -110,6 +144,9 @@ Register known speakers for automatic identification:
 ```bash
 meetscribe enroll "John Doe" ./samples/john/
 meetscribe enroll "Jane Smith" recording.wav
+
+# Enroll into a specific team
+meetscribe -t my-team enroll "John Doe" ./samples/john/
 ```
 
 ### `meetscribe extract`
@@ -136,6 +173,19 @@ Show enrolled speakers:
 
 ```bash
 meetscribe list-speakers
+
+# List speakers in a specific team
+meetscribe -t my-team list-speakers
+```
+
+### `meetscribe team`
+
+Manage teams:
+
+```bash
+meetscribe team create <name>
+meetscribe team list
+meetscribe team delete <name>
 ```
 
 ### `meetscribe info`

@@ -1,6 +1,5 @@
 """Remote speaker embedding extraction and local speaker identification."""
 
-import json
 import logging
 import math
 import tempfile
@@ -138,45 +137,11 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
-def save_voiceprint(
-    voiceprints_dir: Path,
-    name: str,
-    embedding: list[float],
-    model: str = EmbeddingExtractor.DEFAULT_MODEL,
-) -> Path:
-    """Save a speaker voiceprint as JSON."""
-    path = voiceprints_dir / f"{name}.json"
-    data = {"name": name, "embedding": embedding, "model": model}
-    path.write_text(json.dumps(data), encoding="utf-8")
-    logger.info("Saved voiceprint for '%s' to %s", name, path)
-    return path
-
-
-def load_all_voiceprints(voiceprints_dir: Path) -> dict[str, list[float]]:
-    """Load all voiceprints from a directory.
-
-    Returns:
-        Dict mapping speaker name to embedding vector.
-    """
-    voiceprints: dict[str, list[float]] = {}
-    if not voiceprints_dir.exists():
-        return voiceprints
-
-    for path in sorted(voiceprints_dir.glob("*.json")):
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            voiceprints[data["name"]] = data["embedding"]
-        except Exception:
-            logger.warning("Failed to load voiceprint %s", path, exc_info=True)
-
-    return voiceprints
-
-
 class SpeakerIdentifier:
     """Identify speakers by comparing embeddings against stored voiceprints."""
 
-    def __init__(self, voiceprints_dir: Path, threshold: float = 0.6):
-        self.voiceprints = load_all_voiceprints(voiceprints_dir)
+    def __init__(self, voiceprints: dict[str, list[float]], threshold: float = 0.6):
+        self.voiceprints = voiceprints
         self.threshold = threshold
         logger.info("Loaded %d voiceprints (threshold=%.2f)", len(self.voiceprints), threshold)
 

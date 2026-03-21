@@ -12,6 +12,8 @@ Usage:
     meetscribe transcribe audio1.wav audio2.wav -o output.md --track1 "Name"
     meetscribe extract video.mp4 -o output_dir/
     meetscribe list-speakers
+    meetscribe team create my-team
+    meetscribe -t my-team enroll "John" samples/*.wav
 """
 
 import argparse
@@ -29,7 +31,18 @@ from pathlib import Path
 import colorama
 
 from . import config
+from .database import (
+    count_voiceprints,
+    create_team,
+    delete_team,
+    get_db,
+    list_teams,
+    load_voiceprints,
+    save_voiceprint,
+)
+from .migration import migrate, needs_migration
 from .servers import load_config
+from .team import TeamContext, resolve_team
 
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
@@ -58,7 +71,6 @@ from .pipeline import (  # noqa: E402
     SpeechSegment,
     Transcriber,
     audio,
-    save_voiceprint,
 )
 from .pipeline.audio import FFmpegNotFoundError  # noqa: E402
 
@@ -88,17 +100,17 @@ def _format_elapsed(seconds: float) -> str:
 
 
 @contextmanager
-def step(num: int, total: int, desc: str, emoji: str = "🔄"):
+def step(num: int, total: int, desc: str, emoji: str = "\U0001f504"):
     """Context manager that prints step header and elapsed time on completion."""
     print(f"\n{C_CYAN}[{num}/{total}]{C_RESET} {emoji}  {C_BOLD}{desc}{C_RESET}")
     t = time.time()
     yield
     elapsed = time.time() - t
-    print(f"  {C_GREEN}✅ Done {C_DIM}({_format_elapsed(elapsed)}){C_RESET}")
+    print(f"  {C_GREEN}\u2705 Done {C_DIM}({_format_elapsed(elapsed)}){C_RESET}")
 
 
 @contextmanager
-def substep(desc: str, emoji: str = "🔄"):
+def substep(desc: str, emoji: str = "\U0001f504"):
     """Context manager that prints sub-step and elapsed time."""
     print(f"    {emoji}  {desc}")
     t = time.time()
@@ -109,23 +121,30 @@ def substep(desc: str, emoji: str = "🔄"):
 
 def ok(msg: str) -> None:
     """Print a success sub-status line."""
-    print(f"  {C_GREEN}✔{C_RESET}  {msg}")
+    print(f"  {C_GREEN}\u2714{C_RESET}  {msg}")
 
 
 def warn(msg: str) -> None:
     """Print a warning sub-status line."""
-    print(f"  {C_YELLOW}⚠️{C_RESET}  {msg}")
+    print(f"  {C_YELLOW}\u26a0\ufe0f{C_RESET}  {msg}")
 
 
 def info(msg: str) -> None:
     """Print an info sub-status line."""
-    print(f"  {C_DIM}→{C_RESET}  {msg}")
+    print(f"  {C_DIM}\u2192{C_RESET}  {msg}")
+
+
+def _print_team_header(team_ctx: TeamContext) -> None:
+    """Print active team indicator if not default."""
+    if team_ctx.name != "default":
+        print(f"  {C_CYAN}\U0001f465 Team: {C_BOLD}{team_ctx.name}{C_RESET}")
 
 
 def save_unknown_samples(
     audio_path: Path,
     segments: list[SpeechSegment],
     date_str: str,
+    unknown_samples_dir: Path,
     min_duration_ms: int = 3000,
     max_samples: int = 5,
 ) -> None:
@@ -138,10 +157,8 @@ def save_unknown_samples(
     if not unknown_speakers:
         return
 
-    samples_dir = config.SAMPLES_DIR / "unknown"
-
     for speaker_label, segs in unknown_speakers.items():
-        cluster_dir = samples_dir / f"{date_str}-{speaker_label.replace(' ', '_').lower()}"
+        cluster_dir = unknown_samples_dir / f"{date_str}-{speaker_label.replace(' ', '_').lower()}"
         segs.sort(key=lambda s: s.duration_ms, reverse=True)
 
         cluster_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +208,7 @@ def parse_track_args(extra_args: list[str]) -> dict[int, str]:
 # === Commands ===
 
 
-def cmd_enroll(args):
+def cmd_enroll(args, team_ctx: TeamContext):
     """Enroll a speaker by copying audio samples and computing voiceprint."""
     samples_path = Path(args.samples_path)
 
@@ -213,17 +230,18 @@ def cmd_enroll(args):
     # Load server config for embedding extraction
     servers_cfg = load_config(config.SERVERS_CONFIG)
 
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  🎙️  {C_BOLD}Speaker Enrollment{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  👤 Name:    {C_CYAN}{args.name}{C_RESET}")
-    print(f"  📁 Samples: {len(audio_files)} files")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f399\ufe0f  {C_BOLD}Speaker Enrollment{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
+    _print_team_header(team_ctx)
+    print(f"  \U0001f464 Name:    {C_CYAN}{args.name}{C_RESET}")
+    print(f"  \U0001f4c1 Samples: {len(audio_files)} files")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
 
     t = time.time()
 
-    # Copy samples to enrolled directory
-    enrolled_dir = config.ENROLLED_SAMPLES_DIR / args.name
+    # Copy samples to team-scoped enrolled directory
+    enrolled_dir = team_ctx.enrolled_samples_dir / args.name
     enrolled_dir.mkdir(parents=True, exist_ok=True)
 
     wav_files: list[Path] = []
@@ -241,7 +259,7 @@ def cmd_enroll(args):
     ok(f"{len(wav_files)} sample(s) in {enrolled_dir}")
 
     # Compute voiceprint via remote embeddings API
-    with substep("Computing voiceprint", "🔑"):
+    with substep("Computing voiceprint", "\U0001f511"):
         extractor = EmbeddingExtractor(servers_cfg.get_embeddings_url())
         embeddings: list[list[float]] = []
         for wav_file in wav_files:
@@ -251,38 +269,38 @@ def cmd_enroll(args):
 
         # Average embeddings across samples
         avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
-        save_voiceprint(config.VOICEPRINTS_DIR, args.name, avg_embedding)
+        save_voiceprint(
+            team_ctx.conn, team_ctx.id, args.name, avg_embedding, EmbeddingExtractor.DEFAULT_MODEL
+        )
 
     elapsed = time.time() - t
     print(
-        f"\n  {C_GREEN}✅ Enrolled:{C_RESET} {C_BOLD}{args.name}{C_RESET}"
+        f"\n  {C_GREEN}\u2705 Enrolled:{C_RESET} {C_BOLD}{args.name}{C_RESET}"
         f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}"
     )
-    print(f"  💾 Samples:    {C_DIM}{enrolled_dir}{C_RESET}")
-    print(f"  🔑 Voiceprint: {C_DIM}{config.VOICEPRINTS_DIR / f'{args.name}.json'}{C_RESET}\n")
+    print(f"  \U0001f4be Samples:    {C_DIM}{enrolled_dir}{C_RESET}")
+    print(f"  \U0001f511 Voiceprint: {C_DIM}DB (team: {team_ctx.name}){C_RESET}\n")
 
 
-def cmd_list(args):
+def cmd_list(args, team_ctx: TeamContext):
     """List enrolled speakers."""
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  👥 {C_BOLD}Enrolled Speakers{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f465 {C_BOLD}Enrolled Speakers{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
+    _print_team_header(team_ctx)
+    print()
 
-    if not config.ENROLLED_SAMPLES_DIR.exists():
+    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+
+    if not voiceprints:
         warn("No speakers enrolled.")
         return
 
-    speakers = sorted(
-        d.name for d in config.ENROLLED_SAMPLES_DIR.iterdir() if d.is_dir() and any(d.glob("*.wav"))
-    )
-
-    if not speakers:
-        warn("No speakers enrolled.")
-        return
-
-    for i, name in enumerate(speakers, 1):
-        sample_count = len(list((config.ENROLLED_SAMPLES_DIR / name).glob("*.wav")))
-        print(f"  {C_GREEN}✔{C_RESET} {i}. {name} ({sample_count} samples)")
+    for i, name in enumerate(sorted(voiceprints.keys()), 1):
+        # Count samples if directory exists
+        sample_dir = team_ctx.enrolled_samples_dir / name
+        sample_count = len(list(sample_dir.glob("*.wav"))) if sample_dir.exists() else 0
+        print(f"  {C_GREEN}\u2714{C_RESET} {i}. {name} ({sample_count} samples)")
     print()
 
 
@@ -295,12 +313,12 @@ def cmd_extract(args):
     output_dir = Path(args.output) if args.output else video_path.parent / video_path.stem
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  🎵 {C_BOLD}Extract Audio Tracks{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  📹 Input:  {C_BOLD}{video_path.name}{C_RESET}")
-    print(f"  📂 Output: {C_DIM}{output_dir}{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f3b5 {C_BOLD}Extract Audio Tracks{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f4f9 Input:  {C_BOLD}{video_path.name}{C_RESET}")
+    print(f"  \U0001f4c2 Output: {C_DIM}{output_dir}{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
 
     track_indices = audio.probe_audio_tracks(video_path)
     if not track_indices:
@@ -312,13 +330,13 @@ def cmd_extract(args):
     t = time.time()
     for i, stream_idx in enumerate(track_indices, 1):
         out_file = output_dir / f"track_{i}.wav"
-        with substep(f"Track {i} (stream {stream_idx})", "🎵"):
+        with substep(f"Track {i} (stream {stream_idx})", "\U0001f3b5"):
             audio.extract_audio(video_path, out_file, stream_idx)
-            ok(f"→ {out_file.name}")
+            ok(f"\u2192 {out_file.name}")
 
     elapsed = time.time() - t
     print(
-        f"\n  {C_GREEN}✅ Extracted {len(track_indices)} track(s)"
+        f"\n  {C_GREEN}\u2705 Extracted {len(track_indices)} track(s)"
         f" {C_DIM}({_format_elapsed(elapsed)}){C_RESET}\n"
     )
 
@@ -344,7 +362,7 @@ def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
     return resolved
 
 
-def cmd_transcribe(args, extra_args: list[str]):
+def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
     """Transcribe meeting with diarization using remote servers."""
     input_paths = _resolve_inputs(args.input)
     output_path = Path(args.output)
@@ -373,26 +391,30 @@ def cmd_transcribe(args, extra_args: list[str]):
         ".wmv",
     )
 
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  🎙️  {C_BOLD}MeetScribe{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f399\ufe0f  {C_BOLD}MeetScribe{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
+    _print_team_header(team_ctx)
     if is_single_video:
-        print(f"  📹 Input:  {C_BOLD}{input_paths[0].name}{C_RESET}")
+        print(f"  \U0001f4f9 Input:  {C_BOLD}{input_paths[0].name}{C_RESET}")
     else:
-        print(f"  🎵 Input:  {C_BOLD}{len(input_paths)} audio file(s){C_RESET}")
+        print(f"  \U0001f3b5 Input:  {C_BOLD}{len(input_paths)} audio file(s){C_RESET}")
     if track_names:
         for tn, name in sorted(track_names.items()):
-            print(f"  🏷️  Track {tn}: {C_CYAN}{name}{C_RESET}")
-    print(f"  📄 Output: {C_DIM}{output_path}{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+            print(f"  \U0001f3f7\ufe0f  Track {tn}: {C_CYAN}{name}{C_RESET}")
+    print(f"  \U0001f4c4 Output: {C_DIM}{output_path}{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
 
     total_start = time.time()
+
+    # Load voiceprints from DB for this team
+    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
 
     # Create pipeline components
     diarization = DiarizationPipeline(
         vad_url=servers_cfg.get_vad_url(),
         embedding_url=servers_cfg.get_embeddings_url(),
-        voiceprints_dir=config.VOICEPRINTS_DIR,
+        voiceprints=voiceprints,
     )
     transcriber = Transcriber(
         servers_cfg.get_transcription_urls(),
@@ -409,7 +431,7 @@ def cmd_transcribe(args, extra_args: list[str]):
             track_files = []
             for i, stream_idx in enumerate(stream_indices, 1):
                 out = work_dir / f"track_{i}.wav"
-                with substep(f"Track {i} (stream {stream_idx})", "🎵"):
+                with substep(f"Track {i} (stream {stream_idx})", "\U0001f3b5"):
                     audio.extract_audio(input_paths[0], out, stream_idx)
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} audio track(s)")
@@ -420,7 +442,7 @@ def cmd_transcribe(args, extra_args: list[str]):
                     track_files.append(path)
                 else:
                     out = work_dir / f"track_{i}.wav"
-                    with substep(f"Converting {path.name}", "🎵"):
+                    with substep(f"Converting {path.name}", "\U0001f3b5"):
                         audio.convert_to_wav(path, out)
                     track_files.append(out)
 
@@ -428,72 +450,74 @@ def cmd_transcribe(args, extra_args: list[str]):
 
         # Process each track
         all_segments = []
-        with step(1, 2, f"Processing {num_tracks} track(s)", "🎤"):
+        with step(1, 2, f"Processing {num_tracks} track(s)", "\U0001f3a4"):
             for track_num in range(1, num_tracks + 1):
                 track_path = track_files[track_num - 1]
                 speaker_name = track_names.get(track_num)
 
-                print(f"\n    {C_BLUE}── Track {track_num} ", end="")
+                print(f"\n    {C_BLUE}\u2500\u2500 Track {track_num} ", end="")
                 if speaker_name:
-                    print(f"({speaker_name}) ──{C_RESET}")
+                    print(f"({speaker_name}) \u2500\u2500{C_RESET}")
                 else:
-                    print(f"(diarize) ──{C_RESET}")
+                    print(f"(diarize) \u2500\u2500{C_RESET}")
 
                 if speaker_name:
                     # Named track: transcribe whole file, assign speaker
-                    with substep("Transcription (named track)", "✍️"):
+                    with substep("Transcription (named track)", "\u270d\ufe0f"):
                         segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
                         ok(f"{len(segs)} transcribed segments")
                     all_segments.extend(segs)
                 else:
                     # Diarize track: VAD -> embeddings -> identification
-                    with substep("Voice activity detection", "🔍"):
+                    with substep("Voice activity detection", "\U0001f50d"):
                         segments = diarization.vad.detect(track_path)
                         if not segments:
                             warn(f"No speech in track {track_num}")
                             continue
                         ok(f"{len(segments)} speech segments")
 
-                    with substep("Speaker embeddings", "🔑"):
+                    with substep("Speaker embeddings", "\U0001f511"):
                         segments_with_emb = diarization.embeddings.extract_segments(
                             track_path, segments
                         )
                         ok(f"{len(segments_with_emb)} embeddings extracted")
 
-                    with substep("Speaker identification", "👥"):
+                    with substep("Speaker identification", "\U0001f465"):
                         segments = diarization.identifier.identify_segments(segments_with_emb)
                         speakers = {s.speaker for s in segments if s.speaker}
                         ok(f"{len(speakers)} speaker(s) identified")
                         for spk in sorted(speakers):
                             is_known = not spk.startswith("Unknown")
-                            marker = f"{C_GREEN}✔" if is_known else f"{C_YELLOW}❓"
+                            marker = f"{C_GREEN}\u2714" if is_known else f"{C_YELLOW}\u2753"
                             print(f"    {marker}{C_RESET} {spk}")
 
-                    save_unknown_samples(track_path, segments, date_str)
+                    save_unknown_samples(
+                        track_path, segments, date_str, team_ctx.unknown_samples_dir
+                    )
 
                     # Transcribe diarized segments
-                    with substep("Transcription", "✍️"):
+                    with substep("Transcription", "\u270d\ufe0f"):
                         segs = transcriber.transcribe_segments(track_path, segments)
                         ok(f"{len(segs)} transcribed segments")
                     all_segments.extend(segs)
 
         # Save
-        with step(2, 2, "Writing output", "💾"):
+        with step(2, 2, "Writing output", "\U0001f4be"):
             dialogue, total = merge_transcripts(all_segments)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(dialogue, encoding="utf-8")
             ok(f"{total} segments written")
 
     total_elapsed = time.time() - total_start
-    print(f"\n{C_GREEN}{'═' * 60}{C_RESET}")
+    print(f"\n{C_GREEN}{'=' * 60}{C_RESET}")
     elapsed_str = _format_elapsed(total_elapsed)
-    print(f"  🎉 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
-    print(f"  📄 Output: {output_path}")
-    print(f"  📊 Total: {total} segments across {num_tracks} track(s)")
-    print(f"{C_GREEN}{'═' * 60}{C_RESET}\n")
+    print(f"  \U0001f389 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
+    print(f"  \U0001f4c4 Output: {output_path}")
+    print(f"  \U0001f4ca Total: {total} segments across {num_tracks} track(s)")
+    print(f"{C_GREEN}{'=' * 60}{C_RESET}\n")
 
 
-def cmd_extract_samples(args):
+def cmd_extract_samples(args, team_ctx: TeamContext):
     """Extract speaker samples without transcription (fast)."""
     video_path = Path(args.video)
 
@@ -505,23 +529,27 @@ def cmd_extract_samples(args):
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  🔊 {C_BOLD}Extract Speaker Samples{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  🎵 Input:  {C_BOLD}{video_path.name}{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}")
+    # Load voiceprints from DB for this team
+    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f50a {C_BOLD}Extract Speaker Samples{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
+    _print_team_header(team_ctx)
+    print(f"  \U0001f3b5 Input:  {C_BOLD}{video_path.name}{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
 
     total_start = time.time()
     diarization = DiarizationPipeline(
         vad_url=servers_cfg.get_vad_url(),
         embedding_url=servers_cfg.get_embeddings_url(),
-        voiceprints_dir=config.VOICEPRINTS_DIR,
+        voiceprints=voiceprints,
     )
 
     with tempfile.TemporaryDirectory() as tmp:
         work_dir = Path(tmp)
 
-        with step(1, 2, "Extracting audio", "🎵"):
+        with step(1, 2, "Extracting audio", "\U0001f3b5"):
             stream_indices = audio.probe_audio_tracks(video_path)
             if not stream_indices:
                 raise RuntimeError("No audio tracks found in video")
@@ -532,56 +560,114 @@ def cmd_extract_samples(args):
                 track_files.append(out)
             ok(f"Extracted {len(track_files)} track(s)")
 
-        with step(2, 2, "Diarizing & saving samples", "👥"):
+        with step(2, 2, "Diarizing & saving samples", "\U0001f465"):
             for track_num, track_path in enumerate(track_files, 1):
-                print(f"\n    {C_BLUE}── Track {track_num} ──{C_RESET}")
+                print(f"\n    {C_BLUE}\u2500\u2500 Track {track_num} \u2500\u2500{C_RESET}")
 
-                with substep("Voice activity detection", "🔍"):
+                with substep("Voice activity detection", "\U0001f50d"):
                     segments = diarization.vad.detect(track_path)
                     if not segments:
                         warn(f"No speech in track {track_num}")
                         continue
                     ok(f"{len(segments)} speech segments")
 
-                with substep("Speaker embeddings", "🔑"):
+                with substep("Speaker embeddings", "\U0001f511"):
                     segments_with_emb = diarization.embeddings.extract_segments(
                         track_path, segments
                     )
                     ok(f"{len(segments_with_emb)} embeddings extracted")
 
-                with substep("Speaker identification", "👥"):
+                with substep("Speaker identification", "\U0001f465"):
                     segments = diarization.identifier.identify_segments(segments_with_emb)
                     speakers = {s.speaker for s in segments if s.speaker}
                     ok(f"{len(speakers)} speaker(s) identified")
                     for spk in sorted(speakers):
                         is_known = not spk.startswith("Unknown")
-                        marker = f"{C_GREEN}✔" if is_known else f"{C_YELLOW}❓"
+                        marker = f"{C_GREEN}\u2714" if is_known else f"{C_YELLOW}\u2753"
                         print(f"    {marker}{C_RESET} {spk}")
 
-                save_unknown_samples(track_path, segments, date_str)
+                save_unknown_samples(
+                    track_path, segments, date_str, team_ctx.unknown_samples_dir
+                )
 
     total_elapsed = time.time() - total_start
-    samples_dir = config.SAMPLES_DIR / "unknown"
-    print(f"\n{C_GREEN}{'═' * 60}{C_RESET}")
+    print(f"\n{C_GREEN}{'=' * 60}{C_RESET}")
     elapsed_str = _format_elapsed(total_elapsed)
-    print(f"  🎉 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
-    print(f"  📂 Samples: {samples_dir}")
-    print(f"{C_GREEN}{'═' * 60}{C_RESET}\n")
+    print(f"  \U0001f389 {C_GREEN}{C_BOLD}Done!{C_RESET} {C_DIM}({elapsed_str}){C_RESET}")
+    print(f"  \U0001f4c2 Samples: {team_ctx.unknown_samples_dir}")
+    print(f"{C_GREEN}{'=' * 60}{C_RESET}\n")
 
 
-def cmd_info(args):
+def cmd_info(args, team_ctx: TeamContext):
     """Show data directories and configuration."""
-    print(f"\n{C_MAGENTA}{'═' * 60}{C_RESET}")
-    print(f"  ℹ️  {C_BOLD}MeetScribe Configuration{C_RESET}")
-    print(f"{C_MAGENTA}{'═' * 60}{C_RESET}\n")
-    print(f"  📂 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
-    print(f"  📦 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
-    print(f"  🔑 Voiceprints:{C_DIM} {config.VOICEPRINTS_DIR}{C_RESET}")
-    print(f"  🎤 Samples:    {C_DIM}{config.SAMPLES_DIR}{C_RESET}")
-    print(f"  🎤 Enrolled:   {C_DIM}{config.ENROLLED_SAMPLES_DIR}{C_RESET}")
-    print(f"  📋 Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
-    print(f"  ⚙️  Config:     {C_DIM}{config.SERVERS_CONFIG}{C_RESET}")
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \u2139\ufe0f  {C_BOLD}MeetScribe Configuration{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}\n")
+    _print_team_header(team_ctx)
+    print(f"  \U0001f4c2 Data:       {C_DIM}{config.DATA_DIR}{C_RESET}")
+    print(f"  \U0001f4e6 Cache:      {C_DIM}{config.CACHE_DIR}{C_RESET}")
+    print(f"  \U0001f5c3\ufe0f  Database:   {C_DIM}{config.DB_PATH}{C_RESET}")
+    print(f"  \U0001f3a4 Enrolled:   {C_DIM}{team_ctx.enrolled_samples_dir}{C_RESET}")
+    print(f"  \U0001f50a Unknown:    {C_DIM}{team_ctx.unknown_samples_dir}{C_RESET}")
+    vp_count = count_voiceprints(team_ctx.conn, team_ctx.id)
+    print(f"  \U0001f511 Voiceprints:{C_DIM} {vp_count} in DB (team: {team_ctx.name}){C_RESET}")
+    print(f"  \U0001f4cb Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
+    print(f"  \u2699\ufe0f  Config:     {C_DIM}{config.SERVERS_CONFIG}{C_RESET}")
     print()
+
+
+# === Team management commands ===
+
+
+def cmd_team_create(args):
+    """Create a new team."""
+    conn = get_db(config.DB_PATH)
+    team_id = create_team(conn, args.name, args.description)
+    config.ensure_team_dirs(args.name)
+    conn.close()
+    name = args.name
+    print(f"\n  {C_GREEN}\u2714{C_RESET}  Team '{C_BOLD}{name}{C_RESET}' created (id={team_id})")
+    print(f"  Use: meetscribe -t {name} enroll ...\n")
+
+
+def cmd_team_list(args):
+    """List all teams."""
+    conn = get_db(config.DB_PATH)
+    teams = list_teams(conn)
+
+    print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
+    print(f"  \U0001f465 {C_BOLD}Teams{C_RESET}")
+    print(f"{C_MAGENTA}{'=' * 60}{C_RESET}\n")
+
+    for team in teams:
+        vp_count = count_voiceprints(conn, team["id"])
+        desc = f" - {team['description']}" if team["description"] else ""
+        name = team["name"]
+        print(f"  {C_GREEN}\u2714{C_RESET} {name}{C_DIM}{desc}{C_RESET} ({vp_count} speakers)")
+    print()
+    conn.close()
+
+
+def cmd_team_delete(args):
+    """Delete a team."""
+    if not args.yes:
+        answer = input(f"Delete team '{args.name}' and all its data? [y/N] ")
+        if answer.lower() != "y":
+            print("Cancelled.")
+            return
+
+    conn = get_db(config.DB_PATH)
+    deleted = delete_team(conn, args.name)
+    conn.close()
+
+    if deleted:
+        # Remove team directories
+        team_dir = config.TEAMS_DIR / args.name
+        if team_dir.exists():
+            shutil.rmtree(team_dir)
+        print(f"\n  {C_GREEN}\u2714{C_RESET}  Team '{args.name}' deleted.\n")
+    else:
+        print(f"\n  {C_YELLOW}\u26a0\ufe0f{C_RESET}  Team '{args.name}' not found.\n")
 
 
 def main():
@@ -598,8 +684,26 @@ def main():
         print("\nAfter installation, restart your terminal.\n")
         raise SystemExit(1)
 
+    # Run migration if needed
+    if needs_migration():
+        conn = get_db(config.DB_PATH)
+        migrated_vp, migrated_samples = migrate(conn)
+        conn.close()
+        if migrated_vp or migrated_samples:
+            print(
+                f"\n  {C_CYAN}\u2139\ufe0f  Migrated {migrated_vp} voiceprint(s) and"
+                f" {migrated_samples} speaker sample(s) to 'default' team.{C_RESET}"
+            )
+            print(
+                f"  {C_DIM}Old data in {config.VOICEPRINTS_DIR} and"
+                f" {config.SAMPLES_DIR} can be removed.{C_RESET}\n"
+            )
+
     parser = argparse.ArgumentParser(
         description="MeetScribe - Meeting transcription with speaker diarization"
+    )
+    parser.add_argument(
+        "-t", "--team", default=None, help="Team profile to use (default: 'default')"
     )
     subs = parser.add_subparsers(dest="command", required=True)
 
@@ -638,16 +742,48 @@ def main():
     p = subs.add_parser("info", help="Show configuration and data directories")
     p.set_defaults(func=cmd_info)
 
+    # team management
+    team_parser = subs.add_parser("team", help="Manage team profiles")
+    team_subs = team_parser.add_subparsers(dest="team_command", required=True)
+
+    p = team_subs.add_parser("create", help="Create a new team")
+    p.add_argument("name", help="Team name")
+    p.add_argument("--description", default=None, help="Team description")
+    p.set_defaults(func=cmd_team_create)
+
+    p = team_subs.add_parser("list", help="List all teams")
+    p.set_defaults(func=cmd_team_list)
+
+    p = team_subs.add_parser("delete", help="Delete a team")
+    p.add_argument("name", help="Team name")
+    p.add_argument("--yes", action="store_true", help="Skip confirmation")
+    p.set_defaults(func=cmd_team_delete)
+
     args, extra = parser.parse_known_args()
+
+    # Team management commands don't need team context
+    TEAM_COMMANDS = {cmd_team_create, cmd_team_list, cmd_team_delete}
+
     try:
-        if args.func == cmd_transcribe:
-            args.func(args, extra)
-        else:
+        if args.func in TEAM_COMMANDS:
             if extra:
                 parser.error(f"Unrecognized arguments: {' '.join(extra)}")
             args.func(args)
+        elif args.func == cmd_transcribe:
+            team_ctx = resolve_team(args.team)
+            args.func(args, extra, team_ctx)
+        elif args.func == cmd_extract:
+            # extract doesn't need team context
+            if extra:
+                parser.error(f"Unrecognized arguments: {' '.join(extra)}")
+            args.func(args)
+        else:
+            if extra:
+                parser.error(f"Unrecognized arguments: {' '.join(extra)}")
+            team_ctx = resolve_team(args.team)
+            args.func(args, team_ctx)
     except Exception as e:
-        print(f"\n  {C_RED}❌ Error:{C_RESET} {e}")
+        print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}")
         raise SystemExit(1)
 
 
