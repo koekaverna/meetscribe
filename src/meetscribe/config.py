@@ -42,13 +42,13 @@ def get_cache_dir() -> Path:
 # Directory paths
 DATA_DIR = get_data_dir()
 CACHE_DIR = get_cache_dir()
-MODELS_DIR = CACHE_DIR / "models"
 VOICEPRINTS_DIR = DATA_DIR / "voiceprints"
 SAMPLES_DIR = DATA_DIR / "samples"
 ENROLLED_SAMPLES_DIR = SAMPLES_DIR / "enrolled"
 LOGS_DIR = DATA_DIR / "logs"
-SESSIONS_DIR = CACHE_DIR / "sessions"
 
+# Server config file (next to the project or in data dir)
+SERVERS_CONFIG = DATA_DIR / "servers.yaml"
 
 
 def ensure_dirs() -> None:
@@ -56,11 +56,9 @@ def ensure_dirs() -> None:
     for d in [
         DATA_DIR,
         CACHE_DIR,
-        MODELS_DIR,
         VOICEPRINTS_DIR,
         SAMPLES_DIR,
         ENROLLED_SAMPLES_DIR,
         LOGS_DIR,
-        SESSIONS_DIR,
     ]:
         d.mkdir(parents=True, exist_ok=True)

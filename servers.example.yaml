@@ -1,0 +1,28 @@
+# MeetScribe server configuration
+# Copy this file to your data directory as servers.yaml:
+#   Windows: %LOCALAPPDATA%/meetscribe/servers.yaml
+#   macOS:   ~/Library/Application Support/meetscribe/servers.yaml
+#   Linux:   ~/.local/share/meetscribe/servers.yaml
+#
+# Run `meetscribe info` to see the exact path.
+
+servers:
+  - url: http://192.168.1.100:8000
+    name: "GPU-1"
+
+# VAD: voice activity detection
+# Uses POST /v1/audio/speech/timestamps
+vad:
+  server: "GPU-1"
+
+# Speaker embeddings
+# Uses POST /v1/audio/speech/embedding
+embeddings:
+  server: "GPU-1"
+
+# Transcription: speech-to-text
+# Uses POST /v1/audio/transcriptions endpoint (OpenAI-compatible)
+# Multiple servers enable parallel transcription of chunks
+transcribe:
+  servers:
+    - "GPU-1"

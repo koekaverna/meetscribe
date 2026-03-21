@@ -1,14 +1,15 @@
 # MeetScribe
 
-Meeting transcription with speaker diarization. Combines OpenAI Whisper for transcription, SpeechBrain for voice activity detection and speaker embeddings, and spectral clustering for speaker separation.
+Meeting transcription with speaker diarization using remote [speaches](https://github.com/speaches-ai/speaches) API servers. Offloads VAD, speaker embeddings, and transcription to GPU servers — the client stays lightweight with no ML dependencies.
 
 ## Features
 
+- **Remote processing**: VAD, speaker embeddings, and transcription via speaches API (OpenAI-compatible)
 - **Multi-track processing**: Handle video files with multiple audio tracks or individual audio files
 - **Speaker enrollment**: Register speakers with voice samples for automatic identification
 - **Speaker diarization**: Automatically separate and identify speakers without enrollment
+- **Parallel transcription**: Distribute chunks across multiple servers
 - **Flexible input**: Video files, audio files, directories, or glob patterns
-- **Configurable**: Whisper model size, language, identification threshold
 
 ## Installation
 
@@ -16,6 +17,7 @@ Meeting transcription with speaker diarization. Combines OpenAI Whisper for tran
 
 - Python 3.12+
 - FFmpeg (for audio extraction and conversion)
+- One or more [speaches](https://github.com/speaches-ai/speaches) API servers
 
 ### FFmpeg
 
@@ -45,6 +47,34 @@ uv venv
 uv pip install -e .
 ```
 
+## Server Configuration
+
+MeetScribe requires at least one speaches API server for processing. Copy `servers.example.yaml` to your data directory as `servers.yaml`:
+
+- **Windows:** `%LOCALAPPDATA%/meetscribe/servers.yaml`
+- **macOS:** `~/Library/Application Support/meetscribe/servers.yaml`
+- **Linux:** `~/.local/share/meetscribe/servers.yaml`
+
+Run `meetscribe info` to see the exact path.
+
+```yaml
+servers:
+  - url: http://192.168.1.100:8000
+    name: "GPU-1"
+
+vad:
+  server: "GPU-1"
+
+embeddings:
+  server: "GPU-1"
+
+transcribe:
+  servers:
+    - "GPU-1"
+```
+
+Multiple transcription servers enable parallel processing of audio chunks.
+
 ## Commands
 
 ### `meetscribe transcribe`
@@ -70,10 +100,7 @@ Tracks without a `--trackN` assignment are diarized automatically.
 | Option | Description | Default |
 |--------|-------------|---------|
 | `-o, --output` | Output file or directory | required |
-| `-m, --model` | Whisper model size | medium |
 | `-l, --language` | Language code | ru |
-| `--max-speakers` | Maximum speakers to detect | 10 |
-| `--threshold` | Identification threshold | 0.7 |
 | `--trackN` | Assign speaker name to track N (e.g. `--track1 "Name"`) | diarize |
 
 ### `meetscribe enroll`
@@ -113,7 +140,7 @@ meetscribe list-speakers
 
 ### `meetscribe info`
 
-Display data directories and settings:
+Display data directories, server configuration, and settings:
 
 ```bash
 meetscribe info

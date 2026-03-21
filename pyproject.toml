@@ -1,7 +1,7 @@
 [project]
 name = "meetscribe"
-version = "0.1.0"
-description = "Meeting transcription with speaker diarization using Whisper, SpeechBrain, and spectral clustering"
+version = "0.2.0"
+description = "Meeting transcription with speaker diarization using remote speaches API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
@@ -12,8 +12,6 @@ keywords = [
     "transcription",
     "diarization",
     "speaker-recognition",
-    "whisper",
-    "speechbrain",
     "meeting",
     "audio",
 ]
@@ -31,15 +29,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-    "speechbrain>=1.0.0",
-    "openai-whisper",
-    "torch>=2.7.0",
-    "torchaudio>=2.7.0,<2.9",
-    "soundfile",
-    "scikit-learn",
-    "huggingface_hub<1.0",
+    "httpx",
+    "pyyaml",
     "tqdm",
-    "colorama"
+    "colorama",
 ]
 
 [project.optional-dependencies]
@@ -62,21 +55,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/meetscribe"]
-
-[tool.uv]
-index-strategy = "unsafe-best-match"
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-
-[[tool.uv.index]]
-name = "pypi"
-url = "https://pypi.org/simple"
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-torchaudio = { index = "pytorch-cu128" }
 
 [tool.ruff]
 line-length = 100
