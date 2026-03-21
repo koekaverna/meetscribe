@@ -1,12 +1,11 @@
 """Track upload and management routes."""
 
 import asyncio
+import logging
 import os
 import re
 import tempfile
 from pathlib import Path
-
-import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -14,12 +13,12 @@ from fastapi.responses import FileResponse
 from meetscribe import config
 from meetscribe.pipeline import audio
 
-logger = logging.getLogger(__name__)
-
 from ..deps import get_current_user, get_session_for_user
 from ..models import TrackConfig, TrackUploadResponse
 from ..services.auth import AuthUser
 from ..services.session import get_session_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -63,7 +62,7 @@ async def upload_tracks(
     for file in files:
         raw_name = file.filename or "unknown"
         # Sanitize: take basename only, replace unsafe chars
-        filename = re.sub(r'[^\w.\-]', '_', Path(raw_name).name) or "upload"
+        filename = re.sub(r"[^\w.\-]", "_", Path(raw_name).name) or "upload"
         ext = Path(filename).suffix.lower()
 
         if ext not in VIDEO_EXTS and ext not in AUDIO_EXTS:
@@ -83,7 +82,7 @@ async def upload_tracks(
             elif ext == ".wav":
                 # WAV — move directly to session storage
                 track = service.add_track(session_id, filename, tmp_path)
-                tmp_path = None  # moved, don't unlink
+                tmp_path = None  # type: ignore[assignment]  # moved, don't unlink
                 responses.append(
                     TrackUploadResponse(track_num=track.track_num, filename=track.filename)
                 )
@@ -93,9 +92,9 @@ async def upload_tracks(
                 wav_path = Path(wav_name)
                 os.close(wav_fd)
                 try:
-                    await audio.convert_to_wav_async(tmp_path, wav_path)
+                    await audio.convert_to_wav_async(tmp_path, wav_path)  # type: ignore[arg-type]
                     track = service.add_track(session_id, filename, wav_path)
-                    wav_path = None  # moved
+                    wav_path = None  # type: ignore[assignment]  # moved
                     responses.append(
                         TrackUploadResponse(track_num=track.track_num, filename=track.filename)
                     )
@@ -166,7 +165,9 @@ async def list_tracks(session_id: str, user: AuthUser = Depends(get_current_user
 
 
 @router.get("/{session_id}/tracks/{track_num}/audio")
-async def get_track_audio(session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)):
+async def get_track_audio(
+    session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)
+):
     """Stream track audio."""
     get_session_for_user(session_id, user)
     service = get_session_service()

@@ -35,11 +35,18 @@ def needs_migration() -> bool:
     return True
 
 
-def migrate(conn: sqlite3.Connection) -> None:
-    """Migrate legacy voiceprints and samples to the 'default' team."""
+MigrationResult = tuple[int, int]
+"""(migrated_voiceprints, migrated_samples)"""
+
+
+def migrate(conn: sqlite3.Connection) -> MigrationResult:
+    """Migrate legacy voiceprints and samples to the 'default' team.
+
+    Returns (migrated_voiceprints, migrated_samples).
+    """
     team = get_team(conn, "default")
     if not team:
-        return
+        return 0, 0
 
     team_id = team["id"]
     migrated_vp = 0

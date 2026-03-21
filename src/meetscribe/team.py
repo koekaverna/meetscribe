@@ -34,6 +34,8 @@ def resolve_team(team_name: str | None = None) -> TeamContext:
         if name == "default":
             ensure_default_team(conn)
             team = get_team(conn, name)
+            if team is None:
+                raise RuntimeError("Failed to create default team")
         else:
             raise ValueError(
                 f"Team '{name}' not found. Create it with: meetscribe team create {name}"

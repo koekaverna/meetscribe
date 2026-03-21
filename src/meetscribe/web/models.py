@@ -1,11 +1,11 @@
 """Pydantic models for web API."""
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     """Session status."""
 
     CREATED = "created"

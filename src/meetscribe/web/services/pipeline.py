@@ -201,7 +201,12 @@ class PipelineRunner:
                     ],
                 }
 
-            yield {"step": total_steps, "total": total_steps, "message": "Done", "samples": all_samples}
+            yield {
+                "step": total_steps,
+                "total": total_steps,
+                "message": "Done",
+                "samples": all_samples,
+            }
         finally:
             team_ctx.conn.close()
 

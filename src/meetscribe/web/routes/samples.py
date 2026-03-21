@@ -27,7 +27,10 @@ async def create_speaker(
 
 @router.patch("/{session_id}/speakers/{speaker_id}")
 async def rename_speaker(
-    session_id: str, speaker_id: str, data: SpeakerRename, user: AuthUser = Depends(get_current_user)
+    session_id: str,
+    speaker_id: str,
+    data: SpeakerRename,
+    user: AuthUser = Depends(get_current_user),
 ):
     """Rename a speaker bin."""
     get_session_for_user(session_id, user)

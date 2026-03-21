@@ -7,10 +7,10 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
-from .services.auth import COOKIE_NAME
 
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -148,9 +148,7 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
         if not user.is_admin:
             return RedirectResponse("/", status_code=303)
-        return templates.TemplateResponse(
-            request, "register.html", {"team_name": user.team_name}
-        )
+        return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request):

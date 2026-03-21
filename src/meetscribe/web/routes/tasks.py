@@ -143,7 +143,9 @@ async def stream_extraction(session_id: str, user: AuthUser = Depends(get_curren
             result_queue.put(("error", str(e)))
 
     # Start extraction in background thread
-    thread = threading.Thread(target=extraction_wrapper, daemon=True, name=f"extract-{session_id[:8]}")
+    thread = threading.Thread(
+        target=extraction_wrapper, daemon=True, name=f"extract-{session_id[:8]}"
+    )
     thread.start()
     _register_thread(thread)
 
@@ -211,10 +213,12 @@ async def stream_enrollment(session_id: str, user: AuthUser = Depends(get_curren
                             sample_paths.append(path)
 
                 if not sample_paths:
-                    result_queue.put((
-                        "item",
-                        {"message": f"Skipping {speaker.name}: no samples"},
-                    ))
+                    result_queue.put(
+                        (
+                            "item",
+                            {"message": f"Skipping {speaker.name}: no samples"},
+                        )
+                    )
                     continue
 
                 for item in runner.enroll_speaker(
@@ -226,7 +230,9 @@ async def stream_enrollment(session_id: str, user: AuthUser = Depends(get_curren
         except Exception as e:
             result_queue.put(("error", str(e)))
 
-    thread = threading.Thread(target=enrollment_wrapper, daemon=True, name=f"enroll-{session_id[:8]}")
+    thread = threading.Thread(
+        target=enrollment_wrapper, daemon=True, name=f"enroll-{session_id[:8]}"
+    )
     thread.start()
     _register_thread(thread)
 
@@ -277,9 +283,7 @@ async def stream_transcription(session_id: str, user: AuthUser = Depends(get_cur
         path = service.get_track_path(session_id, track.track_num)
         if path:
             track_paths.append(path)
-            track_speakers[track.track_num] = (
-                track.speaker_name if not track.diarize else None
-            )
+            track_speakers[track.track_num] = track.speaker_name if not track.diarize else None
 
     if not track_paths:
         raise HTTPException(status_code=400, detail="No tracks found")
@@ -306,7 +310,9 @@ async def stream_transcription(session_id: str, user: AuthUser = Depends(get_cur
             logger.exception("Transcription failed")
             result_queue.put(("error", str(e)))
 
-    thread = threading.Thread(target=transcription_wrapper, daemon=True, name=f"transcribe-{session_id[:8]}")
+    thread = threading.Thread(
+        target=transcription_wrapper, daemon=True, name=f"transcribe-{session_id[:8]}"
+    )
     thread.start()
     _register_thread(thread)
 

@@ -6,7 +6,7 @@ import logging
 import os
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from meetscribe import config
 from meetscribe.database import (
@@ -84,7 +84,7 @@ class AuthService:
             user_id = create_user(conn, username, pw_hash, team["id"])
 
             token = secrets.token_hex(32)
-            expires = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
+            expires = datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS)
             create_auth_session(conn, user_id, token, expires.isoformat())
 
             user = AuthUser(
@@ -114,7 +114,7 @@ class AuthService:
             delete_expired_sessions(conn)
 
             token = secrets.token_hex(32)
-            expires = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
+            expires = datetime.now(UTC) + timedelta(days=SESSION_TTL_DAYS)
             create_auth_session(conn, row["id"], token, expires.isoformat())
 
             user = AuthUser(
