@@ -33,6 +33,12 @@ def _get_session_ttl_days() -> int:
     return cfg.web.session_ttl_days
 
 
+def _get_secure_cookies() -> bool:
+    """Get secure cookies flag from config."""
+    cfg = load_config(config.CONFIG_FILE)
+    return cfg.web.secure_cookies
+
+
 @dataclass
 class AuthUser:
     """Authenticated user context."""

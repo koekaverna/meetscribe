@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
+from .services.auth import _get_secure_cookies
 
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -21,7 +22,7 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 
 # Paths that don't require authentication
-PUBLIC_PREFIXES = ("/auth", "/static", "/login")
+PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
 
 
 def create_app() -> FastAPI:
@@ -70,6 +71,7 @@ def create_app() -> FastAPI:
                 value=token,
                 httponly=False,  # Must be readable by templates
                 samesite="strict",
+                secure=_get_secure_cookies(),
                 path="/",
             )
         return response
@@ -168,6 +170,10 @@ def create_app() -> FastAPI:
         }
         template_name = step_templates.get(step_num, "steps/step1_upload.html")
         return templates.TemplateResponse(request, template_name)
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
 
     @app.on_event("shutdown")
     async def on_shutdown():

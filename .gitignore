@@ -68,4 +68,6 @@ Thumbs.db
 
 # uv
 .uv/
-uv.lock
+
+# TLS certificates
+certs/

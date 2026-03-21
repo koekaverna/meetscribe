@@ -6,7 +6,13 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
 
 from ..deps import get_current_user, verify_csrf
-from ..services.auth import COOKIE_NAME, AuthUser, _get_session_ttl_days, get_auth_service
+from ..services.auth import (
+    COOKIE_NAME,
+    AuthUser,
+    _get_secure_cookies,
+    _get_session_ttl_days,
+    get_auth_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +44,7 @@ async def login(
         value=token,
         httponly=True,
         samesite="strict",
+        secure=_get_secure_cookies(),
         max_age=_get_session_ttl_days() * 86400,
         path="/",
     )
