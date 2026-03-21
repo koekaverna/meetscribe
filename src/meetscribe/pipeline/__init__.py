@@ -2,7 +2,7 @@
 
 from . import audio
 from .diarization import DiarizationPipeline
-from .embeddings import EmbeddingExtractor, SpeakerIdentifier, save_voiceprint
+from .embeddings import EmbeddingExtractor, SpeakerIdentifier
 from .models import SpeechSegment, TranscriptSegment, merge_by_proximity, merge_close_segments
 from .transcriber import Transcriber
 from .vad import VoiceActivityDetector
@@ -18,5 +18,4 @@ __all__ = [
     "VoiceActivityDetector",
     "merge_by_proximity",
     "merge_close_segments",
-    "save_voiceprint",
 ]

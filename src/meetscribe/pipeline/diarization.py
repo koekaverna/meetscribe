@@ -23,12 +23,12 @@ class DiarizationPipeline:
         self,
         vad_url: str,
         embedding_url: str,
-        voiceprints_dir: Path,
+        voiceprints: dict[str, list[float]],
         threshold: float = 0.6,
     ):
         self.vad = VoiceActivityDetector(vad_url)
         self.embeddings = EmbeddingExtractor(embedding_url)
-        self.identifier = SpeakerIdentifier(voiceprints_dir, threshold)
+        self.identifier = SpeakerIdentifier(voiceprints, threshold)
 
     def diarize(self, audio_path: Path) -> list[SpeechSegment]:
         """Run full diarization pipeline on an audio file.
