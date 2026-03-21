@@ -120,3 +120,7 @@ web:
   # Auth session lifetime in days.
   # After expiration the user needs to log in again.
   session_ttl_days: 7
+
+  # Set to true when running behind HTTPS reverse proxy.
+  # Adds Secure flag to cookies (browser won't send them over HTTP).
+  secure_cookies: false

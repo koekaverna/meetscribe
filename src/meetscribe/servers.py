@@ -59,6 +59,7 @@ class WebConfig:
     host: str
     port: int
     session_ttl_days: int
+    secure_cookies: bool
 
 
 @dataclass
@@ -186,9 +187,10 @@ def load_config(config_path: Path) -> AppConfig:
             host=d.get("host", "127.0.0.1"),
             port=d.get("port", 8080),
             session_ttl_days=d.get("session_ttl_days", 7),
+            secure_cookies=d.get("secure_cookies", False),
         )
     else:
-        web = WebConfig(host="127.0.0.1", port=8080, session_ttl_days=7)
+        web = WebConfig(host="127.0.0.1", port=8080, session_ttl_days=7, secure_cookies=False)
 
     cfg = AppConfig(
         servers=servers,
