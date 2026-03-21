@@ -5,10 +5,12 @@ Meeting transcription with speaker diarization using remote [speaches](https://g
 ## Features
 
 - **Remote processing**: VAD, speaker embeddings, and transcription via speaches API (OpenAI-compatible)
+- **Web UI**: Browser-based interface with step-by-step workflow
+- **User authentication**: Login/password auth with team-scoped access
 - **Multi-track processing**: Handle video files with multiple audio tracks or individual audio files
 - **Speaker enrollment**: Register speakers with voice samples for automatic identification
 - **Speaker diarization**: Automatically separate and identify speakers without enrollment
-- **Multi-team support**: Separate speaker databases per team, project, or client
+- **Multi-team support**: Separate speaker databases and sessions per team
 - **Parallel transcription**: Distribute chunks across multiple servers
 - **Flexible input**: Video files, audio files, directories, or glob patterns
 
@@ -45,8 +47,10 @@ After installation, restart your terminal to update PATH.
 
 ```bash
 uv venv
-uv pip install -e .
+uv pip install -e ".[web]"
 ```
+
+The `[web]` extra installs FastAPI, Uvicorn, Jinja2 and other web dependencies. Omit it for CLI-only usage.
 
 ## Server Configuration
 
@@ -76,56 +80,91 @@ transcribe:
 
 Multiple transcription servers enable parallel processing of audio chunks.
 
+## Web UI
+
+Start the web interface:
+
+```bash
+meetscribe web
+meetscribe web --host 0.0.0.0 --port 8080
+```
+
+### First-time setup
+
+Create an admin user via CLI before using the web UI:
+
+```bash
+meetscribe user create admin --team default --admin
+```
+
+The admin can then register other users through the web UI at `/register`.
+
+### Workflow
+
+The web UI guides you through a 6-step process:
+
+1. **Upload** — Upload video or audio files
+2. **Configure** — Assign speakers to tracks or enable auto-diarization
+3. **Extract** — Extract speaker samples via VAD + embeddings
+4. **Samples** — Review and organize extracted speaker samples
+5. **Enroll** — Register speakers from samples
+6. **Transcribe** — Generate transcript with speaker attribution
+
+### Access control
+
+- Each user belongs to a team
+- Sessions are visible only to users in the same team
+- Only admin users can register new users (in their own team)
+- Authentication uses HttpOnly cookies (works with SSE streaming)
+
 ## Teams
 
-MeetScribe supports multiple teams, each with its own set of enrolled speakers and voice samples. This enables separate speaker databases for different projects, clients, or departments.
+MeetScribe supports multiple teams, each with its own set of enrolled speakers, voice samples, and sessions. This enables separate speaker databases for different projects, clients, or departments.
 
 All commands accept `-t/--team` flag to specify the team (defaults to `default`):
 
 ```bash
-# Enroll a speaker into a specific team
 meetscribe -t sales enroll "John Doe" ./samples/john/
-
-# Transcribe using a team's speaker database
 meetscribe -t sales transcribe meeting.mp4 -o output.md
-
-# List speakers in a team
 meetscribe -t sales list-speakers
 ```
 
 ### Team management
 
 ```bash
-# Create a new team
 meetscribe team create sales
-
-# List all teams with speaker counts
 meetscribe team list
-
-# Delete a team (cannot delete "default")
 meetscribe team delete sales
 ```
 
 Team data is stored in `teams/<name>/samples/` under the data directory. Voiceprints are stored in a shared SQLite database (`meetscribe.db`), scoped per team.
 
-## Commands
+## User management
+
+```bash
+# Create an admin user
+meetscribe user create admin --team default --admin
+
+# Create a regular user
+meetscribe user create john --team sales
+
+# List all users
+meetscribe user list
+
+# Delete a user
+meetscribe user delete john
+```
+
+## CLI Commands
 
 ### `meetscribe transcribe`
 
-Transcribe a meeting with speaker diarization. Accepts a video file (extracts tracks automatically), audio files, a directory of audio files, or glob patterns:
+Transcribe a meeting with speaker diarization:
 
 ```bash
-# From video (extracts audio tracks automatically)
 meetscribe transcribe meeting.mp4 -o output.md --track1 "Host"
-
-# From a directory of audio files
 meetscribe transcribe path/to/tracks/ -o output.md --track1 "Host"
-
-# From individual audio files
 meetscribe transcribe track1.wav track2.wav -o output.md --track1 "Host"
-
-# From glob pattern
-meetscribe transcribe path/to/tracks/*.wav -o output.md
 ```
 
 Tracks without a `--trackN` assignment are diarized automatically.
@@ -135,7 +174,7 @@ Tracks without a `--trackN` assignment are diarized automatically.
 | `-t, --team` | Team to use for speaker identification | default |
 | `-o, --output` | Output file or directory | required |
 | `-l, --language` | Language code | ru |
-| `--trackN` | Assign speaker name to track N (e.g. `--track1 "Name"`) | diarize |
+| `--trackN` | Assign speaker name to track N | diarize |
 
 ### `meetscribe enroll`
 
@@ -143,9 +182,6 @@ Register known speakers for automatic identification:
 
 ```bash
 meetscribe enroll "John Doe" ./samples/john/
-meetscribe enroll "Jane Smith" recording.wav
-
-# Enroll into a specific team
 meetscribe -t my-team enroll "John Doe" ./samples/john/
 ```
 
@@ -154,7 +190,6 @@ meetscribe -t my-team enroll "John Doe" ./samples/john/
 Extract audio tracks from a video file:
 
 ```bash
-meetscribe extract meeting.mp4
 meetscribe extract meeting.mp4 -o output_dir/
 ```
 
@@ -164,7 +199,6 @@ Extract audio samples from unknown speakers for later enrollment:
 
 ```bash
 meetscribe extract-samples meeting.mp4
-meetscribe extract-samples meeting.mp4 --max-speakers 5 --threshold 0.6
 ```
 
 ### `meetscribe list-speakers`
@@ -173,19 +207,16 @@ Show enrolled speakers:
 
 ```bash
 meetscribe list-speakers
-
-# List speakers in a specific team
 meetscribe -t my-team list-speakers
 ```
 
-### `meetscribe team`
+### `meetscribe web`
 
-Manage teams:
+Start the web UI server:
 
 ```bash
-meetscribe team create <name>
-meetscribe team list
-meetscribe team delete <name>
+meetscribe web
+meetscribe web --host 0.0.0.0 --port 8080
 ```
 
 ### `meetscribe info`
@@ -209,14 +240,10 @@ For video files with multiple audio tracks (e.g., track 1 = host, track 2 = gues
 ## Development
 
 ```bash
-# Setup
 uv venv
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,web]"
 
-# Run tests
 pytest
-
-# Lint
 ruff check src/
 ruff format src/
 ```

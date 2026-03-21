@@ -1,0 +1,118 @@
+<!-- Step 5: Enroll Speakers -->
+<div class="space-y-6">
+    <div class="text-center">
+        <h2 class="text-2xl font-bold text-gray-800">Enroll Speakers</h2>
+        <p class="text-gray-600 mt-2">Create voiceprints for identified speakers</p>
+    </div>
+
+    <!-- Speakers to Enroll -->
+    <div class="max-w-2xl mx-auto space-y-4">
+        <template x-for="speaker in (session?.speakers || [])" :key="speaker.id">
+            <div class="bg-gray-50 rounded-xl p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-medium text-gray-800" x-text="speaker.name"></p>
+                            <p class="text-sm text-gray-500">
+                                <span x-text="getSpeakerSampleCount(speaker.id)"></span> samples assigned
+                            </p>
+                        </div>
+                    </div>
+                    <div>
+                        <span
+                            x-show="getSpeakerSampleCount(speaker.id) > 0"
+                            class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium"
+                        >
+                            Ready
+                        </span>
+                        <span
+                            x-show="getSpeakerSampleCount(speaker.id) === 0"
+                            class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium"
+                        >
+                            No samples
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </template>
+
+        <div x-show="!session?.speakers || session.speakers.length === 0" class="text-center py-8 text-gray-500">
+            <p>No speakers to enroll. Go back and organize samples first.</p>
+        </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="max-w-xl mx-auto space-y-6">
+        <!-- Status -->
+        <div class="text-center">
+            <div x-show="enrolling" class="space-y-4">
+                <!-- Spinner -->
+                <div class="flex justify-center">
+                    <svg class="animate-spin h-16 w-16 text-primary-600" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <p class="text-lg font-medium text-gray-800" x-text="enrollmentStatus"></p>
+            </div>
+
+            <div x-show="enrollmentComplete && !enrolling" class="space-y-4">
+                <svg class="mx-auto h-20 w-20 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <p class="text-lg font-medium text-green-600">Enrollment Complete!</p>
+                <p class="text-gray-600">Speakers have been enrolled and are ready for transcription.</p>
+            </div>
+        </div>
+
+        <!-- Log Output -->
+        <div x-show="enrollmentLogs.length > 0" class="bg-gray-900 rounded-xl p-4 max-h-48 overflow-y-auto">
+            <template x-for="(log, index) in enrollmentLogs" :key="index">
+                <p class="text-green-400 font-mono text-sm" x-text="log"></p>
+            </template>
+        </div>
+
+        <!-- Start Button -->
+        <div x-show="!enrolling && !enrollmentComplete && hasSpeakersToEnroll" class="flex justify-center">
+            <button
+                @click="startEnrollment()"
+                class="px-8 py-4 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-lg hover:shadow-xl transition-all duration-200 ripple"
+            >
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
+                </svg>
+                Enroll Speakers
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Navigation -->
+    <div class="flex justify-between pt-4">
+        <button
+            @click="prevStep()"
+            :disabled="enrolling"
+            :class="enrolling ? 'opacity-50 cursor-not-allowed' : ''"
+            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+        >
+            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+            </svg>
+            Back
+        </button>
+        <button
+            @click="nextStep()"
+            class="px-6 py-3 text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+        >
+            Next: Transcribe
+            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+            </svg>
+        </button>
+    </div>
+</div>
