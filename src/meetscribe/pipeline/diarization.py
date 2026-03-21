@@ -32,9 +32,12 @@ class DiarizationPipeline:
         confident_gap: float,
         min_threshold: float,
         max_workers: int,
+        embedding_model: str,
     ):
         self.vad = VoiceActivityDetector(vad_url, vad_timeout)
-        self.embeddings = EmbeddingExtractor(embedding_url, embedding_timeout, min_duration_ms)
+        self.embeddings = EmbeddingExtractor(
+            embedding_url, embedding_timeout, min_duration_ms, model=embedding_model
+        )
         self.identifier = SpeakerIdentifier(
             voiceprints, threshold, confident_gap, min_threshold, unknown_cluster_threshold
         )

@@ -30,6 +30,7 @@ class EmbeddingsConfig:
     """Speaker embeddings configuration."""
 
     server: str
+    model: str
     timeout: float
     threshold: float
     min_duration_ms: int
@@ -156,6 +157,7 @@ def load_config(config_path: Path) -> AppConfig:
         d = data["embeddings"]
         embeddings = EmbeddingsConfig(
             server=d["server"],
+            model=d.get("model", "pyannote/wespeaker-voxceleb-resnet34-LM"),
             timeout=d.get("timeout", 60.0),
             threshold=d.get("threshold", 0.6),
             min_duration_ms=d.get("min_duration_ms", 1500),

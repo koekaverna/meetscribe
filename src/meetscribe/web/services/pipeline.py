@@ -67,6 +67,7 @@ class PipelineRunner:
             confident_gap=self.cfg.embeddings.confident_gap,
             min_threshold=self.cfg.embeddings.min_threshold,
             max_workers=self.cfg.embeddings.max_workers,
+            embedding_model=self.cfg.embeddings.model,
         )
 
     def _create_transcriber(self, language: str) -> Transcriber:
@@ -237,6 +238,7 @@ class PipelineRunner:
             self.cfg.get_embeddings_url(),
             self.cfg.embeddings.timeout,
             self.cfg.embeddings.min_duration_ms,
+            model=self.cfg.embeddings.model,
         )
 
         sample_count = len(sample_paths)
