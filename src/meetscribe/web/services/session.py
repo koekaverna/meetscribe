@@ -1,6 +1,7 @@
 """Session state management service backed by SQLite."""
 
 import shutil
+import sqlite3
 import uuid
 from pathlib import Path
 
@@ -30,7 +31,7 @@ class SessionService:
     def _samples_dir(self, session_id: str) -> Path:
         return self._session_dir(session_id) / "samples"
 
-    def _conn(self):
+    def _conn(self) -> sqlite3.Connection:
         return get_db(config.DB_PATH)
 
     # --- Core CRUD ---
@@ -353,9 +354,19 @@ class SessionService:
         try:
             conn.execute(
                 "INSERT INTO session_samples "
-                "(id, session_id, track_num, cluster_id, filename, duration_ms, is_known, known_speaker_name) "
+                "(id, session_id, track_num, cluster_id, filename,"
+                " duration_ms, is_known, known_speaker_name) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (sample_id, session_id, track_num, cluster_id, filename, duration_ms, int(is_known), known_speaker_name),
+                (
+                    sample_id,
+                    session_id,
+                    track_num,
+                    cluster_id,
+                    filename,
+                    duration_ms,
+                    int(is_known),
+                    known_speaker_name,
+                ),
             )
             conn.commit()
         except Exception:
@@ -376,7 +387,11 @@ class SessionService:
         )
 
     def move_sample(
-        self, session_id: str, sample_id: str, speaker_id: str | None, speaker_name: str | None = None
+        self,
+        session_id: str,
+        sample_id: str,
+        speaker_id: str | None,
+        speaker_name: str | None = None,
     ) -> bool:
         """Move sample to speaker bin."""
         conn = self._conn()
@@ -465,7 +480,7 @@ class SessionService:
 
             ids = [r["id"] for r in expired]
             placeholders = ",".join("?" * len(ids))
-            conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", ids)
+            conn.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", ids)  # nosec B608
             conn.commit()
         finally:
             conn.close()

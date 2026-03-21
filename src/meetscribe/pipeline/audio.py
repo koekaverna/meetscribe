@@ -42,8 +42,18 @@ def check_ffmpeg() -> None:
 def probe_audio_tracks(file_path: Path) -> list[int]:
     """Return list of audio stream indices in the file."""
     result = subprocess.run(
-        [FFPROBE_BIN, "-v", "error", "-select_streams", "a",
-         "-show_entries", "stream=index", "-of", "csv=p=0", str(file_path)],
+        [
+            FFPROBE_BIN,
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_entries",
+            "stream=index",
+            "-of",
+            "csv=p=0",
+            str(file_path),
+        ],
         capture_output=True,
         text=True,
     )
@@ -93,9 +103,18 @@ def convert_to_wav(input_path: Path, output_path: Path) -> Path:
 async def probe_audio_tracks_async(file_path: Path) -> list[int]:
     """Return list of audio stream indices in the file (async)."""
     proc = await asyncio.create_subprocess_exec(
-        FFPROBE_BIN, "-v", "error", "-select_streams", "a",
-        "-show_entries", "stream=index", "-of", "csv=p=0", str(file_path),
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        FFPROBE_BIN,
+        "-v",
+        "error",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "csv=p=0",
+        str(file_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await proc.communicate()
     return [int(line.strip()) for line in stdout.decode().strip().split("\n") if line.strip()]
@@ -104,32 +123,52 @@ async def probe_audio_tracks_async(file_path: Path) -> list[int]:
 async def extract_audio_async(video_path: Path, output_path: Path, track_index: int) -> Path:
     """Extract audio track from video file as 16kHz mono WAV (async)."""
     cmd = [
-        FFMPEG_BIN, "-y", "-i", str(video_path),
-        "-map", f"0:{track_index}", "-ac", "1", "-ar", "16000",
+        FFMPEG_BIN,
+        "-y",
+        "-i",
+        str(video_path),
+        "-map",
+        f"0:{track_index}",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
         str(output_path),
     ]
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(f"Failed to extract track {track_index}: {stderr.decode(errors='replace')}")
+        err = stderr.decode(errors="replace")
+        raise RuntimeError(f"Failed to extract track {track_index}: {err}")
     return output_path
 
 
 async def convert_to_wav_async(input_path: Path, output_path: Path) -> Path:
     """Convert audio file to 16kHz mono WAV (async)."""
     cmd = [
-        FFMPEG_BIN, "-y", "-i", str(input_path),
-        "-ac", "1", "-ar", "16000",
+        FFMPEG_BIN,
+        "-y",
+        "-i",
+        str(input_path),
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
         str(output_path),
     ]
     proc = await asyncio.create_subprocess_exec(
-        *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(f"Failed to convert {input_path.name}: {stderr.decode(errors='replace')}")
+        err = stderr.decode(errors="replace")
+        raise RuntimeError(f"Failed to convert {input_path.name}: {err}")
     return output_path
 
 
@@ -157,7 +196,8 @@ def extract_segment(audio_path: Path, output_path: Path, start_ms: int, end_ms: 
         str(duration_sec),
         "-i",
         str(audio_path),
-        "-c", "copy",
+        "-c",
+        "copy",
         str(output_path),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)

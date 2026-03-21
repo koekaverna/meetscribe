@@ -121,7 +121,7 @@ def ensure_default_team(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def create_team(conn: sqlite3.Connection, name: str, description: str | None = None) -> int:
+def create_team(conn: sqlite3.Connection, name: str, description: str | None = None) -> int | None:
     """Create a team. Returns its id."""
     _validate_team_name(name)
     cursor = conn.execute(
@@ -174,7 +174,7 @@ def save_voiceprint(
     )
     conn.commit()
     logger.info("Saved voiceprint for '%s' (team_id=%d)", name, team_id)
-    return cursor.lastrowid
+    return cursor.lastrowid  # type: ignore[return-value]
 
 
 def load_voiceprints(conn: sqlite3.Connection, team_id: int) -> dict[str, list[float]]:
@@ -202,7 +202,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
         "SELECT COUNT(*) as cnt FROM voiceprints WHERE team_id = ?",
         (team_id,),
     ).fetchone()
-    return row["cnt"]
+    return row["cnt"]  # type: ignore[index]
 
 
 # --- User CRUD ---
@@ -221,7 +221,7 @@ def create_user(
         (username, password_hash, team_id, int(is_admin)),
     )
     conn.commit()
-    return cursor.lastrowid
+    return cursor.lastrowid  # type: ignore[return-value]
 
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:

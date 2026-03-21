@@ -69,14 +69,14 @@ logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handl
 logging.captureWarnings(True)
 warnings.filterwarnings("default")
 
-from .pipeline import (  # noqa: E402
+from .pipeline import (  # noqa: E402 — capture warnings from heavy deps
     DiarizationPipeline,
     EmbeddingExtractor,
     SpeechSegment,
     Transcriber,
     audio,
 )
-from .pipeline.audio import FFmpegNotFoundError  # noqa: E402
+from .pipeline.audio import FFmpegNotFoundError  # noqa: E402 — capture warnings from heavy deps
 
 # === Colors ===
 C_RESET = "\033[0m"
@@ -590,9 +590,7 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
                         marker = f"{C_GREEN}\u2714" if is_known else f"{C_YELLOW}\u2753"
                         print(f"    {marker}{C_RESET} {spk}")
 
-                save_unknown_samples(
-                    track_path, segments, date_str, team_ctx.unknown_samples_dir
-                )
+                save_unknown_samples(track_path, segments, date_str, team_ctx.unknown_samples_dir)
 
     total_elapsed = time.time() - total_start
     print(f"\n{C_GREEN}{'=' * 60}{C_RESET}")
@@ -662,7 +660,10 @@ def cmd_user_create(args):
         is_admin = getattr(args, "admin", False)
         create_user(conn, args.username, pw_hash, team["id"], is_admin=is_admin)
         role = " (admin)" if is_admin else ""
-        print(f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}' created (team: {args.team}){role}\n")
+        print(
+            f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}'"
+            f" created (team: {args.team}){role}\n"
+        )
     except Exception as e:
         print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}\n")
         raise SystemExit(1)
@@ -684,7 +685,10 @@ def cmd_user_list(args):
         warn("No users registered.")
     else:
         for u in users:
-            print(f"  {C_GREEN}\u2714{C_RESET} {u['username']} {C_DIM}(team: {u['team_name']}){C_RESET}")
+            print(
+                f"  {C_GREEN}\u2714{C_RESET} {u['username']}"
+                f" {C_DIM}(team: {u['team_name']}){C_RESET}"
+            )
     print()
 
 
@@ -877,9 +881,14 @@ def main():
 
     # Commands that don't need team context
     NO_TEAM_COMMANDS = {
-        cmd_team_create, cmd_team_list, cmd_team_delete,
-        cmd_user_create, cmd_user_list, cmd_user_delete,
-        cmd_extract, cmd_web,
+        cmd_team_create,
+        cmd_team_list,
+        cmd_team_delete,
+        cmd_user_create,
+        cmd_user_list,
+        cmd_user_delete,
+        cmd_extract,
+        cmd_web,
     }
 
     try:
