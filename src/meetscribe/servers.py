@@ -73,7 +73,11 @@ class AppConfig:
     vad: VadConfig | None = None
     embeddings: EmbeddingsConfig | None = None
     transcription: TranscriptionConfig | None = None
-    web: WebConfig | None = None
+    web: WebConfig = field(
+        default_factory=lambda: WebConfig(
+            host="127.0.0.1", port=8080, session_ttl_days=7, secure_cookies=False
+        )
+    )
 
     def get_server_url(self, name: str) -> str:
         """Get server URL by name."""
@@ -101,20 +105,27 @@ class AppConfig:
         return [self.get_server_url(name) for name in self.transcription.servers]
 
     def validate(self) -> None:
-        """Validate that configured servers reference existing server names."""
+        """Validate that all required sections are present and reference existing servers."""
         if not self.servers:
             raise ValueError("No servers configured. See config.example.yaml")
+        if not self.vad:
+            raise ValueError("'vad' section missing from config. See config.example.yaml")
+        if not self.embeddings:
+            raise ValueError("'embeddings' section missing from config. See config.example.yaml")
+        if not self.transcription:
+            raise ValueError(
+                "'transcription' section missing from config. See config.example.yaml"
+            )
         server_names = {s.name for s in self.servers}
-        if self.vad and self.vad.server not in server_names:
+        if self.vad.server not in server_names:
             raise ValueError(f"VAD server '{self.vad.server}' not found in servers list")
-        if self.embeddings and self.embeddings.server not in server_names:
+        if self.embeddings.server not in server_names:
             raise ValueError(
                 f"Embeddings server '{self.embeddings.server}' not found in servers list"
             )
-        if self.transcription:
-            for name in self.transcription.servers:
-                if name not in server_names:
-                    raise ValueError(f"Transcription server '{name}' not found in servers list")
+        for name in self.transcription.servers:
+            if name not in server_names:
+                raise ValueError(f"Transcription server '{name}' not found in servers list")
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -184,7 +195,6 @@ def load_config(config_path: Path) -> AppConfig:
             max_chunk_ms=d.get("max_chunk_ms", 30000),
         )
 
-    web = None
     if "web" in data:
         d = data["web"]
         web = WebConfig(
@@ -194,7 +204,7 @@ def load_config(config_path: Path) -> AppConfig:
             secure_cookies=d.get("secure_cookies", False),
         )
     else:
-        web = WebConfig(host="127.0.0.1", port=8080, session_ttl_days=7, secure_cookies=False)
+        web = None
 
     cfg = AppConfig(
         servers=servers,

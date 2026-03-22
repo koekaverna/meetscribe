@@ -11,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
-from .services.auth import _get_secure_cookies
+from .services.auth import get_secure_cookies
 
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -71,7 +71,7 @@ def create_app() -> FastAPI:
                 value=token,
                 httponly=False,  # Must be readable by templates
                 samesite="strict",
-                secure=_get_secure_cookies(),
+                secure=get_secure_cookies(),
                 path="/",
             )
         return response

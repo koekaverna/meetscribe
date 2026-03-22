@@ -6,8 +6,8 @@ import uuid
 from pathlib import Path
 
 from meetscribe import config
-from meetscribe.database import get_db, get_team, load_voiceprints
-from meetscribe.team import resolve_team
+from meetscribe.database import get_db, get_team
+from meetscribe.servers import load_config
 
 from ..models import Sample, SessionState, SessionStatus, SpeakerBin, TrackConfig
 
@@ -49,9 +49,11 @@ class SessionService:
             team = get_team(conn, team_name)
             if not team:
                 raise ValueError(f"Team '{team_name}' not found")
+            cfg = load_config(config.CONFIG_FILE)
+            language = cfg.transcription.language if cfg.transcription else "ru"
             conn.execute(
                 "INSERT INTO sessions (id, team_id, status, language) VALUES (?, ?, ?, ?)",
-                (session_id, team["id"], SessionStatus.CREATED.value, "ru"),
+                (session_id, team["id"], SessionStatus.CREATED.value, language),
             )
             conn.commit()
         finally:
@@ -405,23 +407,6 @@ class SessionService:
             conn.commit()
         finally:
             conn.close()
-
-        # If speaker is enrolled, copy sample to team-scoped enrolled folder
-        if speaker_name:
-            state = self.get(session_id)
-            if state:
-                team_ctx = resolve_team(state.team_name)
-                try:
-                    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
-                    if speaker_name in voiceprints:
-                        enrolled_dir = team_ctx.enrolled_samples_dir / speaker_name
-                        enrolled_dir.mkdir(parents=True, exist_ok=True)
-                        sample_path = self._samples_dir(session_id) / f"{sample_id}.wav"
-                        if sample_path.exists():
-                            dest = enrolled_dir / f"manual_{sample_id}.wav"
-                            shutil.copy2(sample_path, dest)
-                finally:
-                    team_ctx.conn.close()
 
         return True
 

@@ -291,7 +291,7 @@ def cmd_enroll(args, team_ctx: TeamContext):
         # Average embeddings across samples
         avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
         save_voiceprint(
-            team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.transcription.model
+            team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.embeddings.model
         )
 
     elapsed = time.time() - t

@@ -1,6 +1,7 @@
 """Pipeline service wrappers for web UI using remote speaches API."""
 
 import logging
+import shutil
 import tempfile
 import time
 from collections.abc import Generator
@@ -267,8 +268,16 @@ class PipelineRunner:
                 team_ctx.id,
                 name,
                 avg_embedding,
-                self.cfg.transcription.model,
+                self.cfg.embeddings.model,
             )
+
+            # Copy samples to team-scoped enrolled directory
+            enrolled_dir = team_ctx.enrolled_samples_dir / name
+            enrolled_dir.mkdir(parents=True, exist_ok=True)
+            for path in sample_paths:
+                dest = enrolled_dir / path.name
+                if path.exists() and path.resolve() != dest.resolve():
+                    shutil.copy2(path, dest)
         finally:
             team_ctx.conn.close()
 

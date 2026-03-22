@@ -19,24 +19,32 @@ from meetscribe.database import (
     get_team,
     get_user_by_username,
 )
-from meetscribe.servers import load_config
+from meetscribe.servers import WebConfig, load_config
 
 logger = logging.getLogger(__name__)
 
 COOKIE_NAME = "meetscribe_session"
 PBKDF2_ITERATIONS = 600_000
 
+_web_cfg: WebConfig | None = None
 
-def _get_session_ttl_days() -> int:
+
+def _get_web_config() -> WebConfig:
+    """Get cached web config."""
+    global _web_cfg
+    if _web_cfg is None:
+        _web_cfg = load_config(config.CONFIG_FILE).web
+    return _web_cfg
+
+
+def get_session_ttl_days() -> int:
     """Get session TTL from config."""
-    cfg = load_config(config.CONFIG_FILE)
-    return cfg.web.session_ttl_days
+    return _get_web_config().session_ttl_days
 
 
-def _get_secure_cookies() -> bool:
+def get_secure_cookies() -> bool:
     """Get secure cookies flag from config."""
-    cfg = load_config(config.CONFIG_FILE)
-    return cfg.web.secure_cookies
+    return _get_web_config().secure_cookies
 
 
 @dataclass
@@ -96,7 +104,7 @@ class AuthService:
             user_id = create_user(conn, username, pw_hash, team["id"])
 
             token = secrets.token_hex(32)
-            expires = datetime.now(UTC) + timedelta(days=_get_session_ttl_days())
+            expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
             create_auth_session(conn, user_id, token, expires.isoformat())
 
             user = AuthUser(
@@ -126,7 +134,7 @@ class AuthService:
             delete_expired_sessions(conn)
 
             token = secrets.token_hex(32)
-            expires = datetime.now(UTC) + timedelta(days=_get_session_ttl_days())
+            expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
             create_auth_session(conn, row["id"], token, expires.isoformat())
 
             user = AuthUser(
