@@ -64,9 +64,9 @@
     </div>
 
     <!-- Two-Column Layout -->
-    <div class="flex gap-6">
+    <div class="flex flex-col sm:flex-row gap-4 sm:gap-6">
         <!-- Left Column: Unassigned Samples -->
-        <div class="w-1/3 flex-shrink-0">
+        <div class="w-full sm:w-1/3 sm:flex-shrink-0">
             <div class="bg-gray-100 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="font-semibold text-gray-700">Unassigned Samples</h3>
@@ -118,9 +118,9 @@
         </div>
 
         <!-- Right Column: Speaker Bins -->
-        <div class="w-2/3 max-h-[500px] overflow-y-auto flex flex-wrap gap-4 items-start content-start">
+        <div class="w-full sm:w-2/3 max-h-[500px] overflow-y-auto flex flex-wrap gap-4 items-start content-start">
             <template x-for="speaker in (session?.speakers || [])" :key="speaker.id">
-                <div class="bg-blue-50 rounded-xl p-4 min-w-[250px] flex-grow max-w-[calc(50%-0.5rem)]">
+                <div class="bg-blue-50 rounded-xl p-4 w-full sm:min-w-[250px] sm:flex-grow sm:max-w-[calc(50%-0.5rem)]">
                     <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center space-x-2">
                             <input
@@ -200,14 +200,14 @@
         x-transition
         class="sticky bottom-0 bg-white border-t border-gray-200 rounded-xl shadow-lg p-4 mt-4"
     >
-        <div class="flex items-center gap-4">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
             <!-- Sample Info -->
-            <div class="flex-shrink-0 min-w-[120px]">
+            <div class="flex-shrink-0">
                 <p class="text-sm font-medium text-gray-700" x-text="currentSampleInfo ? 'Track ' + currentSampleInfo.trackNum + ' - C' + currentSampleInfo.clusterId : ''"></p>
             </div>
 
             <!-- Progress Bar -->
-            <div class="flex-grow">
+            <div class="flex-grow min-w-0">
                 <div
                     @click="seekToPercent($event)"
                     class="h-2 bg-gray-200 rounded-full cursor-pointer relative overflow-hidden"
@@ -224,7 +224,7 @@
             </div>
 
             <!-- Controls -->
-            <div class="flex items-center gap-2 flex-shrink-0">
+            <div class="flex items-center justify-center gap-2 flex-shrink-0">
                 <!-- Rewind -5s -->
                 <button
                     @click="seekSample(-5)"
@@ -291,22 +291,22 @@
     ></audio>
 
     <!-- Navigation -->
-    <div class="flex justify-between pt-4">
+    <div class="flex justify-between gap-3 pt-4">
         <button
             @click="prevStep()"
-            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+            class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
         >
-            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
             </svg>
             Back
         </button>
         <button
             @click="nextStep()"
-            class="px-6 py-3 text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+            class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
             Next: Enroll Speakers
-            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
         </button>

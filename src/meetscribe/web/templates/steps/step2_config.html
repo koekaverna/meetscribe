@@ -97,22 +97,22 @@
     <audio x-ref="audioPlayer" class="hidden"></audio>
 
     <!-- Navigation -->
-    <div class="flex justify-between pt-4">
+    <div class="flex justify-between gap-3 pt-4">
         <button
             @click="prevStep()"
-            class="px-6 py-3 text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
+            class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-gray-700 font-medium bg-gray-100 rounded-xl hover:bg-gray-200 transition-all duration-200"
         >
-            <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
             </svg>
             Back
         </button>
         <button
             @click="nextStep()"
-            class="px-6 py-3 text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-md hover:shadow-lg transition-all duration-200 ripple"
+            class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
             <span x-text="needsDiarization() ? 'Next: Extract Samples' : 'Next: Transcribe'"></span>
-            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
         </button>

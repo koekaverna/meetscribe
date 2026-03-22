@@ -11,7 +11,7 @@
         @dragleave.prevent="isDragging = false"
         @drop.prevent="handleDrop($event)"
         :class="isDragging ? 'border-primary-500 bg-primary-50' : 'border-gray-300 bg-gray-50'"
-        class="border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer hover:border-primary-400"
+        class="border-2 border-dashed rounded-xl p-6 sm:p-12 text-center transition-all duration-200 cursor-pointer hover:border-primary-400"
         @click="$refs.fileInput.click()"
     >
         <input
@@ -22,10 +22,10 @@
             accept=".mp4,.mkv,.avi,.mov,.webm,.wav,.mp3,.flac,.ogg,.m4a"
             class="hidden"
         >
-        <svg class="mx-auto h-16 w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <svg class="mx-auto h-10 w-10 sm:h-16 sm:w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
         </svg>
-        <p class="mt-4 text-lg font-medium text-gray-700">Drop files here or click to browse</p>
+        <p class="mt-2 sm:mt-4 text-base sm:text-lg font-medium text-gray-700">Drop files here or click to browse</p>
         <p class="mt-2 text-sm text-gray-500">Supports MP4, MKV, AVI, MOV, WAV, MP3, FLAC</p>
     </div>
 
@@ -90,10 +90,10 @@
             @click="nextStep()"
             :disabled="!session || !session.tracks || session.tracks.length === 0"
             :class="session && session.tracks && session.tracks.length > 0 ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-300 cursor-not-allowed'"
-            class="px-6 py-3 text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
+            class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
             Next: Configure Tracks
-            <svg class="inline-block w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
         </button>

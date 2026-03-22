@@ -57,6 +57,9 @@ function app() {
         newSpeakerName: '',
         speakerSuggestions: [],
 
+        // UI feedback
+        copied: false,
+
         // Audio player state
         playbackRate: 1,
         sampleProgress: 0,
@@ -785,7 +788,8 @@ function app() {
         copyTranscript() {
             if (this.session?.transcript) {
                 navigator.clipboard.writeText(this.session.transcript);
-                alert('Transcript copied to clipboard!');
+                this.copied = true;
+                setTimeout(() => this.copied = false, 2000);
             }
         },
 

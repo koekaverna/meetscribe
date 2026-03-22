@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MeetScribe</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- HTMX -->
@@ -36,40 +37,44 @@
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen" x-data="app()" x-init="init()">
-    <div class="max-w-6xl mx-auto px-4 py-8">
+    <div class="max-w-6xl mx-auto px-3 py-4 sm:px-4 sm:py-8">
         <!-- Header -->
-        <header class="text-center mb-8 relative">
-            <h1 class="text-3xl font-bold text-gray-800">MeetScribe</h1>
-            <p class="text-gray-600 mt-2">Meeting transcription with speaker diarization</p>
-            <!-- User actions -->
-            <div class="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                <button
-                    @click="if(confirm('Start a new session? Current progress will be lost.')) startNewSession()"
-                    class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                    title="Start new session"
-                >
-                    <svg class="inline-block w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                    </svg>
-                    New
-                </button>
-                <form method="POST" action="/auth/logout" class="inline">
-                    <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token(request) }}">
-                    <button type="submit"
-                        class="px-3 py-2 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Sign out"
+        <header class="mb-6 sm:mb-8">
+            <div class="flex items-center justify-between">
+                <div class="min-w-0">
+                    <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">MeetScribe</h1>
+                    <p class="text-gray-600 text-sm sm:text-base mt-1">Meeting transcription with speaker diarization</p>
+                </div>
+                <!-- User actions -->
+                <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+                    <button
+                        @click="if(confirm('Start a new session? Current progress will be lost.')) startNewSession()"
+                        class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Start new session"
                     >
-                        <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                        <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                         </svg>
+                        <span class="hidden sm:inline">New</span>
                     </button>
-                </form>
+                    <form method="POST" action="/auth/logout" class="inline">
+                        <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token(request) }}">
+                        <button type="submit"
+                            class="px-3 py-2 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Sign out"
+                        >
+                            <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
             </div>
         </header>
 
         <!-- Stepper -->
-        <nav x-show="!sessionNotFound" class="mb-8">
-            <ol class="flex items-center justify-center space-x-4">
+        <nav x-show="!sessionNotFound" class="mb-4 sm:mb-8">
+            <ol class="flex items-center justify-center space-x-2 sm:space-x-4">
                 <template x-for="(step, index) in steps" :key="index">
                     <li class="flex items-center">
                         <button
@@ -81,7 +86,7 @@
                                 'bg-gray-200 text-gray-600': index + 1 > currentStep,
                                 'cursor-not-allowed opacity-50': !canGoToStep(index + 1)
                             }"
-                            class="w-10 h-10 rounded-full flex items-center justify-center font-semibold shadow-md transition-all duration-200 hover:shadow-lg"
+                            class="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-base font-semibold shadow-md transition-all duration-200 hover:shadow-lg"
                         >
                             <span x-show="index + 1 >= currentStep" x-text="index + 1"></span>
                             <svg x-show="index + 1 < currentStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -100,12 +105,12 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+        <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8">
             {% block content %}{% endblock %}
         </main>
 
         <!-- Footer -->
-        <footer class="mt-8 text-center text-gray-500 text-sm">
+        <footer class="mt-4 sm:mt-8 text-center text-gray-500 text-xs sm:text-sm">
             <p>MeetScribe - Meeting transcription with speaker diarization</p>
         </footer>
     </div>
