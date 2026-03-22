@@ -100,8 +100,8 @@ Located at `MEETSCRIBE_DATA_DIR/config.yaml` (by default `./data/config.yaml`). 
 **Sections:**
 
 - **`servers`** — List of speaches API servers (URL + name)
-- **`vad`** — Voice Activity Detection: server, timeout
-- **`embeddings`** — Speaker embeddings: server, timeout, identification thresholds, clustering parameters
+- **`vad`** — Voice Activity Detection: server, timeout, silence/speech thresholds
+- **`embeddings`** — Speaker embeddings: server, model, identification thresholds, AHC clustering parameters
 - **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging
 - **`web`** — Web UI: host, port, session TTL
 

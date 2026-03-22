@@ -33,8 +33,17 @@ class DiarizationPipeline:
         min_threshold: float,
         max_workers: int,
         embedding_model: str,
+        vad_min_silence_duration_ms: int = 1200,
+        vad_speech_pad_ms: int = 30,
+        vad_threshold: float = 0.5,
     ):
-        self.vad = VoiceActivityDetector(vad_url, vad_timeout)
+        self.vad = VoiceActivityDetector(
+            vad_url,
+            vad_timeout,
+            min_silence_duration_ms=vad_min_silence_duration_ms,
+            speech_pad_ms=vad_speech_pad_ms,
+            threshold=vad_threshold,
+        )
         self.embeddings = EmbeddingExtractor(
             embedding_url, embedding_timeout, min_duration_ms, model=embedding_model
         )

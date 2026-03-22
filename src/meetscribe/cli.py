@@ -48,7 +48,6 @@ from .database import (
     load_voiceprints,
     save_voiceprint,
 )
-from .migration import migrate, needs_migration
 from .servers import load_config
 from .team import TeamContext, resolve_team
 
@@ -92,6 +91,7 @@ C_YELLOW = "\033[93m"
 C_RED = "\033[91m"
 C_MAGENTA = "\033[95m"
 C_BLUE = "\033[94m"
+
 
 # === Helpers ===
 def _format_elapsed(seconds: float) -> str:
@@ -150,12 +150,23 @@ def save_unknown_samples(
     date_str: str,
     unknown_samples_dir: Path,
     min_duration_ms: int = 3000,
-    max_samples: int = 5,
+    max_duration_ms: int = 12000,
+    max_samples: int = 10,
 ) -> None:
-    """Save audio samples for unknown speakers using FFmpeg."""
+    """Save audio samples for unknown speakers using FFmpeg.
+
+    Prefers segments in the 5-10s range (best for clean single-speaker embeddings).
+    Filters out segments that are too short or too long.
+    """
+    ideal_ms = 7000
+
     unknown_speakers: dict[str, list[SpeechSegment]] = {}
     for seg in segments:
-        if seg.speaker and seg.speaker.startswith("Unknown") and seg.duration_ms >= min_duration_ms:
+        if (
+            seg.speaker
+            and seg.speaker.startswith("Unknown")
+            and min_duration_ms <= seg.duration_ms <= max_duration_ms
+        ):
             unknown_speakers.setdefault(seg.speaker, []).append(seg)
 
     if not unknown_speakers:
@@ -163,7 +174,8 @@ def save_unknown_samples(
 
     for speaker_label, segs in unknown_speakers.items():
         cluster_dir = unknown_samples_dir / f"{date_str}-{speaker_label.replace(' ', '_').lower()}"
-        segs.sort(key=lambda s: s.duration_ms, reverse=True)
+        # Sort by proximity to ideal duration (7s) — medium segments are cleanest
+        segs.sort(key=lambda s: abs(s.duration_ms - ideal_ms))
 
         cluster_dir.mkdir(parents=True, exist_ok=True)
 
@@ -172,10 +184,10 @@ def save_unknown_samples(
             out_file = cluster_dir / f"sample_{i:02d}_{duration_s:.1f}s.wav"
             audio.extract_segment(audio_path, out_file, seg.start_ms, seg.end_ms)
 
-        info(
-            f"Saved {min(len(segs), max_samples)} samples"
-            f" for {speaker_label} (longest: {segs[0].duration_ms / 1000:.1f}s)"
-        )
+        saved = segs[:max_samples]
+        lo = saved[-1].duration_ms / 1000
+        hi = saved[0].duration_ms / 1000
+        info(f"Saved {len(saved)} samples for {speaker_label} ({lo:.1f}s—{hi:.1f}s)")
 
 
 def format_ts(ms: int) -> str:
@@ -434,6 +446,9 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
         min_threshold=cfg.embeddings.min_threshold,
         max_workers=cfg.embeddings.max_workers,
         embedding_model=cfg.embeddings.model,
+        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
+        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
+        vad_threshold=cfg.vad.threshold,
     )
     transcriber = Transcriber(
         cfg.get_transcription_urls(),
@@ -576,6 +591,9 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
         min_threshold=cfg.embeddings.min_threshold,
         max_workers=cfg.embeddings.max_workers,
         embedding_model=cfg.embeddings.model,
+        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
+        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
+        vad_threshold=cfg.vad.threshold,
     )
 
     with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
@@ -808,21 +826,6 @@ def main():
         print(f"  {C_CYAN}Linux:{C_RESET}    sudo apt install ffmpeg")
         print("\nAfter installation, restart your terminal.\n")
         raise SystemExit(1)
-
-    # Run migration if needed
-    if needs_migration():
-        conn = get_db(config.DB_PATH)
-        migrated_vp, migrated_samples = migrate(conn)
-        conn.close()
-        if migrated_vp or migrated_samples:
-            print(
-                f"\n  {C_CYAN}\u2139\ufe0f  Migrated {migrated_vp} voiceprint(s) and"
-                f" {migrated_samples} speaker sample(s) to 'default' team.{C_RESET}"
-            )
-            print(
-                f"  {C_DIM}Old data in {config.VOICEPRINTS_DIR} and"
-                f" {config.SAMPLES_DIR} can be removed.{C_RESET}\n"
-            )
 
     parser = argparse.ArgumentParser(
         description="MeetScribe - Meeting transcription with speaker diarization"

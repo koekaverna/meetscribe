@@ -29,7 +29,6 @@ def get_data_dir() -> Path:
     return base / "meetscribe"
 
 
-
 def get_tmp_dir() -> Path:
     """Get temp directory for MeetScribe.
 
@@ -47,11 +46,6 @@ DATA_DIR = get_data_dir()
 TMP_DIR = get_tmp_dir()
 LOGS_DIR = DATA_DIR / "logs"
 TEAMS_DIR = DATA_DIR / "teams"
-
-# Legacy paths (used for migration detection)
-VOICEPRINTS_DIR = DATA_DIR / "voiceprints"
-SAMPLES_DIR = DATA_DIR / "samples"
-ENROLLED_SAMPLES_DIR = SAMPLES_DIR / "enrolled"
 
 # Upload limits
 MAX_UPLOAD_SIZE = int(os.environ.get("MEETSCRIBE_MAX_UPLOAD_SIZE", 4 * 1024 * 1024 * 1024))  # 4 GB

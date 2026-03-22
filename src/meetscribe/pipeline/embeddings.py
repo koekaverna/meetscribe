@@ -1,16 +1,15 @@
 """Remote speaker embedding extraction and local speaker identification."""
 
+import io
 import logging
 import math
-import tempfile
+import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import httpx
 from tqdm import tqdm
 
-from .. import config
-from .audio import extract_segment
 from .models import SpeechSegment
 
 logger = logging.getLogger(__name__)
@@ -52,17 +51,36 @@ class EmbeddingExtractor:
         """Extract speaker embedding from an audio file."""
         return self.extract(audio_path.read_bytes(), audio_path.name)
 
-    def _extract_one(
-        self, audio_path: Path, seg: SpeechSegment
-    ) -> tuple[SpeechSegment, list[float] | None]:
-        """Extract embedding for a single segment (used by thread pool)."""
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False, dir=config.TMP_DIR) as tmp:
-            chunk_path = Path(tmp.name)
+    @staticmethod
+    def _slice_wav(
+        raw_frames: bytes, sample_rate: int, sample_width: int, seg: SpeechSegment
+    ) -> bytes:
+        """Slice raw PCM frames and wrap into WAV bytes in memory."""
+        start_sample = seg.start_ms * sample_rate // 1000
+        end_sample = seg.end_ms * sample_rate // 1000
+        frame_size = sample_width  # mono
+        chunk = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(sample_width)
+            wf.setframerate(sample_rate)
+            wf.writeframes(chunk)
+        return buf.getvalue()
+
+    def _extract_one_mem(
+        self,
+        raw_frames: bytes,
+        sample_rate: int,
+        sample_width: int,
+        seg: SpeechSegment,
+    ) -> tuple[SpeechSegment, list[float] | None]:
+        """Extract embedding for a single segment from pre-loaded audio."""
         try:
-            extract_segment(audio_path, chunk_path, seg.start_ms, seg.end_ms)
+            wav_bytes = self._slice_wav(raw_frames, sample_rate, sample_width, seg)
             filename = f"seg_{seg.start_ms}_{seg.end_ms}.wav"
-            embedding = self.extract(chunk_path.read_bytes(), filename)
+            embedding = self.extract(wav_bytes, filename)
             return seg, embedding
         except Exception:
             logger.warning(
@@ -72,8 +90,6 @@ class EmbeddingExtractor:
                 exc_info=True,
             )
             return seg, None
-        finally:
-            chunk_path.unlink(missing_ok=True)
 
     def extract_segments(
         self,
@@ -83,12 +99,18 @@ class EmbeddingExtractor:
     ) -> list[tuple[SpeechSegment, list[float] | None]]:
         """Extract embeddings for each speech segment in parallel.
 
-        Cuts audio per segment via FFmpeg, then calls the embedding API.
-        Segments shorter than min_duration_ms get None embedding.
+        Loads audio into memory once, slices segments as WAV bytes,
+        then sends to the embedding API. No FFmpeg subprocess per segment.
 
         Returns:
             List of (segment, embedding_or_None) tuples in original order.
         """
+        # Load full audio into memory once
+        with wave.open(str(audio_path), "rb") as wf:
+            sample_rate = wf.getframerate()
+            sample_width = wf.getsampwidth()
+            raw_frames = wf.readframes(wf.getnframes())
+
         # Separate short segments (skip) from ones needing extraction
         ordered: dict[int, tuple[SpeechSegment, list[float] | None]] = {}
         to_extract: list[tuple[int, SpeechSegment]] = []
@@ -110,7 +132,8 @@ class EmbeddingExtractor:
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(self._extract_one, audio_path, seg): idx for idx, seg in to_extract
+                pool.submit(self._extract_one_mem, raw_frames, sample_rate, sample_width, seg): idx
+                for idx, seg in to_extract
             }
             for future in as_completed(futures):
                 idx = futures[future]
@@ -191,21 +214,25 @@ class SpeakerIdentifier:
         """Assign speaker labels to segments.
 
         Known speakers are matched by voiceprint similarity.
-        Unknown speakers are clustered greedily so the same voice gets a consistent label.
+        Unknown speakers are clustered using Agglomerative Hierarchical Clustering
+        so the same voice gets a consistent label.
         Segments with no embedding (too short) inherit speaker from the nearest
         identified neighbor by time proximity.
         """
-        unknown_clusters: list[list[float]] = []  # centroid per cluster
-        result: list[SpeechSegment] = []
-        # Indices of segments with None embedding — resolved after first pass
-        deferred: list[int] = []
+        from .clustering import cluster_embeddings
 
+        result: list[SpeechSegment] = []
+        deferred: list[int] = []  # indices with None embedding
+        unknown_indices: list[int] = []
+        unknown_embeddings: list[list[float]] = []
+
+        # Phase 1: known speaker identification
         for seg, embedding in segments_with_embeddings:
             idx = len(result)
             result.append(seg)
 
             if embedding is None:
-                seg.speaker = None  # resolved in second pass
+                seg.speaker = None
                 deferred.append(idx)
                 continue
 
@@ -220,18 +247,23 @@ class SpeakerIdentifier:
                     sim,
                 )
             else:
-                # Cluster unknown speakers
-                cluster_idx = self._assign_unknown_cluster(embedding, unknown_clusters)
-                seg.speaker = f"Unknown-{cluster_idx + 1}"
+                seg.speaker = None  # resolved in phase 2
+                unknown_indices.append(idx)
+                unknown_embeddings.append(embedding)
+
+        # Phase 2: cluster unknown speakers via AHC
+        if unknown_embeddings:
+            labels = cluster_embeddings(unknown_embeddings, self.unknown_cluster_threshold)
+            for i, idx in enumerate(unknown_indices):
+                result[idx].speaker = f"Unknown-{labels[i] + 1}"
                 logger.debug(
-                    "Segment %d-%dms -> Unknown-%d (best_known_sim=%.3f)",
-                    seg.start_ms,
-                    seg.end_ms,
-                    cluster_idx + 1,
-                    sim,
+                    "Segment %d-%dms -> Unknown-%d",
+                    result[idx].start_ms,
+                    result[idx].end_ms,
+                    labels[i] + 1,
                 )
 
-        # Second pass: assign deferred (short) segments to nearest neighbor
+        # Phase 3: assign deferred (short) segments to nearest neighbor
         for idx in deferred:
             seg = result[idx]
             neighbor = self._find_nearest_labeled(idx, result)
@@ -244,24 +276,6 @@ class SpeakerIdentifier:
             )
 
         return result
-
-    def _assign_unknown_cluster(self, embedding: list[float], clusters: list[list[float]]) -> int:
-        """Assign embedding to an existing unknown cluster or create a new one."""
-        best_idx = -1
-        best_sim = -1.0
-
-        for i, centroid in enumerate(clusters):
-            sim = cosine_similarity(embedding, centroid)
-            if sim > best_sim:
-                best_sim = sim
-                best_idx = i
-
-        if best_sim >= self.unknown_cluster_threshold and best_idx >= 0:
-            return best_idx
-
-        # New cluster
-        clusters.append(embedding)
-        return len(clusters) - 1
 
     @staticmethod
     def _find_nearest_labeled(idx: int, segments: list[SpeechSegment]) -> str | None:

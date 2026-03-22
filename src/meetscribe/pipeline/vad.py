@@ -13,9 +13,19 @@ logger = logging.getLogger(__name__)
 class VoiceActivityDetector:
     """VAD using speaches POST /v1/audio/speech/timestamps endpoint."""
 
-    def __init__(self, server_url: str, timeout: float):
+    def __init__(
+        self,
+        server_url: str,
+        timeout: float,
+        min_silence_duration_ms: int = 1200,
+        speech_pad_ms: int = 30,
+        threshold: float = 0.5,
+    ):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
+        self.min_silence_duration_ms = min_silence_duration_ms
+        self.speech_pad_ms = speech_pad_ms
+        self.threshold = threshold
 
     def detect(self, audio_path: Path) -> list[SpeechSegment]:
         """Detect speech segments in an audio file.
@@ -32,6 +42,11 @@ class VoiceActivityDetector:
             response = httpx.post(
                 f"{self.server_url}/v1/audio/speech/timestamps",
                 files={"file": (audio_path.name, f, "audio/wav")},
+                data={
+                    "min_silence_duration_ms": self.min_silence_duration_ms,
+                    "speech_pad_ms": self.speech_pad_ms,
+                    "threshold": self.threshold,
+                },
                 timeout=self.timeout,
             )
             if response.status_code != 200:
