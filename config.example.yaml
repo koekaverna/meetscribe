@@ -33,6 +33,20 @@ vad:
   # Increase for long audio files (> 1 hour).
   timeout: 120
 
+  # Minimum silence duration (ms) to split speech segments.
+  # Lower values produce shorter, phrase-level segments (better for diarization).
+  # Higher values merge close phrases into longer chunks.
+  min_silence_duration_ms: 1200
+
+  # Padding (ms) added to each side of speech segments.
+  # Prevents cutting the beginning/end of words.
+  speech_pad_ms: 30
+
+  # Speech probability threshold (0.0 — 1.0).
+  # Higher = stricter (fewer false positives, may miss quiet speech).
+  # Lower = more sensitive (catches quiet speech, more false positives).
+  threshold: 0.5
+
 # -----------------------------------------------------------------------------
 # Speaker Embeddings
 # -----------------------------------------------------------------------------
@@ -43,7 +57,7 @@ embeddings:
   server: "GPU-1"
 
   # Speaker embedding model (HuggingFace ID).
-  model: "pyannote/wespeaker-voxceleb-resnet34-LM"
+  model: "Wespeaker/wespeaker-voxceleb-resnet34-LM"
 
   # HTTP request timeout in seconds per segment.
   timeout: 60
@@ -58,9 +72,11 @@ embeddings:
   # Such segments inherit the speaker from the nearest neighbor.
   min_duration_ms: 1500
 
-  # Threshold for clustering unknown speakers together.
-  # Stricter than the main threshold to avoid merging different people.
-  unknown_cluster_threshold: 0.7
+  # Cosine similarity threshold for clustering unknown speakers (AHC).
+  # Segments with similarity >= threshold are grouped as same speaker.
+  # Lower = fewer clusters (more aggressive merging).
+  # Recommended: 0.15 — 0.35 for wespeaker-voxceleb-resnet34-LM.
+  unknown_cluster_threshold: 0.25
 
   # "Confident gap": if the best candidate is below threshold,
   # but the gap to the second candidate >= confident_gap — accept the match.

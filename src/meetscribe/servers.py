@@ -23,6 +23,9 @@ class VadConfig:
 
     server: str
     timeout: float
+    min_silence_duration_ms: int
+    speech_pad_ms: int
+    threshold: float
 
 
 @dataclass
@@ -111,9 +114,7 @@ class AppConfig:
         if self.transcription:
             for name in self.transcription.servers:
                 if name not in server_names:
-                    raise ValueError(
-                        f"Transcription server '{name}' not found in servers list"
-                    )
+                    raise ValueError(f"Transcription server '{name}' not found in servers list")
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -151,6 +152,9 @@ def load_config(config_path: Path) -> AppConfig:
         vad = VadConfig(
             server=d["server"],
             timeout=d.get("timeout", 120.0),
+            min_silence_duration_ms=d.get("min_silence_duration_ms", 1200),
+            speech_pad_ms=d.get("speech_pad_ms", 30),
+            threshold=d.get("threshold", 0.5),
         )
 
     embeddings = None
@@ -158,11 +162,11 @@ def load_config(config_path: Path) -> AppConfig:
         d = data["embeddings"]
         embeddings = EmbeddingsConfig(
             server=d["server"],
-            model=d.get("model", "pyannote/wespeaker-voxceleb-resnet34-LM"),
+            model=d.get("model", "Wespeaker/wespeaker-voxceleb-resnet34-LM"),
             timeout=d.get("timeout", 60.0),
             threshold=d.get("threshold", 0.6),
             min_duration_ms=d.get("min_duration_ms", 1500),
-            unknown_cluster_threshold=d.get("unknown_cluster_threshold", 0.7),
+            unknown_cluster_threshold=d.get("unknown_cluster_threshold", 0.25),
             confident_gap=d.get("confident_gap", 0.2),
             min_threshold=d.get("min_threshold", 0.45),
             max_workers=d.get("max_workers", 4),

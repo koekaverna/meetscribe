@@ -1,6 +1,6 @@
 [project]
 name = "meetscribe"
-version = "0.2.0"
+version = "0.3.0"
 description = "Meeting transcription with speaker diarization using remote speaches API"
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,8 @@ dependencies = [
     "tqdm",
     "colorama",
     "python-dotenv",
+    "numpy",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]

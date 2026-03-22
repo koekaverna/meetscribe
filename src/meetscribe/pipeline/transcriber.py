@@ -1,14 +1,13 @@
 """Remote transcription via speaches API (OpenAI-compatible)."""
 
+import io
 import logging
-import tempfile
+import wave
 from pathlib import Path
 
 import httpx
 from tqdm import tqdm
 
-from .. import config
-from .audio import extract_segment
 from .models import SpeechSegment, TranscriptSegment, merge_close_segments
 
 logger = logging.getLogger(__name__)
@@ -39,23 +38,38 @@ class RemoteTranscriber:
         audio_path: Path,
         language: str,
     ) -> list[TranscriptSegment]:
-        """Transcribe an audio file via the remote API.
-
-        Returns segments with timestamps relative to the audio file start.
-        """
+        """Transcribe an audio file via the remote API."""
         with open(audio_path, "rb") as f:
-            response = httpx.post(
-                f"{self.server_url}/v1/audio/transcriptions",
-                files={"file": (audio_path.name, f, "audio/wav")},
-                data={
-                    "model": self.model,
-                    "language": language,
-                    "response_format": "verbose_json",
-                    "timestamp_granularities[]": "segment",
-                },
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
+            return self._transcribe_request(audio_path.name, f.read(), language)
+
+    def transcribe_bytes(
+        self,
+        audio_bytes: bytes,
+        language: str,
+        filename: str = "chunk.wav",
+    ) -> list[TranscriptSegment]:
+        """Transcribe WAV bytes via the remote API."""
+        return self._transcribe_request(filename, audio_bytes, language)
+
+    def _transcribe_request(
+        self,
+        filename: str,
+        audio_bytes: bytes,
+        language: str,
+    ) -> list[TranscriptSegment]:
+        """Send transcription request and parse response."""
+        response = httpx.post(
+            f"{self.server_url}/v1/audio/transcriptions",
+            files={"file": (filename, audio_bytes, "audio/wav")},
+            data={
+                "model": self.model,
+                "language": language,
+                "response_format": "verbose_json",
+                "timestamp_granularities[]": "segment",
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
 
         result = response.json()
         segments = []
@@ -124,11 +138,11 @@ class Transcriber:
     ) -> list[TranscriptSegment]:
         """Transcribe speech segments from an audio file.
 
-        Merges close segments into larger chunks, extracts audio via FFmpeg,
-        transcribes each chunk, and maps speakers back.
+        Loads audio into memory, merges close segments into larger chunks,
+        slices each chunk as WAV bytes, and transcribes via remote API.
 
         Args:
-            audio_path: Path to the full audio track.
+            audio_path: Path to the full audio track (16kHz mono WAV).
             segments: Diarized speech segments with speaker labels.
 
         Returns:
@@ -137,35 +151,45 @@ class Transcriber:
         if not segments:
             return []
 
+        # Load full audio into memory once
+        with wave.open(str(audio_path), "rb") as wf:
+            sample_rate = wf.getframerate()
+            sample_width = wf.getsampwidth()
+            n_channels = wf.getnchannels()
+            raw_frames = wf.readframes(wf.getnframes())
+
         merged = merge_close_segments(segments, self.max_gap_ms, self.max_chunk_ms)
         results: list[TranscriptSegment] = []
 
         total_ms = sum(s.duration_ms for s in merged)
-        pbar = tqdm(
-            total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False
-        )
+        pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
+
+        frame_size = sample_width * n_channels
 
         for i, chunk in enumerate(merged):
             client = self.clients[i % len(self.clients)]
 
-            with tempfile.NamedTemporaryFile(
-                suffix=".wav", delete=False, dir=config.TMP_DIR
-            ) as tmp:
-                chunk_path = Path(tmp.name)
+            # Slice audio in memory
+            start_sample = chunk.start_ms * sample_rate // 1000
+            end_sample = chunk.end_ms * sample_rate // 1000
+            chunk_frames = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
-            try:
-                extract_segment(audio_path, chunk_path, chunk.start_ms, chunk.end_ms)
-                transcript_segs = client.transcribe(chunk_path, self.language)
+            buf = io.BytesIO()
+            with wave.open(buf, "wb") as wf:
+                wf.setnchannels(n_channels)
+                wf.setsampwidth(sample_width)
+                wf.setframerate(sample_rate)
+                wf.writeframes(chunk_frames)
 
-                for seg in transcript_segs:
-                    # Offset timestamps to absolute position
-                    seg.start_ms += chunk.start_ms
-                    seg.end_ms += chunk.start_ms
-                    # Assign speaker from the diarization chunk
-                    seg.speaker = self._find_speaker(seg.start_ms, seg.end_ms, segments)
-                    results.append(seg)
-            finally:
-                chunk_path.unlink(missing_ok=True)
+            transcript_segs = client.transcribe_bytes(buf.getvalue(), self.language)
+
+            for seg in transcript_segs:
+                # Offset timestamps to absolute position
+                seg.start_ms += chunk.start_ms
+                seg.end_ms += chunk.start_ms
+                # Assign speaker from the diarization chunk
+                seg.speaker = self._find_speaker(seg.start_ms, seg.end_ms, segments)
+                results.append(seg)
 
             pbar.update(chunk.duration_ms)
 

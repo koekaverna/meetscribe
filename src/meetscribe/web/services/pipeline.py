@@ -68,6 +68,9 @@ class PipelineRunner:
             min_threshold=self.cfg.embeddings.min_threshold,
             max_workers=self.cfg.embeddings.max_workers,
             embedding_model=self.cfg.embeddings.model,
+            vad_min_silence_duration_ms=self.cfg.vad.min_silence_duration_ms,
+            vad_speech_pad_ms=self.cfg.vad.speech_pad_ms,
+            vad_threshold=self.cfg.vad.threshold,
         )
 
     def _create_transcriber(self, language: str) -> Transcriber:
@@ -155,18 +158,20 @@ class PipelineRunner:
                 labeled_segments = diarization.identifier.identify_segments(segments_with_emb)
                 speakers = {s.speaker for s in labeled_segments if s.speaker}
 
-                # Extract audio samples (longest segments per speaker)
+                # Extract audio samples — prefer medium-length segments (5-10s)
                 min_duration_ms = 3000
-                max_samples_per_speaker = 5
+                max_duration_ms = 12000
+                max_samples_per_speaker = 10
+                ideal_ms = 7000
 
-                # Group segments by speaker
+                # Group segments by speaker, filter by duration range
                 speaker_segments: dict[str, list[SpeechSegment]] = {}
                 for seg in labeled_segments:
-                    if seg.speaker and seg.duration_ms >= min_duration_ms:
+                    if seg.speaker and min_duration_ms <= seg.duration_ms <= max_duration_ms:
                         speaker_segments.setdefault(seg.speaker, []).append(seg)
 
                 for speaker_name, segs in speaker_segments.items():
-                    segs.sort(key=lambda s: s.duration_ms, reverse=True)
+                    segs.sort(key=lambda s: abs(s.duration_ms - ideal_ms))
                     is_known = not speaker_name.startswith("Unknown")
 
                     for i, seg in enumerate(segs[:max_samples_per_speaker]):
