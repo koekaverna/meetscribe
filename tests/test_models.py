@@ -1,6 +1,11 @@
 """Tests for pipeline/models.py — segment merging logic."""
 
-from meetscribe.pipeline.models import SpeechSegment, merge_by_proximity, merge_close_segments
+from meetscribe.pipeline.models import (
+    SpeechSegment,
+    TranscriptSegment,
+    merge_by_proximity,
+    merge_close_segments,
+)
 
 
 class TestMergeCloseSegments:
@@ -96,3 +101,76 @@ class TestMergeByProximity:
         ]
         result = merge_by_proximity(segs, max_gap_ms=500, max_chunk_ms=30000)
         assert len(result) == 2
+
+    def test_exact_boundary_gap_merges(self):
+        """gap == max_gap_ms should merge (<=)."""
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1500, 2000, "Alice"),
+        ]
+        result = merge_by_proximity(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert len(result) == 1
+
+    def test_one_over_boundary_gap_not_merged(self):
+        """gap == max_gap_ms + 1 should NOT merge."""
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1501, 2000, "Alice"),
+        ]
+        result = merge_by_proximity(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert len(result) == 2
+
+
+class TestMergeCloseSegmentsBoundary:
+    def test_exact_gap_boundary_merges(self):
+        """gap == max_gap_ms should merge (<=)."""
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1500, 2000, "Alice"),
+        ]
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert len(result) == 1
+        assert result[0].end_ms == 2000
+
+    def test_one_over_gap_boundary_not_merged(self):
+        """gap == max_gap_ms + 1 should NOT merge."""
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1501, 2000, "Alice"),
+        ]
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert len(result) == 2
+
+    def test_exact_chunk_boundary_merges(self):
+        """duration == max_chunk_ms should merge (<=)."""
+        segs = [
+            SpeechSegment(0, 2000, "Alice"),
+            SpeechSegment(2100, 3000, "Alice"),
+        ]
+        # duration = 3000 - 0 = 3000, max_chunk_ms=3000 → should merge
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=3000)
+        assert len(result) == 1
+
+    def test_one_over_chunk_boundary_not_merged(self):
+        """duration == max_chunk_ms + 1 should NOT merge."""
+        segs = [
+            SpeechSegment(0, 2000, "Alice"),
+            SpeechSegment(2100, 3001, "Alice"),
+        ]
+        # duration = 3001 - 0 = 3001, max_chunk_ms=3000 → should NOT merge
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=3000)
+        assert len(result) == 2
+
+
+class TestDataclassDefaults:
+    def test_speech_segment_default_speaker_is_none(self):
+        seg = SpeechSegment(0, 1000)
+        assert seg.speaker is None
+
+    def test_transcript_segment_default_speaker_is_none(self):
+        seg = TranscriptSegment(0, 1000, "Hello")
+        assert seg.speaker is None
+
+    def test_speech_segment_duration(self):
+        seg = SpeechSegment(500, 1500)
+        assert seg.duration_ms == 1000

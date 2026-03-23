@@ -8,6 +8,7 @@ import yaml
 from meetscribe.servers import (
     AppConfig,
     EmbeddingsConfig,
+    ServerInfo,
     TranscriptionConfig,
     VadConfig,
     WebConfig,
@@ -111,6 +112,137 @@ class TestValidate:
             load_config(p)
 
 
+class TestPartialConfig:
+    """Test that load_config applies .get() defaults when YAML keys are missing."""
+
+    def test_all_defaults_with_only_servers(self, tmp_path: Path):
+        """Minimal config with only server refs → all other fields get defaults."""
+        data = {
+            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
+            "vad": {"server": "gpu1"},
+            "embeddings": {"server": "gpu1"},
+            "transcription": {"servers": ["gpu1"]},
+        }
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        cfg = load_config(p)
+
+        assert cfg.vad.timeout == 120.0
+        assert cfg.vad.min_silence_duration_ms == 1200
+        assert cfg.vad.speech_pad_ms == 30
+        assert cfg.vad.threshold == 0.5
+
+        assert cfg.embeddings.model == "Wespeaker/wespeaker-voxceleb-resnet34-LM"
+        assert cfg.embeddings.timeout == 60.0
+        assert cfg.embeddings.threshold == 0.6
+        assert cfg.embeddings.min_duration_ms == 1500
+        assert cfg.embeddings.unknown_cluster_threshold == 0.25
+        assert cfg.embeddings.confident_gap == 0.2
+        assert cfg.embeddings.min_threshold == 0.45
+        assert cfg.embeddings.max_workers == 4
+
+        assert cfg.transcription.model == "Systran/faster-whisper-medium"
+        assert cfg.transcription.language == "ru"
+        assert cfg.transcription.timeout == 120.0
+        assert cfg.transcription.max_gap_ms == 500
+        assert cfg.transcription.max_chunk_ms == 30000
+
+    def test_web_with_partial_keys(self, tmp_path: Path):
+        data = {
+            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
+            "vad": {"server": "gpu1"},
+            "embeddings": {"server": "gpu1"},
+            "transcription": {"servers": ["gpu1"]},
+            "web": {"port": 9090},
+        }
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        cfg = load_config(p)
+        assert cfg.web.port == 9090
+        assert cfg.web.host == "127.0.0.1"
+        assert cfg.web.session_ttl_days == 7
+        assert cfg.web.secure_cookies is False
+
+    def test_no_web_section(self, tmp_path: Path):
+        data = {
+            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
+            "vad": {"server": "gpu1"},
+            "embeddings": {"server": "gpu1"},
+            "transcription": {"servers": ["gpu1"]},
+        }
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        cfg = load_config(p)
+        assert cfg.web.host == "127.0.0.1"
+        assert cfg.web.port == 8080
+
+    def test_custom_values_override_defaults(self, tmp_path: Path):
+        data = {
+            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
+            "vad": {"server": "gpu1", "timeout": 60.0, "threshold": 0.8},
+            "embeddings": {"server": "gpu1", "timeout": 30.0, "max_workers": 8},
+            "transcription": {"servers": ["gpu1"], "language": "en", "max_gap_ms": 1000},
+        }
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        cfg = load_config(p)
+        assert cfg.vad.timeout == 60.0
+        assert cfg.vad.threshold == 0.8
+        assert cfg.embeddings.timeout == 30.0
+        assert cfg.embeddings.max_workers == 8
+        assert cfg.transcription.language == "en"
+        assert cfg.transcription.max_gap_ms == 1000
+
+
+class TestAppConfigMethods:
+    def _make_config(self):
+        return AppConfig(
+            servers=[
+                ServerInfo(url="http://a:8000", name="gpu1"),
+                ServerInfo(url="http://b:8000", name="gpu2"),
+            ],
+            vad=VadConfig(server="gpu1"),
+            embeddings=EmbeddingsConfig(server="gpu2"),
+            transcription=TranscriptionConfig(servers=["gpu1", "gpu2"]),
+        )
+
+    def test_get_server_url_found(self):
+        cfg = self._make_config()
+        assert cfg.get_server_url("gpu1") == "http://a:8000"
+        assert cfg.get_server_url("gpu2") == "http://b:8000"
+
+    def test_get_server_url_not_found(self):
+        cfg = self._make_config()
+        with pytest.raises(ValueError, match="not found"):
+            cfg.get_server_url("nonexistent")
+
+    def test_get_vad_url(self):
+        cfg = self._make_config()
+        assert cfg.get_vad_url() == "http://a:8000"
+
+    def test_get_embeddings_url(self):
+        cfg = self._make_config()
+        assert cfg.get_embeddings_url() == "http://b:8000"
+
+    def test_get_transcription_urls(self):
+        cfg = self._make_config()
+        urls = cfg.get_transcription_urls()
+        assert urls == ["http://a:8000", "http://b:8000"]
+
+    def test_get_transcription_urls_empty_raises(self):
+        cfg = AppConfig(
+            servers=[ServerInfo(url="http://a:8000", name="gpu1")],
+            transcription=TranscriptionConfig(servers=[]),
+        )
+        with pytest.raises(ValueError, match="not configured"):
+            cfg.get_transcription_urls()
+
+    def test_validate_empty_server_field_ok(self):
+        """Empty server string should not trigger 'not found' error."""
+        cfg = AppConfig(
+            servers=[ServerInfo(url="http://a:8000", name="gpu1")],
+            vad=VadConfig(server=""),
+            embeddings=EmbeddingsConfig(server=""),
+        )
+        cfg.validate()  # should not raise
+
+
 class TestDefaultsMatchConfigYaml:
     """Verify dataclass defaults match the values in data/config.yaml.
 
@@ -120,9 +252,7 @@ class TestDefaultsMatchConfigYaml:
 
     @pytest.fixture
     def config_yaml(self) -> dict:
-        config_path = Path(__file__).parent.parent / "data" / "config.yaml"
-        if not config_path.exists():
-            pytest.skip("data/config.yaml not found")
+        config_path = Path(__file__).parent.parent / "config.example.yaml"
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
