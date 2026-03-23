@@ -19,19 +19,7 @@ class RemoteTranscriber:
     def __init__(self, server_url: str, timeout: float, model: str):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
-        self.model = self._detect_model() or model
-
-    def _detect_model(self) -> str | None:
-        """Try to detect available ASR model from server."""
-        try:
-            resp = httpx.get(f"{self.server_url}/v1/models", timeout=5)
-            if resp.status_code == 200:
-                for m in resp.json().get("data", []):
-                    if m.get("task") == "automatic-speech-recognition":
-                        return m.get("id")
-        except Exception:
-            pass
-        return None
+        self.model = model
 
     def transcribe(
         self,
