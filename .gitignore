@@ -40,6 +40,9 @@ CLAUDE.md
 htmlcov/
 .tox/
 .nox/
+.mutmut-cache
+.mutmut-cache-journal
+mutants/
 
 # Type checking
 .mypy_cache/

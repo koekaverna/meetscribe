@@ -1,6 +1,6 @@
 [project]
 name = "meetscribe"
-version = "0.3.2"
+version = "0.4.0"
 description = "Meeting transcription with speaker diarization using remote speaches API"
 readme = "README.md"
 license = "MIT"
@@ -47,7 +47,7 @@ dev = [
     "mypy",
     "types-PyYAML",
     "bandit[toml]",
-    "pre-commit",
+    "mutmut<3",
 ]
 web = [
     "fastapi>=0.115",
@@ -87,6 +87,10 @@ ignore_missing_imports = true
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B404", "B603"]
+
+[tool.mutmut]
+paths_to_mutate = "src/meetscribe/pipeline/,src/meetscribe/database.py,src/meetscribe/servers.py,src/meetscribe/team.py"
+tests_dir = "tests/"
 
 [tool.ruff]
 line-length = 100

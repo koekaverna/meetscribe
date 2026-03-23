@@ -21,48 +21,48 @@ class ServerInfo:
 class VadConfig:
     """VAD endpoint configuration."""
 
-    server: str
-    timeout: float
-    min_silence_duration_ms: int
-    speech_pad_ms: int
-    threshold: float
+    server: str = ""
+    timeout: float = 120.0
+    min_silence_duration_ms: int = 1200
+    speech_pad_ms: int = 30
+    threshold: float = 0.5
 
 
 @dataclass
 class EmbeddingsConfig:
     """Speaker embeddings configuration."""
 
-    server: str
-    model: str
-    timeout: float
-    threshold: float
-    min_duration_ms: int
-    unknown_cluster_threshold: float
-    confident_gap: float
-    min_threshold: float
-    max_workers: int
+    server: str = ""
+    model: str = "Wespeaker/wespeaker-voxceleb-resnet34-LM"
+    timeout: float = 60.0
+    threshold: float = 0.6
+    min_duration_ms: int = 1500
+    unknown_cluster_threshold: float = 0.25
+    confident_gap: float = 0.2
+    min_threshold: float = 0.45
+    max_workers: int = 4
 
 
 @dataclass
 class TranscriptionConfig:
     """Transcription configuration."""
 
-    servers: list[str]
-    model: str
-    language: str
-    timeout: float
-    max_gap_ms: int
-    max_chunk_ms: int
+    servers: list[str] = field(default_factory=list)
+    model: str = "Systran/faster-whisper-medium"
+    language: str = "ru"
+    timeout: float = 120.0
+    max_gap_ms: int = 500
+    max_chunk_ms: int = 30000
 
 
 @dataclass
 class WebConfig:
     """Web UI configuration."""
 
-    host: str
-    port: int
-    session_ttl_days: int
-    secure_cookies: bool
+    host: str = "127.0.0.1"
+    port: int = 8080
+    session_ttl_days: int = 7
+    secure_cookies: bool = False
 
 
 @dataclass
@@ -70,14 +70,10 @@ class AppConfig:
     """Full application configuration loaded from YAML."""
 
     servers: list[ServerInfo] = field(default_factory=list)
-    vad: VadConfig | None = None
-    embeddings: EmbeddingsConfig | None = None
-    transcription: TranscriptionConfig | None = None
-    web: WebConfig = field(
-        default_factory=lambda: WebConfig(
-            host="127.0.0.1", port=8080, session_ttl_days=7, secure_cookies=False
-        )
-    )
+    vad: VadConfig = field(default_factory=VadConfig)
+    embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
+    transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
+    web: WebConfig = field(default_factory=WebConfig)
 
     def get_server_url(self, name: str) -> str:
         """Get server URL by name."""
@@ -88,36 +84,26 @@ class AppConfig:
 
     def get_vad_url(self) -> str:
         """Get the VAD server URL."""
-        if not self.vad:
-            raise ValueError("VAD server not configured")
         return self.get_server_url(self.vad.server)
 
     def get_embeddings_url(self) -> str:
         """Get the embeddings server URL."""
-        if not self.embeddings:
-            raise ValueError("Embeddings server not configured")
         return self.get_server_url(self.embeddings.server)
 
     def get_transcription_urls(self) -> list[str]:
         """Get transcription server URLs."""
-        if not self.transcription or not self.transcription.servers:
+        if not self.transcription.servers:
             raise ValueError("Transcription servers not configured")
         return [self.get_server_url(name) for name in self.transcription.servers]
 
     def validate(self) -> None:
-        """Validate that all required sections are present and reference existing servers."""
+        """Validate that all required sections reference existing servers."""
         if not self.servers:
             raise ValueError("No servers configured. See config.example.yaml")
-        if not self.vad:
-            raise ValueError("'vad' section missing from config. See config.example.yaml")
-        if not self.embeddings:
-            raise ValueError("'embeddings' section missing from config. See config.example.yaml")
-        if not self.transcription:
-            raise ValueError("'transcription' section missing from config. See config.example.yaml")
         server_names = {s.name for s in self.servers}
-        if self.vad.server not in server_names:
+        if self.vad.server and self.vad.server not in server_names:
             raise ValueError(f"VAD server '{self.vad.server}' not found in servers list")
-        if self.embeddings.server not in server_names:
+        if self.embeddings.server and self.embeddings.server not in server_names:
             raise ValueError(
                 f"Embeddings server '{self.embeddings.server}' not found in servers list"
             )
@@ -155,22 +141,22 @@ def load_config(config_path: Path) -> AppConfig:
 
     servers = [ServerInfo(url=s["url"], name=s["name"]) for s in data.get("servers", [])]
 
-    vad = None
+    vad = VadConfig()
     if "vad" in data:
         d = data["vad"]
         vad = VadConfig(
-            server=d["server"],
+            server=d.get("server", ""),
             timeout=d.get("timeout", 120.0),
             min_silence_duration_ms=d.get("min_silence_duration_ms", 1200),
             speech_pad_ms=d.get("speech_pad_ms", 30),
             threshold=d.get("threshold", 0.5),
         )
 
-    embeddings = None
+    embeddings = EmbeddingsConfig()
     if "embeddings" in data:
         d = data["embeddings"]
         embeddings = EmbeddingsConfig(
-            server=d["server"],
+            server=d.get("server", ""),
             model=d.get("model", "Wespeaker/wespeaker-voxceleb-resnet34-LM"),
             timeout=d.get("timeout", 60.0),
             threshold=d.get("threshold", 0.6),
@@ -181,11 +167,11 @@ def load_config(config_path: Path) -> AppConfig:
             max_workers=d.get("max_workers", 4),
         )
 
-    transcription = None
+    transcription = TranscriptionConfig()
     if "transcription" in data:
         d = data["transcription"]
         transcription = TranscriptionConfig(
-            servers=d["servers"],
+            servers=d.get("servers", []),
             model=d.get("model", "Systran/faster-whisper-medium"),
             language=d.get("language", "ru"),
             timeout=d.get("timeout", 120.0),
@@ -193,6 +179,7 @@ def load_config(config_path: Path) -> AppConfig:
             max_chunk_ms=d.get("max_chunk_ms", 30000),
         )
 
+    web = WebConfig()
     if "web" in data:
         d = data["web"]
         web = WebConfig(
@@ -201,8 +188,6 @@ def load_config(config_path: Path) -> AppConfig:
             session_ttl_days=d.get("session_ttl_days", 7),
             secure_cookies=d.get("secure_cookies", False),
         )
-    else:
-        web = None
 
     cfg = AppConfig(
         servers=servers,
