@@ -5,10 +5,10 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from tests.conftest import make_wav_file
 
 from meetscribe.pipeline.embeddings import SpeakerIdentifier, enroll_samples
 from meetscribe.pipeline.models import SpeechSegment
+from tests.conftest import make_wav_file
 
 
 def _norm(raw: list[float]) -> list[float]:
