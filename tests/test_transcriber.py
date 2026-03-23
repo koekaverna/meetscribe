@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from meetscribe.errors import ConfigurationError
 from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
 from meetscribe.pipeline.transcriber import RemoteTranscriber, Transcriber
 
@@ -93,7 +94,7 @@ class TestRemoteTranscriberRequest:
 
 class TestTranscriberInit:
     def test_no_urls_raises(self):
-        with pytest.raises(ValueError, match="At least one transcription server URL"):
+        with pytest.raises(ConfigurationError, match="At least one transcription server URL"):
             Transcriber(
                 server_urls=[],
                 language="en",

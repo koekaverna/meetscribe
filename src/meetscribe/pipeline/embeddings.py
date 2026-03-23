@@ -8,9 +8,12 @@ import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import httpx
 from tqdm import tqdm
+
+from meetscribe.errors import SpeachesAPIError, speaches_retry
 
 from .models import SpeechSegment
 
@@ -26,6 +29,7 @@ class EmbeddingExtractor:
         self.min_duration_ms = min_duration_ms
         self.model = model
 
+    @speaches_retry
     def extract(self, audio_bytes: bytes, filename: str = "audio.wav") -> list[float]:
         """Extract speaker embedding from audio bytes.
 
@@ -36,18 +40,30 @@ class EmbeddingExtractor:
         Returns:
             Embedding vector as list of floats.
         """
-        response = httpx.post(
-            f"{self.server_url}/v1/audio/speech/embedding",
-            files={"file": (filename, audio_bytes, "audio/wav")},
-            data={"model": self.model},
-            timeout=self.timeout,
-        )
-        if response.status_code != 200:
-            logger.error("Embedding failed: %s %s", response.status_code, response.text)
-        response.raise_for_status()
+        endpoint = f"{self.server_url}/v1/audio/speech/embedding"
+        try:
+            response = httpx.post(
+                endpoint,
+                files={"file": (filename, audio_bytes, "audio/wav")},
+                data={"model": self.model},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise SpeachesAPIError(
+                f"Embedding failed: {e.response.status_code}",
+                status_code=e.response.status_code,
+                endpoint=endpoint,
+                detail=e.response.text,
+            ) from e
+        except httpx.RequestError as e:
+            raise SpeachesAPIError(
+                f"Embedding connection error: {e}",
+                endpoint=endpoint,
+            ) from e
 
         result = response.json()
-        return result["data"][0]["embedding"]
+        return cast(list[float], result["data"][0]["embedding"])
 
     def extract_from_file(self, audio_path: Path) -> list[float]:
         """Extract speaker embedding from an audio file."""

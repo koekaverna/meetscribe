@@ -36,6 +36,7 @@ dependencies = [
     "python-dotenv",
     "numpy",
     "scikit-learn",
+    "tenacity",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +47,8 @@ dev = [
     "ruff",
     "mypy",
     "types-PyYAML",
+    "types-tqdm",
+    "types-colorama",
     "bandit[toml]",
     "mutmut<3",
 ]
@@ -78,10 +81,12 @@ asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = false
-warn_unused_configs = true
-disallow_untyped_defs = false
+warn_return_any = true
+disallow_untyped_defs = true
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
 ignore_missing_imports = true
 
 [tool.bandit]

@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from .errors import ConfigurationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,7 +82,7 @@ class AppConfig:
         for s in self.servers:
             if s.name == name:
                 return s.url
-        raise ValueError(f"Server '{name}' not found in configuration")
+        raise ConfigurationError(f"Server '{name}' not found in configuration")
 
     def get_vad_url(self) -> str:
         """Get the VAD server URL."""
@@ -93,23 +95,23 @@ class AppConfig:
     def get_transcription_urls(self) -> list[str]:
         """Get transcription server URLs."""
         if not self.transcription.servers:
-            raise ValueError("Transcription servers not configured")
+            raise ConfigurationError("Transcription servers not configured")
         return [self.get_server_url(name) for name in self.transcription.servers]
 
     def validate(self) -> None:
         """Validate that all required sections reference existing servers."""
         if not self.servers:
-            raise ValueError("No servers configured. See config.example.yaml")
+            raise ConfigurationError("No servers configured. See config.example.yaml")
         server_names = {s.name for s in self.servers}
         if self.vad.server and self.vad.server not in server_names:
-            raise ValueError(f"VAD server '{self.vad.server}' not found in servers list")
+            raise ConfigurationError(f"VAD server '{self.vad.server}' not found in servers list")
         if self.embeddings.server and self.embeddings.server not in server_names:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Embeddings server '{self.embeddings.server}' not found in servers list"
             )
         for name in self.transcription.servers:
             if name not in server_names:
-                raise ValueError(f"Transcription server '{name}' not found in servers list")
+                raise ConfigurationError(f"Transcription server '{name}' not found in servers list")
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -137,7 +139,7 @@ def load_config(config_path: Path) -> AppConfig:
         data = yaml.safe_load(f)
 
     if not data:
-        raise ValueError(f"Empty config file: {config_path}")
+        raise ConfigurationError(f"Empty config file: {config_path}")
 
     servers = [ServerInfo(url=s["url"], name=s["name"]) for s in data.get("servers", [])]
 

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import httpx
 
+from meetscribe.errors import SpeachesAPIError, speaches_retry
+
 from .models import SpeechSegment
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,7 @@ class VoiceActivityDetector:
         self.speech_pad_ms = speech_pad_ms
         self.threshold = threshold
 
+    @speaches_retry
     def detect(self, audio_path: Path) -> list[SpeechSegment]:
         """Detect speech segments in an audio file.
 
@@ -37,21 +40,33 @@ class VoiceActivityDetector:
             List of SpeechSegment with start/end times (speaker=None).
         """
         logger.info("VAD: processing %s", audio_path.name)
+        endpoint = f"{self.server_url}/v1/audio/speech/timestamps"
 
-        with open(audio_path, "rb") as f:
-            response = httpx.post(
-                f"{self.server_url}/v1/audio/speech/timestamps",
-                files={"file": (audio_path.name, f, "audio/wav")},
-                data={
-                    "min_silence_duration_ms": self.min_silence_duration_ms,
-                    "speech_pad_ms": self.speech_pad_ms,
-                    "threshold": self.threshold,
-                },
-                timeout=self.timeout,
-            )
-            if response.status_code != 200:
-                logger.error("VAD failed: %s %s", response.status_code, response.text)
-            response.raise_for_status()
+        try:
+            with open(audio_path, "rb") as f:
+                response = httpx.post(
+                    endpoint,
+                    files={"file": (audio_path.name, f, "audio/wav")},
+                    data={
+                        "min_silence_duration_ms": self.min_silence_duration_ms,
+                        "speech_pad_ms": self.speech_pad_ms,
+                        "threshold": self.threshold,
+                    },
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise SpeachesAPIError(
+                f"VAD failed: {e.response.status_code}",
+                status_code=e.response.status_code,
+                endpoint=endpoint,
+                detail=e.response.text,
+            ) from e
+        except httpx.RequestError as e:
+            raise SpeachesAPIError(
+                f"VAD connection error: {e}",
+                endpoint=endpoint,
+            ) from e
 
         result = response.json()
         segments = [SpeechSegment(start_ms=seg["start"], end_ms=seg["end"]) for seg in result]

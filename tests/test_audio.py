@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from meetscribe.errors import PipelineError
 from meetscribe.pipeline.audio import (
     FFMPEG_BIN,
     FFMPEG_INSTALL_HELP,
@@ -114,7 +115,7 @@ class TestExtractAudio:
         mock_result.returncode = 1
         mock_result.stderr = "some error"
         with patch("meetscribe.pipeline.audio.subprocess.run", return_value=mock_result):
-            with pytest.raises(RuntimeError, match="Failed to extract track"):
+            with pytest.raises(PipelineError, match="Failed to extract track"):
                 extract_audio(Path("/fake/video.mkv"), tmp_path / "out.wav", track_index=0)
 
     def test_returns_output_path(self, tmp_path: Path):
@@ -147,7 +148,7 @@ class TestConvertToWav:
         mock_result.returncode = 1
         mock_result.stderr = "error"
         with patch("meetscribe.pipeline.audio.subprocess.run", return_value=mock_result):
-            with pytest.raises(RuntimeError, match="Failed to convert"):
+            with pytest.raises(PipelineError, match="Failed to convert"):
                 convert_to_wav(Path("/fake/input.mp3"), tmp_path / "out.wav")
 
     def test_returns_output_path(self, tmp_path: Path):
@@ -199,7 +200,7 @@ class TestExtractSegment:
         mock_result.returncode = 1
         mock_result.stderr = "err"
         with patch("meetscribe.pipeline.audio.subprocess.run", return_value=mock_result):
-            with pytest.raises(RuntimeError, match="Failed to extract segment"):
+            with pytest.raises(PipelineError, match="Failed to extract segment"):
                 extract_segment(Path("/f.wav"), tmp_path / "o.wav", 0, 1000)
 
     def test_returns_output_path(self, tmp_path: Path):
@@ -275,7 +276,7 @@ class TestExtractAudioAsync:
             "meetscribe.pipeline.audio.asyncio.create_subprocess_exec",
             return_value=mock_proc,
         ):
-            with pytest.raises(RuntimeError, match="Failed to extract track"):
+            with pytest.raises(PipelineError, match="Failed to extract track"):
                 asyncio.run(extract_audio_async(Path("/fake/v.mkv"), tmp_path / "o.wav", 0))
 
 
@@ -309,7 +310,7 @@ class TestConvertToWavAsync:
             "meetscribe.pipeline.audio.asyncio.create_subprocess_exec",
             return_value=mock_proc,
         ):
-            with pytest.raises(RuntimeError, match="Failed to convert"):
+            with pytest.raises(PipelineError, match="Failed to convert"):
                 asyncio.run(convert_to_wav_async(Path("/fake/in.mp3"), tmp_path / "o.wav"))
 
     def test_returns_output_path(self, tmp_path: Path):

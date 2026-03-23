@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import RequestResponseEndpoint
 
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
@@ -60,7 +61,9 @@ def create_app() -> FastAPI:
     app.state.templates = templates
 
     @app.middleware("http")
-    async def csrf_cookie_middleware(request: Request, call_next):
+    async def csrf_cookie_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         """Ensure CSRF cookie is set on every response."""
         response: Response = await call_next(request)
         if not request.cookies.get(CSRF_COOKIE_NAME):
@@ -78,7 +81,7 @@ def create_app() -> FastAPI:
 
     # Auth middleware: redirect unauthenticated page requests to /login
     @app.middleware("http")
-    async def auth_middleware(request: Request, call_next):
+    async def auth_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
         # Skip public paths
@@ -134,7 +137,7 @@ def create_app() -> FastAPI:
     # Page routes
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request):
+    async def login_page(request: Request) -> Response:
         """Render login page."""
         # Redirect if already authenticated
         user = await get_current_user_or_none(request)
@@ -143,7 +146,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "login.html")
 
     @app.get("/register", response_class=HTMLResponse)
-    async def register_page(request: Request):
+    async def register_page(request: Request) -> Response:
         """Render registration page. Only admins can access."""
         user = await get_current_user_or_none(request)
         if not user:
@@ -153,12 +156,12 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request):
+    async def index(request: Request) -> HTMLResponse:
         """Render the main page."""
         return templates.TemplateResponse(request, "index.html")
 
     @app.get("/step/{step_num}", response_class=HTMLResponse)
-    async def get_step(request: Request, step_num: int):
+    async def get_step(request: Request, step_num: int) -> HTMLResponse:
         """Render a specific step."""
         step_templates = {
             1: "steps/step1_upload.html",
@@ -172,11 +175,11 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, template_name)
 
     @app.get("/health")
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.on_event("shutdown")
-    async def on_shutdown():
+    async def on_shutdown() -> None:
         shutdown_threads()
 
     return app

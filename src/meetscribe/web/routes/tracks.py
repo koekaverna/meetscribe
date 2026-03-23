@@ -16,7 +16,7 @@ from meetscribe.pipeline import audio
 from ..deps import get_current_user, get_session_for_user
 from ..models import TrackConfig, TrackUploadResponse
 from ..services.auth import AuthUser
-from ..services.session import get_session_service
+from ..services.session import SessionService, get_session_service
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,7 @@ async def upload_tracks(
     session_id: str,
     files: list[UploadFile] = File(...),
     user: AuthUser = Depends(get_current_user),
-):
+) -> list[TrackUploadResponse]:
     """Upload track files (video or audio)."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -115,7 +115,7 @@ async def upload_tracks(
 
 
 async def _process_video(
-    service, session_id: str, filename: str, video_path: Path, tracks_dir: Path
+    service: SessionService, session_id: str, filename: str, video_path: Path, tracks_dir: Path
 ) -> list[TrackUploadResponse]:
     """Extract audio tracks from video, return responses."""
     stream_indices = await audio.probe_audio_tracks_async(video_path)
@@ -158,7 +158,9 @@ async def _process_video(
 
 
 @router.get("/{session_id}/tracks", response_model=list[TrackConfig])
-async def list_tracks(session_id: str, user: AuthUser = Depends(get_current_user)):
+async def list_tracks(
+    session_id: str, user: AuthUser = Depends(get_current_user)
+) -> list[TrackConfig]:
     """List tracks in session."""
     state = get_session_for_user(session_id, user)
     return state.tracks
@@ -167,7 +169,7 @@ async def list_tracks(session_id: str, user: AuthUser = Depends(get_current_user
 @router.get("/{session_id}/tracks/{track_num}/audio")
 async def get_track_audio(
     session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)
-):
+) -> FileResponse:
     """Stream track audio."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -184,7 +186,7 @@ async def update_track(
     speaker_name: str | None = None,
     diarize: bool = True,
     user: AuthUser = Depends(get_current_user),
-):
+) -> dict[str, str]:
     """Update track configuration."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -194,7 +196,9 @@ async def update_track(
 
 
 @router.delete("/{session_id}/tracks/{track_num}")
-async def delete_track(session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)):
+async def delete_track(
+    session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)
+) -> dict[str, str]:
     """Delete a track."""
     get_session_for_user(session_id, user)
     service = get_session_service()

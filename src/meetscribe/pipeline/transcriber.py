@@ -8,6 +8,8 @@ from pathlib import Path
 import httpx
 from tqdm import tqdm
 
+from meetscribe.errors import ConfigurationError, SpeachesAPIError, speaches_retry
+
 from .models import SpeechSegment, TranscriptSegment, merge_close_segments
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ class RemoteTranscriber:
         """Transcribe WAV bytes via the remote API."""
         return self._transcribe_request(filename, audio_bytes, language)
 
+    @speaches_retry
     def _transcribe_request(
         self,
         filename: str,
@@ -46,18 +49,32 @@ class RemoteTranscriber:
         language: str,
     ) -> list[TranscriptSegment]:
         """Send transcription request and parse response."""
-        response = httpx.post(
-            f"{self.server_url}/v1/audio/transcriptions",
-            files={"file": (filename, audio_bytes, "audio/wav")},
-            data={
-                "model": self.model,
-                "language": language,
-                "response_format": "verbose_json",
-                "timestamp_granularities[]": "segment",
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        endpoint = f"{self.server_url}/v1/audio/transcriptions"
+        try:
+            response = httpx.post(
+                endpoint,
+                files={"file": (filename, audio_bytes, "audio/wav")},
+                data={
+                    "model": self.model,
+                    "language": language,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities[]": "segment",
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise SpeachesAPIError(
+                f"Transcription failed: {e.response.status_code}",
+                status_code=e.response.status_code,
+                endpoint=endpoint,
+                detail=e.response.text,
+            ) from e
+        except httpx.RequestError as e:
+            raise SpeachesAPIError(
+                f"Transcription connection error: {e}",
+                endpoint=endpoint,
+            ) from e
 
         result = response.json()
         segments = []
@@ -91,7 +108,7 @@ class Transcriber:
         max_chunk_ms: int,
     ):
         if not server_urls:
-            raise ValueError("At least one transcription server URL is required")
+            raise ConfigurationError("At least one transcription server URL is required")
         self.clients = [RemoteTranscriber(url, timeout, model) for url in server_urls]
         self.language = language
         self.max_gap_ms = max_gap_ms

@@ -5,8 +5,10 @@ import wave
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
+from meetscribe.errors import SpeachesAPIError
 from meetscribe.pipeline.diarization import DiarizationPipeline
 from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
 from meetscribe.pipeline.transcriber import Transcriber
@@ -53,13 +55,15 @@ class TestVadIntegration:
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.text = "Internal Server Error"
-        mock_response.raise_for_status.side_effect = Exception("500")
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error", request=MagicMock(), response=mock_response
+        )
 
         with patch("meetscribe.pipeline.vad.httpx.post", return_value=mock_response):
             from meetscribe.pipeline.vad import VoiceActivityDetector
 
             vad = VoiceActivityDetector("http://fake:8000", timeout=10.0)
-            with pytest.raises(Exception, match="500"):
+            with pytest.raises(SpeachesAPIError):
                 vad.detect(audio)
 
 

@@ -8,6 +8,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from meetscribe.errors import PipelineError
+
 FFMPEG_BIN = "ffmpeg"
 FFPROBE_BIN = "ffprobe"
 
@@ -25,7 +27,7 @@ After installation, restart your terminal.
 class FFmpegNotFoundError(RuntimeError):
     """Raised when FFmpeg is not available."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(FFMPEG_INSTALL_HELP)
 
 
@@ -77,7 +79,7 @@ def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to extract track {track_index}: {result.stderr}")
+        raise PipelineError(f"Failed to extract track {track_index}: {result.stderr}")
     return output_path
 
 
@@ -96,7 +98,7 @@ def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to convert {input_path.name}: {result.stderr}")
+        raise PipelineError(f"Failed to convert {input_path.name}: {result.stderr}")
     return output_path
 
 
@@ -143,7 +145,7 @@ async def extract_audio_async(video_path: Path, output_path: Path, track_index: 
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         err = stderr.decode(errors="replace")
-        raise RuntimeError(f"Failed to extract track {track_index}: {err}")
+        raise PipelineError(f"Failed to extract track {track_index}: {err}")
     return output_path
 
 
@@ -168,7 +170,7 @@ async def convert_to_wav_async(input_path: Path, output_path: Path) -> Path:
     _, stderr = await proc.communicate()
     if proc.returncode != 0:
         err = stderr.decode(errors="replace")
-        raise RuntimeError(f"Failed to convert {input_path.name}: {err}")
+        raise PipelineError(f"Failed to convert {input_path.name}: {err}")
     return output_path
 
 
@@ -202,5 +204,5 @@ def extract_segment(audio_path: Path, output_path: Path, start_ms: int, end_ms: 
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Failed to extract segment {start_ms}-{end_ms}ms: {result.stderr}")
+        raise PipelineError(f"Failed to extract segment {start_ms}-{end_ms}ms: {result.stderr}")
     return output_path

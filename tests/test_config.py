@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from meetscribe.errors import ConfigurationError
 from meetscribe.servers import (
     AppConfig,
     EmbeddingsConfig,
@@ -37,7 +38,7 @@ class TestLoadConfig:
     def test_empty_file_raises(self, tmp_path: Path):
         p = tmp_path / "config.yaml"
         p.write_text("", encoding="utf-8")
-        with pytest.raises(ValueError, match="Empty config"):
+        with pytest.raises(ConfigurationError, match="Empty config"):
             load_config(p)
 
     def test_minimal_config_loads(self, tmp_path: Path):
@@ -75,7 +76,7 @@ class TestLoadConfig:
 class TestValidate:
     def test_empty_servers_raises(self):
         cfg = AppConfig(servers=[])
-        with pytest.raises(ValueError, match="No servers configured"):
+        with pytest.raises(ConfigurationError, match="No servers configured"):
             cfg.validate()
 
     def test_vad_server_not_in_list_raises(self, tmp_path: Path):
@@ -86,7 +87,7 @@ class TestValidate:
             "transcription": {"servers": ["gpu1"]},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
-        with pytest.raises(ValueError, match="VAD server 'nonexistent' not found"):
+        with pytest.raises(ConfigurationError, match="VAD server 'nonexistent' not found"):
             load_config(p)
 
     def test_embeddings_server_not_in_list_raises(self, tmp_path: Path):
@@ -97,7 +98,7 @@ class TestValidate:
             "transcription": {"servers": ["gpu1"]},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
-        with pytest.raises(ValueError, match="Embeddings server 'nonexistent' not found"):
+        with pytest.raises(ConfigurationError, match="Embeddings server 'nonexistent' not found"):
             load_config(p)
 
     def test_transcription_server_not_in_list_raises(self, tmp_path: Path):
@@ -108,7 +109,7 @@ class TestValidate:
             "transcription": {"servers": ["nonexistent"]},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
-        with pytest.raises(ValueError, match="Transcription server 'nonexistent' not found"):
+        with pytest.raises(ConfigurationError, match="Transcription server 'nonexistent'"):
             load_config(p)
 
 
@@ -209,7 +210,7 @@ class TestAppConfigMethods:
 
     def test_get_server_url_not_found(self):
         cfg = self._make_config()
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ConfigurationError, match="not found"):
             cfg.get_server_url("nonexistent")
 
     def test_get_vad_url(self):
@@ -230,7 +231,7 @@ class TestAppConfigMethods:
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
             transcription=TranscriptionConfig(servers=[]),
         )
-        with pytest.raises(ValueError, match="not configured"):
+        with pytest.raises(ConfigurationError, match="not configured"):
             cfg.get_transcription_urls()
 
     def test_validate_empty_server_field_ok(self):

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from meetscribe.errors import SpeachesAPIError
 from meetscribe.pipeline.vad import VoiceActivityDetector
 
 from .conftest import make_wav_file
@@ -101,5 +102,7 @@ class TestVadDetect:
         )
 
         with patch("meetscribe.pipeline.vad.httpx.post", return_value=mock_resp):
-            with pytest.raises(httpx.HTTPStatusError):
+            with pytest.raises(SpeachesAPIError, match="VAD failed: 500") as exc_info:
                 vad.detect(audio)
+            assert exc_info.value.status_code == 500
+            assert exc_info.value.is_transient is True

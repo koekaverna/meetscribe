@@ -3,7 +3,8 @@
 import logging
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
 
 from ..deps import get_current_user, verify_csrf
 from ..services.auth import (
@@ -24,13 +25,13 @@ async def login(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-):
+) -> Response:
     """Login with username and password."""
     auth = get_auth_service()
     try:
         user, token = auth.login(username, password)
     except ValueError:
-        templates = request.app.state.templates
+        templates: Jinja2Templates = request.app.state.templates
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -58,11 +59,11 @@ async def register(
     password: str = Form(...),
     password_confirm: str = Form(...),
     admin: AuthUser = Depends(get_current_user),
-):
+) -> Response:
     """Register a new user in admin's team."""
-    templates = request.app.state.templates
+    templates: Jinja2Templates = request.app.state.templates
 
-    def _render_error(error: str):
+    def _render_error(error: str) -> Response:
         return templates.TemplateResponse(
             request,
             "register.html",
@@ -94,7 +95,7 @@ async def register(
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
-async def logout(request: Request):
+async def logout(request: Request) -> RedirectResponse:
     """Logout: delete session and clear cookie."""
     token = request.cookies.get(COOKIE_NAME)
     if token:
