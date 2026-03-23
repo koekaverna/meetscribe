@@ -58,3 +58,9 @@ class TestResolveTeam:
     def test_none_resolves_to_default(self):
         ctx = self._resolve(None)
         assert ctx.name == "default"
+
+    def test_explicit_default_string(self):
+        """Passing "default" explicitly should work the same as None."""
+        ctx = self._resolve("default")
+        assert ctx.name == "default"
+        assert ctx.id > 0
