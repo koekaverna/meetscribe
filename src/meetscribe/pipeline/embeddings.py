@@ -3,8 +3,10 @@
 import io
 import logging
 import math
+import shutil
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -152,6 +154,39 @@ def cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def compute_voiceprint(extractor: EmbeddingExtractor, wav_files: list[Path]) -> list[float]:
+    """Extract embeddings from wav files and return their average."""
+    embeddings = [extractor.extract_from_file(path) for path in wav_files]
+    return [sum(col) / len(col) for col in zip(*embeddings)]
+
+
+def enroll_samples(
+    extractor: EmbeddingExtractor,
+    sample_paths: list[Path],
+    enrolled_dir: Path,
+) -> tuple[list[float], int, int]:
+    """Copy samples to enrolled dir and compute voiceprint from all samples.
+
+    Returns (avg_embedding, total_count, new_count).
+    """
+    enrolled_dir.mkdir(parents=True, exist_ok=True)
+    resolved_dir = enrolled_dir.resolve()
+    date_prefix = datetime.now().strftime("%Y%m%d")
+    new_count = 0
+    for path in sample_paths:
+        # Skip files already in enrolled_dir
+        if path.resolve().parent == resolved_dir:
+            continue
+        dest = enrolled_dir / f"{date_prefix}_{path.name}"
+        if path.exists():
+            shutil.copy2(path, dest)
+            new_count += 1
+
+    all_wav_files = sorted(enrolled_dir.glob("*.wav"))
+    avg_embedding = compute_voiceprint(extractor, all_wav_files)
+    return avg_embedding, len(all_wav_files), new_count
 
 
 class SpeakerIdentifier:
