@@ -28,6 +28,7 @@ import shutil
 import tempfile
 import time
 import warnings
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -72,6 +73,7 @@ logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handl
 logging.captureWarnings(True)
 warnings.filterwarnings("default")
 
+from .errors import ConfigurationError, SpeachesAPIError  # noqa: E402
 from .pipeline import (  # noqa: E402 — capture warnings from heavy deps
     DiarizationPipeline,
     EmbeddingExtractor,
@@ -105,7 +107,7 @@ def _format_elapsed(seconds: float) -> str:
 
 
 @contextmanager
-def step(num: int, total: int, desc: str, emoji: str = "\U0001f504"):
+def step(num: int, total: int, desc: str, emoji: str = "\U0001f504") -> Generator[None, None, None]:
     """Context manager that prints step header and elapsed time on completion."""
     print(f"\n{C_CYAN}[{num}/{total}]{C_RESET} {emoji}  {C_BOLD}{desc}{C_RESET}")
     t = time.time()
@@ -115,7 +117,7 @@ def step(num: int, total: int, desc: str, emoji: str = "\U0001f504"):
 
 
 @contextmanager
-def substep(desc: str, emoji: str = "\U0001f504"):
+def substep(desc: str, emoji: str = "\U0001f504") -> Generator[None, None, None]:
     """Context manager that prints sub-step and elapsed time."""
     print(f"    {emoji}  {desc}")
     t = time.time()
@@ -247,7 +249,7 @@ def parse_track_args(extra_args: list[str]) -> dict[int, str]:
 # === Commands ===
 
 
-def cmd_enroll(args, team_ctx: TeamContext):
+def cmd_enroll(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     """Enroll a speaker by copying audio samples and computing voiceprint."""
     samples_path = Path(args.samples_path)
 
@@ -321,7 +323,7 @@ def cmd_enroll(args, team_ctx: TeamContext):
     print(f"  \U0001f511 Voiceprint: {C_DIM}DB (team: {team_ctx.name}){C_RESET}\n")
 
 
-def cmd_list(args, team_ctx: TeamContext):
+def cmd_list(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     """List enrolled speakers."""
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \U0001f465 {C_BOLD}Enrolled Speakers{C_RESET}")
@@ -343,7 +345,7 @@ def cmd_list(args, team_ctx: TeamContext):
     print()
 
 
-def cmd_extract(args):
+def cmd_extract(args: argparse.Namespace) -> None:
     """Extract audio tracks from a video file."""
     video_path = Path(args.video)
     if not video_path.exists():
@@ -401,7 +403,7 @@ def _resolve_inputs(raw_inputs: list[str]) -> list[Path]:
     return resolved
 
 
-def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
+def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: TeamContext) -> None:
     """Transcribe meeting with diarization using remote servers."""
     input_paths = _resolve_inputs(args.input)
     output_path = Path(args.output)
@@ -554,7 +556,7 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
     print(f"{C_GREEN}{'=' * 60}{C_RESET}\n")
 
 
-def cmd_extract_samples(args, team_ctx: TeamContext):
+def cmd_extract_samples(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     """Extract speaker samples without transcription (fast)."""
     video_path = Path(args.video)
 
@@ -626,7 +628,7 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
     print(f"{C_GREEN}{'=' * 60}{C_RESET}\n")
 
 
-def cmd_info(args, team_ctx: TeamContext):
+def cmd_info(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     """Show data directories and configuration."""
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \u2139\ufe0f  {C_BOLD}MeetScribe Configuration{C_RESET}")
@@ -644,7 +646,7 @@ def cmd_info(args, team_ctx: TeamContext):
     print()
 
 
-def cmd_web(args):
+def cmd_web(args: argparse.Namespace) -> None:
     """Start the web UI server."""
     try:
         from .web.app import run
@@ -663,7 +665,7 @@ def cmd_web(args):
 # === User management commands ===
 
 
-def cmd_user_create(args):
+def cmd_user_create(args: argparse.Namespace) -> None:
     """Create a new user."""
     import getpass
 
@@ -700,7 +702,7 @@ def cmd_user_create(args):
         conn.close()
 
 
-def cmd_user_list(args):
+def cmd_user_list(args: argparse.Namespace) -> None:
     """List all users."""
     conn = get_db(config.DB_PATH)
     users = list_users(conn)
@@ -721,7 +723,7 @@ def cmd_user_list(args):
     print()
 
 
-def cmd_user_delete(args):
+def cmd_user_delete(args: argparse.Namespace) -> None:
     """Delete a user."""
     if not args.yes:
         answer = input(f"Delete user '{args.username}'? [y/N] ")
@@ -742,7 +744,7 @@ def cmd_user_delete(args):
 # === Team management commands ===
 
 
-def cmd_team_create(args):
+def cmd_team_create(args: argparse.Namespace) -> None:
     """Create a new team."""
     conn = get_db(config.DB_PATH)
     team_id = create_team(conn, args.name, args.description)
@@ -753,7 +755,7 @@ def cmd_team_create(args):
     print(f"  Use: meetscribe -t {name} enroll ...\n")
 
 
-def cmd_team_list(args):
+def cmd_team_list(args: argparse.Namespace) -> None:
     """List all teams."""
     conn = get_db(config.DB_PATH)
     teams = list_teams(conn)
@@ -771,7 +773,7 @@ def cmd_team_list(args):
     conn.close()
 
 
-def cmd_team_delete(args):
+def cmd_team_delete(args: argparse.Namespace) -> None:
     """Delete a team."""
     if not args.yes:
         answer = input(f"Delete team '{args.name}' and all its data? [y/N] ")
@@ -793,7 +795,7 @@ def cmd_team_delete(args):
         print(f"\n  {C_YELLOW}\u26a0\ufe0f{C_RESET}  Team '{args.name}' not found.\n")
 
 
-def main():
+def main() -> None:
     colorama.just_fix_windows_console()
 
     try:
@@ -918,6 +920,14 @@ def main():
                 parser.error(f"Unrecognized arguments: {' '.join(extra)}")
             team_ctx = resolve_team(args.team)
             args.func(args, team_ctx)
+    except ConfigurationError as e:
+        print(f"\n  {C_RED}\u274c Configuration error:{C_RESET} {e}")
+        raise SystemExit(1)
+    except SpeachesAPIError as e:
+        print(f"\n  {C_RED}\u274c API error:{C_RESET} {e}")
+        if e.detail:
+            print(f"    {e.detail}")
+        raise SystemExit(1)
     except Exception as e:
         print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}")
         raise SystemExit(1)

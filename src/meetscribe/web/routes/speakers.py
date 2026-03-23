@@ -11,14 +11,14 @@ router = APIRouter()
 
 
 @router.get("", response_model=list[GlobalSpeaker])
-async def list_speakers(user: AuthUser = Depends(get_current_user)):
+async def list_speakers(user: AuthUser = Depends(get_current_user)) -> list[GlobalSpeaker]:
     """List all enrolled speakers for the user's team."""
     names = list_team_speakers(user.team_name)
     return [GlobalSpeaker(name=name) for name in names]
 
 
 @router.delete("/{name}")
-async def delete_speaker(name: str, user: AuthUser = Depends(get_current_user)):
+async def delete_speaker(name: str, user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
     """Remove a speaker from the user's team."""
     if not remove_team_speaker(name, user.team_name):
         raise HTTPException(status_code=404, detail="Speaker not found")

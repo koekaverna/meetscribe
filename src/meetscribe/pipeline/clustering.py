@@ -1,6 +1,7 @@
 """Speaker clustering using Agglomerative Hierarchical Clustering."""
 
 import logging
+from typing import cast
 
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -74,4 +75,4 @@ def cluster_embeddings(embeddings: list[list[float]], threshold: float) -> list[
         threshold,
     )
 
-    return labels.tolist()
+    return cast(list[int], labels.tolist())

@@ -17,6 +17,7 @@ from meetscribe.pipeline import (
     EmbeddingExtractor,
     SpeechSegment,
     Transcriber,
+    TranscriptSegment,
     audio,
     enroll_samples,
 )
@@ -335,7 +336,7 @@ class PipelineRunner:
 
             all_segments.sort(key=lambda x: x.start_ms)
 
-            def format_segment(s):
+            def format_segment(s: TranscriptSegment) -> str:
                 mins = s.start_ms // 60000
                 secs = (s.start_ms // 1000) % 60
                 speaker = s.speaker or "Unknown"
