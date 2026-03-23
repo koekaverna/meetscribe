@@ -23,9 +23,18 @@ class TestResolveTeam:
         with (
             patch("meetscribe.team.config.DB_PATH", self.db_path),
             patch("meetscribe.team.config.TEAMS_DIR", self.teams_dir),
-            patch("meetscribe.team.config.get_team_samples_dir", lambda n: self.teams_dir / n / "samples"),
-            patch("meetscribe.team.config.get_team_enrolled_dir", lambda n: self.teams_dir / n / "samples" / "enrolled"),
-            patch("meetscribe.team.config.get_team_unknown_dir", lambda n: self.teams_dir / n / "samples" / "unknown"),
+            patch(
+                "meetscribe.team.config.get_team_samples_dir",
+                lambda n: self.teams_dir / n / "samples",
+            ),
+            patch(
+                "meetscribe.team.config.get_team_enrolled_dir",
+                lambda n: self.teams_dir / n / "samples" / "enrolled",
+            ),
+            patch(
+                "meetscribe.team.config.get_team_unknown_dir",
+                lambda n: self.teams_dir / n / "samples" / "unknown",
+            ),
             patch("meetscribe.team.config.ensure_team_dirs", lambda n: None),
         ):
             return resolve_team(name)

@@ -1,8 +1,7 @@
 """Tests for database.py — SQLite CRUD operations."""
 
-import json
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -35,15 +34,11 @@ class TestMigrations:
         # Both connections should see the same tables
         tables1 = {
             r[0]
-            for r in conn1.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in conn1.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         tables2 = {
             r[0]
-            for r in conn2.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
+            for r in conn2.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         assert tables1 == tables2
         assert "teams" in tables1
@@ -145,7 +140,7 @@ class TestAuthSessions:
 
     def test_create_and_get(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
-        expires = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        expires = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "tok123", expires)
         session = get_auth_session(db, "tok123")
         assert session is not None
@@ -155,21 +150,21 @@ class TestAuthSessions:
     def test_expired_session_returns_none(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
         # Already expired
-        expires = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+        expires = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "expired_tok", expires)
         assert get_auth_session(db, "expired_tok") is None
 
     def test_delete_session(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
-        expires = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        expires = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "tok_del", expires)
         assert delete_auth_session(db, "tok_del") is True
         assert get_auth_session(db, "tok_del") is None
 
     def test_delete_expired(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
-        past = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
-        future = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        past = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+        future = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "old", past)
         create_auth_session(db, uid, "new", future)
         deleted = delete_expired_sessions(db)
