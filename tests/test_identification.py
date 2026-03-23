@@ -1,15 +1,14 @@
 """Tests for pipeline/embeddings.py — speaker identification and enrollment."""
 
 import math
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from tests.conftest import make_wav_file
 
 from meetscribe.pipeline.embeddings import SpeakerIdentifier, enroll_samples
 from meetscribe.pipeline.models import SpeechSegment
-from conftest import make_wav_file
 
 
 def _norm(raw: list[float]) -> list[float]:
@@ -27,9 +26,21 @@ AMBIGUOUS = _norm([0.5, 0.5, 0.0, 0.0])
 
 
 class TestSpeakerIdentifierIdentify:
-    def _make_identifier(self, voiceprints=None, threshold=0.8, confident_gap=0.2, min_threshold=0.4):
+    def _make_identifier(
+        self,
+        voiceprints=None,
+        threshold=0.8,
+        confident_gap=0.2,
+        min_threshold=0.4,
+    ):
         vp = voiceprints or {}
-        return SpeakerIdentifier(vp, threshold, confident_gap, min_threshold, unknown_cluster_threshold=0.25)
+        return SpeakerIdentifier(
+            vp,
+            threshold,
+            confident_gap,
+            min_threshold,
+            unknown_cluster_threshold=0.25,
+        )
 
     def test_no_voiceprints_returns_none(self):
         ident = self._make_identifier()
@@ -48,7 +59,7 @@ class TestSpeakerIdentifierIdentify:
         ident = self._make_identifier(
             {"Alice": ALICE_EMB, "Bob": BOB_EMB},
             threshold=0.999,
-            confident_gap=2.0,    # impossible gap
+            confident_gap=2.0,  # impossible gap
             min_threshold=0.999,  # floor above any real similarity
         )
         name, sim = ident.identify(ALICE_LIKE)
@@ -119,8 +130,11 @@ class TestFindNearestLabeled:
 class TestIdentifySegments:
     def _make_identifier(self, voiceprints):
         return SpeakerIdentifier(
-            voiceprints, threshold=0.8, confident_gap=0.2,
-            min_threshold=0.4, unknown_cluster_threshold=0.25,
+            voiceprints,
+            threshold=0.8,
+            confident_gap=0.2,
+            min_threshold=0.4,
+            unknown_cluster_threshold=0.25,
         )
 
     def test_all_known_speakers(self):

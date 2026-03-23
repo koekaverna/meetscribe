@@ -1,7 +1,6 @@
 """Integration tests for the diarization and transcription pipeline with mocked HTTP."""
 
 import io
-import json
 import wave
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -75,14 +74,19 @@ class TestEmbeddingsIntegration:
         mock_response.raise_for_status = MagicMock()
 
         segments = [
-            SpeechSegment(0, 2000),     # 2000ms — should extract
+            SpeechSegment(0, 2000),  # 2000ms — should extract
             SpeechSegment(2000, 2500),  # 500ms — should skip (< 1500ms default)
         ]
 
         with patch("meetscribe.pipeline.embeddings.httpx.post", return_value=mock_response):
             from meetscribe.pipeline.embeddings import EmbeddingExtractor
 
-            ext = EmbeddingExtractor("http://fake:8000", timeout=10.0, min_duration_ms=1500, model="test-model")
+            ext = EmbeddingExtractor(
+                "http://fake:8000",
+                timeout=10.0,
+                min_duration_ms=1500,
+                model="test-model",
+            )
             results = ext.extract_segments(audio, segments, max_workers=1)
 
         assert len(results) == 2
@@ -145,7 +149,7 @@ class TestTranscriberTranscribeSegments:
         # First result should have offset applied (chunk starts at 1000ms)
         first = results[0]
         assert first.start_ms == 1000  # 0 + 1000 offset
-        assert first.end_ms == 1500    # 500 + 1000 offset
+        assert first.end_ms == 1500  # 500 + 1000 offset
         assert first.speaker == "Alice"
 
 
