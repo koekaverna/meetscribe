@@ -113,9 +113,7 @@ class AppConfig:
         if not self.embeddings:
             raise ValueError("'embeddings' section missing from config. See config.example.yaml")
         if not self.transcription:
-            raise ValueError(
-                "'transcription' section missing from config. See config.example.yaml"
-            )
+            raise ValueError("'transcription' section missing from config. See config.example.yaml")
         server_names = {s.name for s in self.servers}
         if self.vad.server not in server_names:
             raise ValueError(f"VAD server '{self.vad.server}' not found in servers list")

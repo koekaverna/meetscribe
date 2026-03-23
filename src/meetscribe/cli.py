@@ -48,7 +48,7 @@ from .database import (
     load_voiceprints,
     save_voiceprint,
 )
-from .servers import load_config
+from .servers import AppConfig, load_config
 from .team import TeamContext, resolve_team
 
 # Enable ANSI colors on Windows
@@ -78,6 +78,7 @@ from .pipeline import (  # noqa: E402 — capture warnings from heavy deps
     SpeechSegment,
     Transcriber,
     audio,
+    enroll_samples,
 )
 from .pipeline.audio import FFmpegNotFoundError  # noqa: E402 — capture warnings from heavy deps
 
@@ -142,6 +143,28 @@ def _print_team_header(team_ctx: TeamContext) -> None:
     """Print active team indicator if not default."""
     if team_ctx.name != "default":
         print(f"  {C_CYAN}\U0001f465 Team: {C_BOLD}{team_ctx.name}{C_RESET}")
+
+
+def _create_diarization(cfg: AppConfig, team_ctx: TeamContext) -> DiarizationPipeline:
+    """Create a DiarizationPipeline from config and team context."""
+    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+    return DiarizationPipeline(
+        vad_url=cfg.get_vad_url(),
+        embedding_url=cfg.get_embeddings_url(),
+        voiceprints=voiceprints,
+        threshold=cfg.embeddings.threshold,
+        vad_timeout=cfg.vad.timeout,
+        embedding_timeout=cfg.embeddings.timeout,
+        min_duration_ms=cfg.embeddings.min_duration_ms,
+        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
+        confident_gap=cfg.embeddings.confident_gap,
+        min_threshold=cfg.embeddings.min_threshold,
+        max_workers=cfg.embeddings.max_workers,
+        embedding_model=cfg.embeddings.model,
+        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
+        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
+        vad_threshold=cfg.vad.threshold,
+    )
 
 
 def save_unknown_samples(
@@ -256,43 +279,38 @@ def cmd_enroll(args, team_ctx: TeamContext):
 
     t = time.time()
 
-    # Copy samples to team-scoped enrolled directory
+    # Convert non-wav to wav in temp, collect all as wav_paths
     enrolled_dir = team_ctx.enrolled_samples_dir / args.name
-    enrolled_dir.mkdir(parents=True, exist_ok=True)
-
-    wav_files: list[Path] = []
+    tmp_converted: list[Path] = []
+    wav_paths: list[Path] = []
     for audio_file in audio_files:
-        dest = enrolled_dir / audio_file.name
         if audio_file.suffix.lower() == ".wav":
-            if audio_file.resolve() != dest.resolve():
-                shutil.copy2(audio_file, dest)
-            wav_files.append(dest)
+            wav_paths.append(audio_file)
         else:
-            wav_dest = dest.with_suffix(".wav")
+            wav_dest = audio_file.with_suffix(".wav")
             audio.convert_to_wav(audio_file, wav_dest)
-            wav_files.append(wav_dest)
+            wav_paths.append(wav_dest)
+            tmp_converted.append(wav_dest)
 
-    ok(f"{len(wav_files)} sample(s) in {enrolled_dir}")
-
-    # Compute voiceprint via remote embeddings API
-    with substep("Computing voiceprint", "\U0001f511"):
-        extractor = EmbeddingExtractor(
-            cfg.get_embeddings_url(),
-            cfg.embeddings.timeout,
-            cfg.embeddings.min_duration_ms,
-            model=cfg.embeddings.model,
-        )
-        embeddings: list[list[float]] = []
-        for wav_file in wav_files:
-            emb = extractor.extract_from_file(wav_file)
-            embeddings.append(emb)
-            info(f"Embedding extracted from {wav_file.name}")
-
-        # Average embeddings across samples
-        avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
-        save_voiceprint(
-            team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.embeddings.model
-        )
+    # Enroll: copy all samples, compute voiceprint from all
+    try:
+        with substep("Computing voiceprint", "\U0001f511"):
+            extractor = EmbeddingExtractor(
+                cfg.get_embeddings_url(),
+                cfg.embeddings.timeout,
+                cfg.embeddings.min_duration_ms,
+                model=cfg.embeddings.model,
+            )
+            avg_embedding, total_count, new_count = enroll_samples(
+                extractor, wav_paths, enrolled_dir
+            )
+            ok(f"{total_count} sample(s) in {enrolled_dir} ({new_count} new)")
+            save_voiceprint(
+                team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.embeddings.model
+            )
+    finally:
+        for tmp in tmp_converted:
+            tmp.unlink(missing_ok=True)
 
     elapsed = time.time() - t
     print(
@@ -429,27 +447,8 @@ def cmd_transcribe(args, extra_args: list[str], team_ctx: TeamContext):
 
     total_start = time.time()
 
-    # Load voiceprints from DB for this team
-    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
-
     # Create pipeline components
-    diarization = DiarizationPipeline(
-        vad_url=cfg.get_vad_url(),
-        embedding_url=cfg.get_embeddings_url(),
-        voiceprints=voiceprints,
-        threshold=cfg.embeddings.threshold,
-        vad_timeout=cfg.vad.timeout,
-        embedding_timeout=cfg.embeddings.timeout,
-        min_duration_ms=cfg.embeddings.min_duration_ms,
-        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
-        confident_gap=cfg.embeddings.confident_gap,
-        min_threshold=cfg.embeddings.min_threshold,
-        max_workers=cfg.embeddings.max_workers,
-        embedding_model=cfg.embeddings.model,
-        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
-        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
-        vad_threshold=cfg.vad.threshold,
-    )
+    diarization = _create_diarization(cfg, team_ctx)
     transcriber = Transcriber(
         cfg.get_transcription_urls(),
         language=language,
@@ -567,9 +566,6 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
-    # Load voiceprints from DB for this team
-    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
-
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \U0001f50a {C_BOLD}Extract Speaker Samples{C_RESET}")
     print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
@@ -578,23 +574,7 @@ def cmd_extract_samples(args, team_ctx: TeamContext):
     print(f"{C_MAGENTA}{'=' * 60}{C_RESET}")
 
     total_start = time.time()
-    diarization = DiarizationPipeline(
-        vad_url=cfg.get_vad_url(),
-        embedding_url=cfg.get_embeddings_url(),
-        voiceprints=voiceprints,
-        threshold=cfg.embeddings.threshold,
-        vad_timeout=cfg.vad.timeout,
-        embedding_timeout=cfg.embeddings.timeout,
-        min_duration_ms=cfg.embeddings.min_duration_ms,
-        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
-        confident_gap=cfg.embeddings.confident_gap,
-        min_threshold=cfg.embeddings.min_threshold,
-        max_workers=cfg.embeddings.max_workers,
-        embedding_model=cfg.embeddings.model,
-        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
-        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
-        vad_threshold=cfg.vad.threshold,
-    )
+    diarization = _create_diarization(cfg, team_ctx)
 
     with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
         work_dir = Path(tmp)

@@ -1,7 +1,6 @@
 """Pipeline service wrappers for web UI using remote speaches API."""
 
 import logging
-import shutil
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
@@ -19,6 +18,7 @@ from meetscribe.pipeline import (
     SpeechSegment,
     Transcriber,
     audio,
+    enroll_samples,
 )
 from meetscribe.servers import AppConfig, load_config
 from meetscribe.team import TeamContext, resolve_team
@@ -232,22 +232,19 @@ class PipelineRunner:
             model=self.cfg.embeddings.model,
         )
 
-        sample_count = len(sample_paths)
-        yield {
-            "step": 2,
-            "total": total_steps,
-            "message": f"Enrolling {name} from {sample_count} samples...",
-        }
-
-        # Extract embeddings and average them
-        embeddings: list[list[float]] = []
-        for path in sample_paths:
-            emb = extractor.extract_from_file(path)
-            embeddings.append(emb)
-
-        avg_embedding = [sum(col) / len(col) for col in zip(*embeddings)]
         team_ctx = self._resolve()
         try:
+            enrolled_dir = team_ctx.enrolled_samples_dir / name
+            avg_embedding, total_count, new_count = enroll_samples(
+                extractor, sample_paths, enrolled_dir
+            )
+
+            yield {
+                "step": 2,
+                "total": total_steps,
+                "message": f"Enrolling {name} from {total_count} samples ({new_count} new)...",
+            }
+
             save_voiceprint(
                 team_ctx.conn,
                 team_ctx.id,
@@ -256,22 +253,14 @@ class PipelineRunner:
                 self.cfg.embeddings.model,
             )
 
-            # Copy samples to team-scoped enrolled directory
-            enrolled_dir = team_ctx.enrolled_samples_dir / name
-            enrolled_dir.mkdir(parents=True, exist_ok=True)
-            for path in sample_paths:
-                dest = enrolled_dir / path.name
-                if path.exists() and path.resolve() != dest.resolve():
-                    shutil.copy2(path, dest)
+            yield {
+                "step": total_steps,
+                "total": total_steps,
+                "message": f"Enrolled {name}",
+                "embedding_dim": len(avg_embedding),
+            }
         finally:
             team_ctx.conn.close()
-
-        yield {
-            "step": total_steps,
-            "total": total_steps,
-            "message": f"Enrolled {name}",
-            "embedding_dim": len(avg_embedding),
-        }
 
     def transcribe(
         self,
