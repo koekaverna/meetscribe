@@ -3,7 +3,6 @@
 import logging
 import shutil
 import tempfile
-import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -90,7 +89,6 @@ class PipelineRunner:
         track_paths: list[Path],
         track_diarize: dict[int, bool] | None = None,
         progress_callback: Any | None = None,
-        max_enrolled_samples: int = 10,
     ) -> Generator[dict, None, None]:
         """Extract speaker samples from tracks. Yields progress and sample info."""
         # Filter tracks that need diarization
@@ -115,8 +113,6 @@ class PipelineRunner:
 
             step = 1
             all_samples = []
-            known_speaker_counts: dict[str, int] = {}
-
             for track_num, track_path in tracks_to_process:
                 # VAD
                 step += 1
@@ -199,17 +195,6 @@ class PipelineRunner:
                             "known_speaker_name": speaker_name if is_known else None,
                         }
                         all_samples.append(sample_info)
-
-                        # Copy identified samples to enrolled folder (up to limit)
-                        if is_known:
-                            current_count = known_speaker_counts.get(speaker_name, 0)
-                            if current_count < max_enrolled_samples:
-                                enrolled_dir = team_ctx.enrolled_samples_dir / speaker_name
-                                enrolled_dir.mkdir(parents=True, exist_ok=True)
-                                timestamp = int(time.time() * 1000)
-                                dest = enrolled_dir / f"auto_{timestamp}_{track_num}_{i}.wav"
-                                dest.write_bytes(audio_bytes)
-                                known_speaker_counts[speaker_name] = current_count + 1
 
                 yield {
                     "step": step,
