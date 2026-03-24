@@ -1,203 +1,148 @@
 # MeetScribe — Roadmap
 
-> v0.3.2 → v1.0 | 6 фаз | CLI + Web
+> v0.3.2 → v1.0 | 6 phases | CLI + Web
 
-## Текущее состояние
+## Current State
 
-MeetScribe — CLI + Web инструмент для транскрибации встреч с диаризацией спикеров.
+MeetScribe — CLI + Web tool for meeting transcription with speaker diarization.
 
-**Что работает:**
-- Пайплайн: VAD → Embeddings → Clustering → Identification → Transcription (remote Speaches API)
+**What works:**
+- Pipeline: VAD → Embeddings → Clustering → Identification → Transcription (remote Speaches API)
 - CLI: transcribe, enroll, extract, extract-samples, list-speakers, info, web, team, user
 - Web UI: FastAPI + Jinja2, 6-step workflow, auth, team scoping, SSE progress
-- БД: SQLite, 8 таблиц, миграции, multi-team
-- ~4900 строк, 29 модулей
+- DB: SQLite, 8 tables, migrations, multi-team
+- ~4900 lines, 29 modules
 
-**Уникальное позиционирование:**
-- CLI-first — нет конкурентов в этой нише
-- Self-hosted / privacy-first — данные не покидают инфраструктуру
-- Гибридная идентификация — enrolled voiceprints + авто-кластеризация unknown
-- Pluggable backend — Speaches API, сменяемые модели
+**Unique positioning:**
+- CLI-first — no competitors in this niche
+- Self-hosted / privacy-first — data never leaves your infrastructure
+- Hybrid identification — enrolled voiceprints + auto-clustering unknown speakers
+- Pluggable backend — Speaches API, swappable models
 
-## Конкурентный ландшафт
+## Competitive Landscape
 
-| Решение | Тип | Ключевые фичи |
-|---------|-----|----------------|
-| Otter.ai | Cloud | Real-time, 99+ языков, collaborative notes, series tracking |
-| Fireflies.ai | Cloud | 6000+ интеграций, sentiment analysis, conversation intelligence |
-| Fathom | Cloud | Бесплатный tier, privacy-first, action items |
-| MeetGeek | Cloud | Лучшие саммари, action items с assignee/deadline, team analytics |
-| tl;dv | Cloud | Бесплатные записи, moment sharing, timestamp navigation |
+| Solution | Type | Key Features |
+|----------|------|--------------|
+| Otter.ai | Cloud | Real-time, 99+ languages, collaborative notes, series tracking |
+| Fireflies.ai | Cloud | 6000+ integrations, sentiment analysis, conversation intelligence |
+| Fathom | Cloud | Free tier, privacy-first, action items |
+| MeetGeek | Cloud | Best summaries, action items with assignee/deadline, team analytics |
+| tl;dv | Cloud | Free recordings, moment sharing, timestamp navigation |
 | Grain | Cloud | Deal intelligence, collaborative annotation |
 | WhisperX | OSS | Whisper + Pyannote, word-level timestamps, batch-only |
-| pyannote | OSS | Diarization models, ~11-19% DER, без транскрипции |
-| NeMo | OSS | NVIDIA, GPU-оптимизированная диаризация |
+| pyannote | OSS | Diarization models, ~11-19% DER, no transcription |
+| NeMo | OSS | NVIDIA, GPU-optimized diarization |
 
-**Общие фичи коммерческих решений, отсутствующие в MeetScribe:**
-- AI-саммари и action items
-- Поиск по архиву транскриптов
-- Интеграции с платформами (Zoom, Teams, Meet)
-- Аналитика спикеров (talk time, engagement)
-- Real-time транскрибация
-- Множественные форматы экспорта
-- Редактирование транскриптов
+**Common commercial features missing in MeetScribe:**
+- AI summaries and action items
+- Transcript archive search
+- Platform integrations (Zoom, Teams, Meet)
+- Speaker analytics (talk time, engagement)
+- Real-time transcription
+- Multiple export formats
+- Transcript editing
 
 ---
 
-## Фаза 1: Hardening (v0.4)
+## Phase 1: Hardening (v0.4)
 
-> Надёжная основа
+> Solid foundation
 
-**Цель:** Надёжность для ежедневного использования. Без новых фич — только уверенность в существующих.
+**Goal:** Reliability for daily use. No new features — only confidence in existing ones.
 
-### Тесты
+### Tests
 
-#### Правила
+#### Rules
 
-- Каждый assert проверяет **конкретное значение**, не `is not None`, не `isinstance`
-- Мокаем только внешние зависимости (httpx, filesystem), не тестируемый объект
-- Тестируем **поведение**, не реализацию — не завязываемся на внутренние методы
+- Every assert checks a **specific value**, not `is not None`, not `isinstance`
+- Mock only external dependencies (httpx, filesystem), not the object under test
+- Test **behavior**, not implementation — no coupling to internal methods
 
-#### Фикстуры (`tests/conftest.py`)
+#### Fixtures (`tests/conftest.py`)
 
-- [x] In-memory SQLite с миграциями
-- [x] Мок Speaches API (httpx responses для VAD, embeddings, transcriptions)
-- [x] WAV-файл 16kHz mono (короткий, в памяти)
-- [x] Embedding-векторы (нормализованные float-списки)
-- [x] Минимальный config.yaml (temp file)
+- [x] In-memory SQLite with migrations
+- [x] Speaches API mock (httpx responses for VAD, embeddings, transcriptions)
+- [x] 16kHz mono WAV file (short, in-memory)
+- [x] Embedding vectors (normalized float lists)
+- [x] Minimal config.yaml (temp file)
 
-#### Unit-тесты (чистые функции)
+#### Unit tests (pure functions)
 
 **`tests/test_models.py`** — `pipeline/models.py`:
 - [x] `merge_close_segments()` — empty, single, merge same speaker, skip different speakers, max_chunk_ms limit, gap > max_gap_ms
-- [x] `merge_by_proximity()` — то же но без учёта спикера, speaker preserved from first
+- [x] `merge_by_proximity()` — same but ignoring speaker, speaker preserved from first
 
 **`tests/test_clustering.py`** — `pipeline/clustering.py`:
-- [x] `cluster_embeddings()` — 2 голоса → 2 кластера, 1 голос → 1 кластер, пороги влияют на кол-во кластеров
+- [x] `cluster_embeddings()` — 2 voices → 2 clusters, 1 voice → 1 cluster, thresholds affect cluster count
 
-**`tests/test_identification.py`** — `pipeline/embeddings.py` (локальная логика):
-- [x] `SpeakerIdentifier.identify()` — direct match (sim ≥ threshold), confident gap accept, below min_threshold reject, no voiceprints → None
+**`tests/test_identification.py`** — `pipeline/embeddings.py` (local logic):
+- [x] `SpeakerIdentifier.identify()` — direct match (sim >= threshold), confident gap accept, below min_threshold reject, no voiceprints → None
 - [x] `SpeakerIdentifier._find_nearest_labeled()` — left/right neighbor, both sides, no neighbors
 - [x] `SpeakerIdentifier.identify_segments()` — all known, all unknown → clusters, mixed, short segments inherit from neighbor
-- [x] `enroll_samples()` — копирует файлы в enrolled_dir, включает ранее зарегистрированные семплы, возвращает correct count
+- [x] `enroll_samples()` — copies files to enrolled_dir, includes previously enrolled samples, returns correct count
 
-**`tests/test_config.py`** — `servers.py`:
-- [x] `load_config()` — file not found, empty file, валидный YAML, дефолты при отсутствии секций
-- [x] `AppConfig.validate()` — пустой servers list, несуществующий server name
-- [x] **Дефолты совпадают с config.yaml** — парсим оба, сравниваем значения (git-история: 3 бага из-за расхождений)
+**`tests/test_config.py`** — `config.py`:
+- [x] `load_config()` — file not found, empty file, valid YAML, defaults when sections missing
+- [x] `AppConfig.validate()` — empty servers list, nonexistent server name
+- [x] **Defaults match config.yaml** — parse both, compare values (git history: 3 bugs from drift)
 
-#### Функциональные тесты (БД + файловая система)
+#### Functional tests (DB + filesystem)
 
-**`tests/test_database.py`** — `database.py` с in-memory SQLite:
-- [x] Миграции: идемпотентность (повторный `get_db()`)
-- [x] `_validate_team_name()` — валидные/невалидные имена
-- [x] Team: create + delete, защита "default" от удаления, cascade к voiceprints
-- [x] Voiceprint: save (insert + upsert), load по team, delete
-- [x] **Voiceprint model metadata** — save хранит именно `embeddings.model`, не `transcription.model` (git: commit 4242478)
-- [x] Auth sessions: create, get с проверкой expiry, delete_expired
-- [x] `ensure_default_team()` — идемпотентность
+**`tests/test_database.py`** — `database.py` with in-memory SQLite:
+- [x] Migrations: idempotency (repeated `get_db()`)
+- [x] `_validate_team_name()` — valid/invalid names
+- [x] Team: create + delete, "default" protected from deletion, cascade to voiceprints
+- [x] Voiceprint: save (insert + upsert), load by team, delete
+- [x] **Voiceprint model metadata** — save stores `embeddings.model`, not `transcription.model` (git: commit 4242478)
+- [x] Auth sessions: create, get with expiry check, delete_expired
+- [x] `ensure_default_team()` — idempotency
 
 **`tests/test_team.py`** — `team.py`:
-- [x] `resolve_team()` — авто-создание "default", резолв существующей команды, ошибка на несуществующую
+- [x] `resolve_team()` — auto-create "default", resolve existing team, error on nonexistent
 
-**`tests/test_session.py`** — `web/services/session.py` (БД + temp dirs):
-- [x] Lifecycle: create → add track → configure → delete (cleanup файлов)
-- [x] Track: renumbering при удалении средней дорожки
-- [x] Sample: add → move между спикерами → delete (cleanup файлов)
-- [x] Rollback: ошибка при add_track → файл не остаётся
-- [x] **Enrollment копирует семплы на диск** (git: commit 4242478 — web не копировал)
+**`tests/test_session.py`** — `web/services/session.py` (DB + temp dirs):
+- [x] Lifecycle: create → add track → configure → delete (file cleanup)
+- [x] Track: renumbering on middle track deletion
+- [x] Sample: add → move between speakers → delete (file cleanup)
+- [x] Rollback: error on add_track → file not left behind
+- [x] **Enrollment copies samples to disk** (git: commit 4242478 — web didn't copy)
 
-#### Интеграционные тесты (мок HTTP)
+#### Integration tests (mock HTTP)
 
-**`tests/test_pipeline_integration.py`** — полный flow с моками Speaches:
-- [x] VAD: мок → конкретные сегменты с ожидаемыми start_ms/end_ms; мок ошибки → raise
-- [x] Embeddings: `extract_segments()` — параллельное извлечение, фильтрация коротких сегментов (< min_duration_ms)
-- [x] Transcriber: `transcribe_segments()` — merge → slice → transcribe → проверяем offset timestamps и speaker assignment
-- [x] Diarization: VAD → Embeddings → Clustering → Identification — end-to-end, проверяем финальные speaker labels
+**`tests/test_pipeline_integration.py`** — full flow with Speaches mocks:
+- [x] VAD: mock → specific segments with expected start_ms/end_ms; error mock → raise
+- [x] Embeddings: `extract_segments()` — parallel extraction, short segment filtering (< min_duration_ms)
+- [x] Transcriber: `transcribe_segments()` — merge → slice → transcribe → verify offset timestamps and speaker assignment
+- [x] Diarization: VAD → Embeddings → Clustering → Identification — end-to-end, verify final speaker labels
 - [x] `_find_speaker()` — overlap calculation, no overlap → "Unknown"
 
-#### Осознанно НЕ тестируем
+#### Intentionally NOT tested
 
-- `SpeechSegment.duration_ms` — тривиальное `end_ms - start_ms`
-- `cosine_similarity()`, `compute_voiceprint()` — тестировали бы numpy
-- `hash_password()` / `verify_password()` — тестировали бы werkzeug
-- `_slice_wav()` — low-level binary, валидация = Speaches принял аудио
-- `config.py` path resolution — простой if/else по платформе
-- Тривиальные DB getters (`get_team`, `get_user_by_id`, `list_users`) — один SELECT
-- Auth service flow (register/login/logout) — тонкая обвязка
-- `pipeline/audio.py` — FFmpeg subprocess, зависит от системного бинарника
-- CLI subcommands — тяжёлые для unit-тестов, покрываются ручным тестированием
-- `_format_elapsed()` — CLI-форматирование, сломается — увидим глазами
-- Проверка что модель есть на сервере — невозможно без запущенного сервера
-- Проверка аргументов HTTP-запроса — нет надёжного способа без e2e
+- `SpeechSegment.duration_ms` — trivial `end_ms - start_ms`
+- `cosine_similarity()`, `compute_voiceprint()` — would test numpy
+- `hash_password()` / `verify_password()` — would test werkzeug
+- `_slice_wav()` — low-level binary, validation = Speaches accepted the audio
+- Trivial DB getters (`get_team`, `get_user_by_id`, `list_users`) — single SELECT
+- Auth service flow (register/login/logout) — thin wrapper
+- CLI subcommands — heavy for unit tests, covered by manual testing
+- `_format_elapsed()` — CLI formatting, breakage is visually obvious
+- Model presence on server — impossible without a running server
 
-#### Фаза 1.1: Mutation testing hardening
+#### Phase 1.1: Mutation testing
 
-> По результатам mutmut: 988 killed / 626 survived / 348 timeout
+**Unit tests:**
 
-**Юнит-тесты:**
+- [ ] `merge_by_proximity`: split preserves field values, duration calc, max_chunk boundary, single segment
+- [ ] `database`: PRAGMA WAL/FK verification, parent dir creation, schema_version fallback, delete return values
+- [ ] `load_config`: error message content, partial YAML defaults match dataclass, log_level default
+- [ ] `get_data_dir` / `get_tmp_dir`: env var overrides, platform-specific defaults (mock sys.platform)
+- [ ] `resolve_team`: default name, directory creation, error message, correct team id
 
-`tests/test_models.py` — `merge_by_proximity` (10 survived):
-- [ ] Split сохраняет значения полей (end_ms, start_ms) — не `append(None)`
-- [ ] duration = end - start, не end + start
-- [ ] max_chunk_ms boundary (exact + one-over)
-- [ ] single segment — все поля сохранены
+**Integration tests (mock HTTP):**
 
-`tests/test_database.py` — CRUD / PRAGMA (41 survived):
-- [ ] `get_db` включает WAL и foreign_keys (PRAGMA query)
-- [ ] `get_db` создаёт parent dirs для несуществующего пути
-- [ ] `_get_schema_version` без таблицы → именно 0
-- [ ] `save_voiceprint` → `count_voiceprints` корректен после нескольких INSERT
-- [ ] Каждая delete-функция → False/0 для несуществующего
-
-`tests/test_config.py` — `load_config` defaults (120 survived):
-- [ ] FileNotFoundError содержит "config.example.yaml"
-- [ ] ConfigurationError содержит путь к файлу
-- [ ] Partial YAML (без секций) → каждый дефолт точно совпадает с dataclass default
-- [ ] Без log_level → AppConfig.log_level (INFO)
-- [ ] Ошибки секций содержат имя секции и тип
-
-`tests/test_config.py` — `get_data_dir` / `get_tmp_dir` (61 survived):
-- [ ] MEETSCRIBE_DATA_DIR override
-- [ ] Linux default → XDG_DATA_HOME (mock sys.platform)
-- [ ] Windows default → LOCALAPPDATA (mock sys.platform)
-- [ ] macOS default → Library/Application Support (mock sys.platform)
-- [ ] MEETSCRIBE_TMP_DIR override
-- [ ] tmp_dir default внутри data_dir
-
-`tests/test_team.py` — `resolve_team` (19 survived):
-- [ ] `resolve_team(None)` → ctx.name == "default"
-- [ ] Directories (samples, enrolled, unknown) созданы
-- [ ] Несуществующая команда → ValueError с именем
-- [ ] ctx.id == id из БД
-
-**Интеграционные тесты (mock HTTP):**
-
-`tests/test_pipeline_integration.py` — `diarization.diarize` (33 survived):
-- [ ] VAD request содержит correct threshold/pad/silence params
-- [ ] Embedding request содержит correct model, timeout
-- [ ] VAD вернул [] → результат []
-- [ ] Все сегменты < min_duration → speaker = "Unknown"
-- [ ] merge_close_segments вызван с правильными max_gap_ms, max_chunk_ms
-
-`tests/test_transcriber.py` — transcriber (26 survived):
-- [ ] Request содержит correct model и language
-- [ ] Segments merged before sending to API
-- [ ] Speaker из input → output TranscriptSegment
-- [ ] Round-robin: 2 сервера → оба получают запросы
-
-`tests/test_audio.py` — audio (100 survived, `@pytest.mark.integration`):
-- [ ] `probe_audio_tracks` → correct track count
-- [ ] `extract_audio` → valid 16kHz mono WAV
-- [ ] `extract_segment` → correct duration
-- [ ] `convert_to_wav` → sample rate == 16000
-- [ ] FFmpeg не найден → `FFmpegNotFoundError`
-
-**Не убиваемые мутанты (~370):**
-- Error message text mutations — безвредные
-- Logging extra fields — не влияют на логику
-- numpy dtype/clip internal ops — эквивалентные мутации
-- clustering internals — sklearn black box
+- [ ] `diarization.diarize`: VAD/embedding params forwarded, empty VAD → empty result, short segments → "Unknown"
+- [ ] `transcriber`: model/language in request, merge before STT, round-robin across servers
+- [ ] `audio` (`@pytest.mark.integration`): probe track count, extract valid WAV, segment duration, FFmpegNotFoundError
 
 ### CI (GitHub Actions)
 
@@ -208,38 +153,38 @@ MeetScribe — CLI + Web инструмент для транскрибации 
 - [x] Matrix: Python 3.12 + 3.13
 - [ ] Docker: build image + verify migrations + CLI entry point (smoke test)
 
-### Типизированные ошибки
+### Typed exceptions
 
-- [x] `SpeachesAPIError` — ошибки удалённого API
-- [x] `PipelineError` — ошибки обработки
-- [x] `ConfigurationError` — невалидная конфигурация
-- [x] HTTP retry для transient failures (httpx retries)
+- [x] `SpeachesAPIError` — remote API errors
+- [x] `PipelineError` — processing errors
+- [x] `ConfigurationError` — invalid configuration
+- [x] HTTP retry for transient failures (httpx retries)
 
-### Версионирование миграций БД
+### DB migration versioning
 
-- [x] Таблица `schema_version` + нумерованные миграции
-- [x] Замена текущего `CREATE TABLE IF NOT EXISTS` (не поддерживает ALTER)
+- [x] `schema_version` table + numbered migrations
+- [x] Replace `CREATE TABLE IF NOT EXISTS` (doesn't support ALTER)
 
 ### Structured logging
 
-- [x] Тайминги: VAD took X ms, embedding extraction took Y ms, transcription took Z ms
+- [x] Timings: VAD took X ms, embedding extraction took Y ms, transcription took Z ms
 
-### Файлы
+### Files
 
-- Новые: `tests/`, `.github/workflows/ci.yml`
-- Изменяемые: `database.py`, `transcriber.py`, `vad.py`, `embeddings.py`
+- New: `tests/`, `.github/workflows/ci.yml`
+- Modified: `database.py`, `transcriber.py`, `vad.py`, `embeddings.py`
 
 ---
 
-## Фаза 2: Transcript Intelligence (v0.5)
+## Phase 2: Transcript Intelligence (v0.5)
 
-> Больше, чем текст
+> More than text
 
-**Цель:** LLM-постобработка и экспорт. Самый заметный для пользователя прирост ценности.
+**Goal:** LLM post-processing and export. Most user-visible value gain.
 
-**Почему:** Каждый коммерческий конкурент имеет AI-саммари. Организации, которые не могут использовать облачные инструменты, нуждаются в этом локально.
+**Why:** Every commercial competitor has AI summaries. Organizations that can't use cloud tools need this locally.
 
-### LLM-интеграция
+### LLM integration
 
 ```yaml
 # config.yaml
@@ -250,242 +195,249 @@ llm:
   max_tokens: 4096
 ```
 
-- [ ] `src/meetscribe/pipeline/llm.py` — OpenAI-compatible клиент
-- [ ] Graceful degradation: если LLM не настроен — пропускаем пост-обработку
+- [ ] `src/meetscribe/pipeline/llm.py` — OpenAI-compatible client
+- [ ] Graceful degradation: if LLM not configured — skip post-processing
 
-### Саммари встречи
+### Meeting summary
 
 - [ ] Executive summary
-- [ ] Ключевые обсуждения
-- [ ] Принятые решения
-- [ ] Chunked processing для длинных транскриптов (split по speaker turns)
-- [ ] Результат: markdown-секции в конце транскрипта
+- [ ] Key discussions
+- [ ] Decisions made
+- [ ] Chunked processing for long transcripts (split by speaker turns)
+- [ ] Output: markdown sections at the end of transcript
+
+### Custom dictionary
+
+- [ ] User-defined word list for correcting common ASR typos (names, jargon, abbreviations)
+- [ ] Applied as post-processing after transcription
+- [ ] CLI: `meetscribe dict add "Speaches" "Speeches"` or YAML config section
 
 ### Action items
 
-- [ ] Задача + ответственный (из имени спикера) + дедлайн (если упомянут)
-- [ ] Формат: `- [ ] @Speaker: описание задачи`
+- [ ] Task + assignee (from speaker name) + deadline (if mentioned)
+- [ ] Format: `- [ ] @Speaker: task description`
 - [ ] CLI: `meetscribe transcribe --summarize --action-items`
 
-### Экспорт
+### Export
 
-| Формат | Описание |
-|--------|----------|
-| Markdown | Текущий формат (по умолчанию) |
-| SRT | Субтитры с таймкодами |
-| VTT | WebVTT субтитры |
-| JSON | Структурированный (segments с speaker, start, end, text) |
-| TXT | Plain text (speaker: текст, без таймкодов) |
+| Format | Description |
+|--------|-------------|
+| Markdown | Current format (default) |
+| SRT | Subtitles with timecodes |
+| VTT | WebVTT subtitles |
+| JSON | Structured (segments with speaker, start, end, text) |
+| TXT | Plain text (speaker: text, no timecodes) |
 
 - [ ] CLI: `meetscribe export <session-id> --format srt|vtt|json|txt|md`
-- [ ] Web: кнопки скачивания на странице результата
+- [ ] Web: download buttons on the result page
 
-### Хранение транскриптов
+### Transcript storage
 
-- [ ] Таблица `transcript_segments`: session_id, start_ms, end_ms, speaker, text
-- [ ] CLI: `meetscribe list` — список транскрибаций с метаданными
-- [ ] CLI: `meetscribe show <id>` — просмотр
+- [ ] Table `transcript_segments`: session_id, start_ms, end_ms, speaker, text
+- [ ] CLI: `meetscribe list` — transcription list with metadata
+- [ ] CLI: `meetscribe show <id>` — view
 
-### Файлы
+### Files
 
-- Новые: `pipeline/llm.py`, `pipeline/export.py`
-- Изменяемые: `database.py`, `cli.py`, `servers.py`, `web/routes/tasks.py`
+- New: `pipeline/llm.py`, `pipeline/export.py`
+- Modified: `database.py`, `cli.py`, `config.py`, `web/routes/tasks.py`
 
 ---
 
-## Фаза 3: Поиск и аналитика (v0.6)
+## Phase 3: Search & Analytics (v0.6)
 
-> Организационная память
+> Organizational memory
 
-**Цель:** Архив встреч как поисковая база знаний.
+**Goal:** Meeting archive as a searchable knowledge base.
 
-### Полнотекстовый поиск
+### Full-text search
 
-- [ ] SQLite FTS5 по `transcript_segments`
-- [ ] CLI: `meetscribe search "quarterly revenue"` — сегменты с контекстом, датой, спикером
-- [ ] Web: поисковая строка с подсветкой результатов
-- [ ] Фильтры: дата, спикер, команда
+- [ ] SQLite FTS5 on `transcript_segments`
+- [ ] CLI: `meetscribe search "quarterly revenue"` — segments with context, date, speaker
+- [ ] Web: search bar with result highlighting
+- [ ] Filters: date, speaker, team
 
-### Аналитика спикеров
+### Speaker analytics
 
-| Метрика | Описание |
-|---------|----------|
-| Talk time | Общее время речи спикера |
-| Turn count | Число реплик |
-| Avg turn duration | Средняя длительность реплики |
+| Metric | Description |
+|--------|-------------|
+| Talk time | Total speaking time |
+| Turn count | Number of turns |
+| Avg turn duration | Average turn length |
 
-- [ ] Вычисление при транскрибации, хранение в `speaker_stats`
+- [ ] Computed during transcription, stored in `speaker_stats`
 - [ ] CLI: `meetscribe stats <session-id>`
-- [ ] Web: bar charts (CSS-only, без JS-фреймворков)
+- [ ] Web: bar charts (CSS-only, no JS frameworks)
 
-### Дашборд встреч (web)
+### Meeting dashboard (web)
 
-- [ ] Список встреч: дата, длительность, спикеры, превью саммари
-- [ ] Клик → полный транскрипт с timeline спикеров
-- [ ] Пагинация, сортировка по дате/длительности
+- [ ] Meeting list: date, duration, speakers, summary preview
+- [ ] Click → full transcript with speaker timeline
+- [ ] Pagination, sort by date/duration
 
 ### CLI: machine-readable output
 
-- [ ] `--json` для всех list-команд
+- [ ] `--json` for all list commands
 - [ ] Pipe-friendly: `meetscribe search "topic" --json | jq '.segments[].text'`
 
 ### Batch processing
 
 - [ ] `meetscribe transcribe *.mp4 -o output_dir/`
-- [ ] Параллельная обработка с настраиваемой конкурентностью
-- [ ] Прогресс-сводка по завершении
+- [ ] Parallel processing with configurable concurrency
+- [ ] Progress summary on completion
 
-### Файлы
+### Files
 
-- Новые: `pipeline/analytics.py`, `web/routes/dashboard.py`
-- Изменяемые: `database.py` (FTS5), `cli.py`
-
----
-
-## Фаза 4: Web UI Maturity (v0.7)
-
-> От воркфлоу к приложению
-
-**Цель:** Полноценный веб-интерфейс для нетехнических пользователей. HTMX — без build step, без JS-фреймворка.
-
-### Просмотр и редактирование транскрипта
-
-- [ ] Цветовая маркировка спикеров
-- [ ] Timestamps и copy-to-clipboard
-- [ ] Inline editing: клик на сегмент → исправление текста или переназначение спикера
-- [ ] Re-export после редактирования
-
-### HTMX-миграция
-
-- [ ] Partial updates вместо полной перезагрузки страницы
-- [ ] SSE через HTMX для real-time progress
-- [ ] Jinja2 остаётся, добавляются `hx-*` атрибуты
-- [ ] Без build step, без node_modules — один JS-файл
-
-### Управление спикерами
-
-- [ ] Список enrolled спикеров с проигрыванием семплов
-- [ ] Удаление / переименование
-- [ ] Визуальный индикатор качества voiceprint (кол-во семплов, разброс эмбеддингов)
-
-### Управление сессиями
-
-- [ ] Возобновление прерванных сессий
-- [ ] История по пользователю со статус-бейджами
-- [ ] Удаление старых сессий с файлами
-
-### Админ-панель
-
-- [ ] Управление пользователями и командами (сейчас только CLI)
-- [ ] Статус серверов Speaches
-- [ ] Использование диска
-- [ ] Лог последних ошибок
-
-### Файлы
-
-- Новые: `web/routes/admin.py`, `web/routes/transcript.py`
-- Изменяемые: все `web/templates/`, `web/services/session.py`
+- New: `pipeline/analytics.py`, `web/routes/dashboard.py`
+- Modified: `database.py` (FTS5), `cli.py`
 
 ---
 
-## Фаза 5: Real-Time и интеграции (v0.8)
+## Phase 4: Web UI Maturity (v0.7)
 
-> Живые встречи
+> From workflow to application
 
-**Цель:** Транскрибация в реальном времени. Технически самая сложная фаза, но самый мощный дифференциатор.
+**Goal:** Full-featured web interface for non-technical users.
+
+### Transcript viewer & editor
+
+- [ ] Speaker color coding
+- [ ] Timestamps and copy-to-clipboard
+- [ ] Hover on segment → play back the audio clip
+- [ ] Inline editing: click on segment → fix text or reassign speaker
+- [ ] Re-export after editing
+
+### Frontend improvements
+
+- [ ] Partial updates instead of full page reload
+- [ ] SSE for real-time progress
+- [ ] Tech choice TBD (HTMX, Alpine.js, or lightweight framework)
+
+### Speaker management (dashboard)
+
+- [ ] Enrolled speakers list with sample playback
+- [ ] Play / delete individual samples to curate voiceprint quality
+- [ ] Delete / rename speakers
+- [ ] Voiceprint quality indicator (sample count, embedding spread)
+
+### Session management
+
+- [ ] Resume interrupted sessions
+- [ ] Per-user history with status badges
+- [ ] Delete old sessions with files
+
+### Admin panel
+
+- [ ] User and team management (currently CLI-only)
+- [ ] Speaches server status
+- [ ] Disk usage
+- [ ] Recent error log
+
+### Files
+
+- New: `web/routes/admin.py`, `web/routes/transcript.py`
+- Modified: all `web/templates/`, `web/services/session.py`
+
+---
+
+## Phase 5: Real-Time & Integrations (v0.8)
+
+> Live meetings
+
+**Goal:** Real-time transcription. Technically the most complex phase, but the strongest differentiator.
 
 ### WebSocket audio streaming
 
-- [ ] Endpoint: `ws://.../v1/stream` — приём PCM-чанков
-- [ ] Server-side VAD на потоке
-- [ ] Буферизация → embeddings → transcription в near-real-time
-- [ ] Push обновлений транскрипта обратно через WebSocket
+- [ ] Endpoint: `ws://.../v1/stream` — receive PCM chunks
+- [ ] Server-side VAD on the stream
+- [ ] Buffering → embeddings → transcription in near-real-time
+- [ ] Push transcript updates back via WebSocket
 
-### Запись из браузера
+### Browser recording
 
 - [ ] MediaRecorder API → WebSocket
-- [ ] Live-отображение транскрипта в web UI
-- [ ] Захват системного аудио (screen sharing audio)
+- [ ] Live transcript display in web UI
+- [ ] System audio capture (screen sharing audio)
 
-### REST API формализация
+### REST API formalization
 
-- [ ] OpenAPI документация (FastAPI auto-generated)
-- [ ] API key аутентификация (отдельно от cookie auth)
-- [ ] Версионированный API: `/api/v1/`
+- [ ] OpenAPI documentation (FastAPI auto-generated)
+- [ ] API key authentication (separate from cookie auth)
+- [ ] Versioned API: `/api/v1/`
 
-### Webhook-нотификации
+### Webhook notifications
 
-- [ ] POST на Slack/Teams/любой URL при событиях
+- [ ] POST to Slack/Teams/any URL on events
 - [ ] Events: `transcribe.complete`, `action_items.extracted`
 - [ ] CLI: `meetscribe webhook add <url> --events transcribe.complete`
 
 ### Meeting bot (stretch goal)
 
-- [ ] Plugin-интерфейс: `MeetingBotPlugin` с `join()`, `record()`, `leave()`
-- [ ] Первый кандидат: SIP/VoIP
+- [ ] Plugin interface: `MeetingBotPlugin` with `join()`, `record()`, `leave()`
+- [ ] First candidate: SIP/VoIP
 
-### Файлы
+### Files
 
-- Новые: `web/routes/stream.py`, `pipeline/realtime.py`, `integrations/`
-- Изменяемые: `web/app.py`, `pipeline/vad.py`
+- New: `web/routes/stream.py`, `pipeline/realtime.py`, `integrations/`
+- Modified: `web/app.py`, `pipeline/vad.py`
 
 ---
 
-## Фаза 6: Enterprise (v1.0)
+## Phase 6: Enterprise (v1.0)
 
 > Production Grade
 
-**Цель:** Готовность к production-деплою в организациях.
+**Goal:** Production-ready for organizational deployment.
 
-### Безопасность
+### Security
 
-- [ ] Rate limiting на auth endpoints
+- [ ] Rate limiting on auth endpoints
 - [ ] RBAC: viewer / editor / admin
-- [ ] Audit log: кто, что, когда
-- [ ] Валидация загрузок (magic bytes)
+- [ ] Audit log: who, what, when
+- [ ] Upload validation (magic bytes)
 
 ### Observability
 
 - [ ] Prometheus `/metrics`: latency, pipeline duration, queue depth
-- [ ] Structured JSON logs для log aggregation
-- [ ] `StructuredFormatter` — перейти на namespace key (`_ctx`) вместо denylist
-- [ ] Health check с проверкой Speaches API connectivity
+- [ ] Structured JSON logs for log aggregation
+- [ ] `StructuredFormatter` — switch to namespace key (`_ctx`) instead of denylist
+- [ ] Health check with Speaches API connectivity verification
 
 ### Deployment
 
-- [ ] Helm chart для Kubernetes
+- [ ] Helm chart for Kubernetes
 - [ ] Docker Compose profiles (`--profile gpu`)
-- [ ] Автоматический backup SQLite
-- [ ] Multi-worker uvicorn с file locking
+- [ ] Automatic SQLite backup
+- [ ] Multi-worker uvicorn with file locking
 
 ### Plugin system
 
 - [ ] `meetscribe.plugins` entry point
-- [ ] Рефакторинг саммари / action items в плагины
-- [ ] Интерфейс: `TranscriptPlugin.process(segments) -> dict`
+- [ ] Refactor summaries / action items into plugins
+- [ ] Interface: `TranscriptPlugin.process(segments) -> dict`
 
-### Документация
+### Documentation
 
-- [ ] User guide (установка, конфигурация, CLI reference)
+- [ ] User guide (installation, configuration, CLI reference)
 - [ ] API reference (auto-generated + guides)
 - [ ] Deployment guide (Docker, bare metal, Kubernetes)
 
 ---
 
-## Сводная таблица
+## Summary
 
-| Фаза | Версия | Тема | Ключевой результат |
-|------|--------|------|--------------------|
-| 1 | v0.4 | Hardening | Тесты, CI, надёжность |
-| 2 | v0.5 | Intelligence | LLM-саммари, action items, экспорт |
-| 3 | v0.6 | Search | Полнотекстовый поиск, аналитика, дашборд |
-| 4 | v0.7 | Web UI | HTMX, редактор транскриптов, админка |
+| Phase | Version | Theme | Key Outcome |
+|-------|---------|-------|-------------|
+| 1 | v0.4 | Hardening | Tests, CI, reliability |
+| 2 | v0.5 | Intelligence | LLM summaries, action items, export |
+| 3 | v0.6 | Search | Full-text search, analytics, dashboard |
+| 4 | v0.7 | Web UI | HTMX, transcript editor, admin panel |
 | 5 | v0.8 | Real-time | WebSocket streaming, webhooks, API |
 | 6 | v1.0 | Enterprise | RBAC, metrics, plugins, Helm |
 
-## Осознанно НЕ делаем
+## Intentionally NOT doing
 
-- **Desktop app (Electron)** — CLI + web покрывает все кейсы
-- **Mobile app** — responsive web достаточно
-- **Видеозапись/воспроизведение** — фокус на аудио
-- **Тренировка собственных ASR-моделей** — pluggable backend уже поддерживает смену моделей
+- **Desktop app (Electron)** — CLI + web covers all use cases
+- **Mobile app** — responsive web is sufficient
+- **Video recording/playback** — focus on audio
+- **Training custom ASR models** — pluggable backend already supports model swapping
