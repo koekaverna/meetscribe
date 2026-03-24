@@ -1,7 +1,8 @@
 """Sample management routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.templating import Jinja2Templates
 
 from ..deps import get_current_user, get_session_for_user
 from ..models import Sample, SampleMove, SpeakerBin, SpeakerCreate, SpeakerRename
@@ -14,7 +15,7 @@ router = APIRouter()
 @router.post("/{session_id}/speakers", response_model=SpeakerBin)
 async def create_speaker(
     session_id: str, data: SpeakerCreate, user: AuthUser = Depends(get_current_user)
-):
+) -> SpeakerBin:
     """Create a speaker bin."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -31,7 +32,7 @@ async def rename_speaker(
     speaker_id: str,
     data: SpeakerRename,
     user: AuthUser = Depends(get_current_user),
-):
+) -> dict[str, str]:
     """Rename a speaker bin."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -43,7 +44,7 @@ async def rename_speaker(
 @router.delete("/{session_id}/speakers/{speaker_id}")
 async def delete_speaker(
     session_id: str, speaker_id: str, user: AuthUser = Depends(get_current_user)
-):
+) -> dict[str, str]:
     """Delete a speaker bin."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -53,7 +54,7 @@ async def delete_speaker(
 
 
 @router.get("/{session_id}/samples", response_model=list[Sample])
-async def list_samples(session_id: str, user: AuthUser = Depends(get_current_user)):
+async def list_samples(session_id: str, user: AuthUser = Depends(get_current_user)) -> list[Sample]:
     """List samples in session."""
     state = get_session_for_user(session_id, user)
     return state.samples
@@ -62,7 +63,7 @@ async def list_samples(session_id: str, user: AuthUser = Depends(get_current_use
 @router.get("/{session_id}/samples/{sample_id}/audio")
 async def get_sample_audio(
     session_id: str, sample_id: str, user: AuthUser = Depends(get_current_user)
-):
+) -> FileResponse:
     """Stream sample audio."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -75,7 +76,7 @@ async def get_sample_audio(
 @router.post("/{session_id}/samples/{sample_id}/move")
 async def move_sample(
     session_id: str, sample_id: str, data: SampleMove, user: AuthUser = Depends(get_current_user)
-):
+) -> dict[str, str]:
     """Move sample to a speaker bin."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -100,7 +101,7 @@ async def move_sample(
 @router.delete("/{session_id}/samples/{sample_id}")
 async def delete_sample(
     session_id: str, sample_id: str, user: AuthUser = Depends(get_current_user)
-):
+) -> dict[str, str]:
     """Delete a sample."""
     get_session_for_user(session_id, user)
     service = get_session_service()
@@ -112,11 +113,11 @@ async def delete_sample(
 @router.get("/{session_id}/samples-view", response_class=HTMLResponse)
 async def get_samples_view(
     request: Request, session_id: str, user: AuthUser = Depends(get_current_user)
-):
+) -> Response:
     """Get HTML view of samples organized by speaker."""
     state = get_session_for_user(session_id, user)
 
-    templates = request.app.state.templates
+    templates: Jinja2Templates = request.app.state.templates
     return templates.TemplateResponse(
         request,
         "partials/samples_grid.html",

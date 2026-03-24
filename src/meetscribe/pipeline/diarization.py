@@ -1,6 +1,7 @@
 """Speaker diarization pipeline: VAD -> embeddings -> identification."""
 
 import logging
+import time
 from pathlib import Path
 
 from .embeddings import EmbeddingExtractor, SpeakerIdentifier
@@ -61,22 +62,35 @@ class DiarizationPipeline:
         Returns:
             List of SpeechSegment with speaker labels assigned.
         """
+        t0 = time.perf_counter()
+
         # 1. VAD
         segments = self.vad.detect(audio_path)
         if not segments:
             return []
 
-        logger.info("VAD: %d speech segments", len(segments))
-
         # 2. Extract embeddings
         segments_with_embeddings = self.embeddings.extract_segments(
             audio_path, segments, self.max_workers
         )
-        logger.info("Embeddings: extracted for %d segments", len(segments_with_embeddings))
 
         # 3. Identify speakers
         labeled = self.identifier.identify_segments(segments_with_embeddings)
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        speech_duration_ms = labeled[-1].end_ms if labeled else 0
         speakers = {s.speaker for s in labeled if s.speaker}
-        logger.info("Identification: %d speakers found", len(speakers))
+        speech_rtf = elapsed_ms / speech_duration_ms if speech_duration_ms > 0 else 0
+        logger.info(
+            "Diarization completed",
+            extra={
+                "file": audio_path.name,
+                "segments": len(labeled),
+                "speakers": len(speakers),
+                "speech_duration_ms": speech_duration_ms,
+                "elapsed_ms": round(elapsed_ms),
+                "speech_rtf": round(speech_rtf, 2),
+            },
+        )
 
         return labeled

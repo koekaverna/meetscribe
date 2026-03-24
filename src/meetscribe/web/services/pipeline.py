@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from meetscribe import config
+from meetscribe.config import AppConfig, get_config
 from meetscribe.database import (
     delete_voiceprint,
     load_voiceprints,
@@ -17,18 +18,13 @@ from meetscribe.pipeline import (
     EmbeddingExtractor,
     SpeechSegment,
     Transcriber,
+    TranscriptSegment,
     audio,
     enroll_samples,
 )
-from meetscribe.servers import AppConfig, load_config
 from meetscribe.team import TeamContext, resolve_team
 
 logger = logging.getLogger(__name__)
-
-
-def _load_config() -> AppConfig:
-    """Load the application configuration."""
-    return load_config(config.CONFIG_FILE)
 
 
 class PipelineRunner:
@@ -49,7 +45,7 @@ class PipelineRunner:
     @property
     def cfg(self) -> AppConfig:
         if self._cfg is None:
-            self._cfg = _load_config()
+            self._cfg = get_config()
         return self._cfg
 
     def _create_diarization(self, team_ctx: TeamContext) -> DiarizationPipeline:
@@ -335,7 +331,7 @@ class PipelineRunner:
 
             all_segments.sort(key=lambda x: x.start_ms)
 
-            def format_segment(s):
+            def format_segment(s: TranscriptSegment) -> str:
                 mins = s.start_ms // 60000
                 secs = (s.start_ms // 1000) % 60
                 speaker = s.speaker or "Unknown"
@@ -368,18 +364,28 @@ def get_pipeline_runner(team_name: str | None = None) -> PipelineRunner:
 
 def list_team_speakers(team_name: str | None = None) -> list[str]:
     """List enrolled speakers for a team."""
-    team_ctx = resolve_team(team_name)
-    try:
-        voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
-        return sorted(voiceprints.keys())
-    finally:
-        team_ctx.conn.close()
+    from meetscribe.database import get_team
+
+    from .session import get_session_service
+
+    conn = get_session_service().conn
+    name = team_name or "default"
+    team = get_team(conn, name)
+    if not team:
+        return []
+    voiceprints = load_voiceprints(conn, team["id"])
+    return sorted(voiceprints.keys())
 
 
 def remove_team_speaker(name: str, team_name: str | None = None) -> bool:
     """Remove a speaker from a team."""
-    team_ctx = resolve_team(team_name)
-    try:
-        return delete_voiceprint(team_ctx.conn, team_ctx.id, name)
-    finally:
-        team_ctx.conn.close()
+    from meetscribe.database import get_team as db_get_team
+
+    from .session import get_session_service
+
+    conn = get_session_service().conn
+    tname = team_name or "default"
+    team = db_get_team(conn, tname)
+    if not team:
+        return False
+    return delete_voiceprint(conn, team["id"], name)

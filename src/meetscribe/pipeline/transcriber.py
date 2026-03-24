@@ -2,11 +2,14 @@
 
 import io
 import logging
+import time
 import wave
 from pathlib import Path
 
 import httpx
 from tqdm import tqdm
+
+from meetscribe.errors import ConfigurationError, SpeachesAPIError, speaches_retry
 
 from .models import SpeechSegment, TranscriptSegment, merge_close_segments
 
@@ -19,19 +22,7 @@ class RemoteTranscriber:
     def __init__(self, server_url: str, timeout: float, model: str):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
-        self.model = self._detect_model() or model
-
-    def _detect_model(self) -> str | None:
-        """Try to detect available ASR model from server."""
-        try:
-            resp = httpx.get(f"{self.server_url}/v1/models", timeout=5)
-            if resp.status_code == 200:
-                for m in resp.json().get("data", []):
-                    if m.get("task") == "automatic-speech-recognition":
-                        return m.get("id")
-        except Exception:
-            pass
-        return None
+        self.model = model
 
     def transcribe(
         self,
@@ -51,6 +42,7 @@ class RemoteTranscriber:
         """Transcribe WAV bytes via the remote API."""
         return self._transcribe_request(filename, audio_bytes, language)
 
+    @speaches_retry
     def _transcribe_request(
         self,
         filename: str,
@@ -58,18 +50,32 @@ class RemoteTranscriber:
         language: str,
     ) -> list[TranscriptSegment]:
         """Send transcription request and parse response."""
-        response = httpx.post(
-            f"{self.server_url}/v1/audio/transcriptions",
-            files={"file": (filename, audio_bytes, "audio/wav")},
-            data={
-                "model": self.model,
-                "language": language,
-                "response_format": "verbose_json",
-                "timestamp_granularities[]": "segment",
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
+        endpoint = f"{self.server_url}/v1/audio/transcriptions"
+        try:
+            response = httpx.post(
+                endpoint,
+                files={"file": (filename, audio_bytes, "audio/wav")},
+                data={
+                    "model": self.model,
+                    "language": language,
+                    "response_format": "verbose_json",
+                    "timestamp_granularities[]": "segment",
+                },
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise SpeachesAPIError(
+                f"Transcription failed: {e.response.status_code}",
+                status_code=e.response.status_code,
+                endpoint=endpoint,
+                detail=e.response.text,
+            ) from e
+        except httpx.RequestError as e:
+            raise SpeachesAPIError(
+                f"Transcription connection error: {e}",
+                endpoint=endpoint,
+            ) from e
 
         result = response.json()
         segments = []
@@ -103,7 +109,7 @@ class Transcriber:
         max_chunk_ms: int,
     ):
         if not server_urls:
-            raise ValueError("At least one transcription server URL is required")
+            raise ConfigurationError("At least one transcription server URL is required")
         self.clients = [RemoteTranscriber(url, timeout, model) for url in server_urls]
         self.language = language
         self.max_gap_ms = max_gap_ms
@@ -119,6 +125,7 @@ class Transcriber:
         Useful for named tracks where the speaker is already known.
         Uses a longer timeout since the file may be large.
         """
+        t0 = time.perf_counter()
         client = self.clients[0]
         # Use longer timeout for whole-file transcription
         orig_timeout = client.timeout
@@ -129,6 +136,17 @@ class Transcriber:
             client.timeout = orig_timeout
         for seg in segments:
             seg.speaker = speaker
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "File transcription completed",
+            extra={
+                "file": audio_path.name,
+                "segments": len(segments),
+                "speaker": speaker,
+                "elapsed_ms": round(elapsed_ms),
+            },
+        )
         return segments
 
     def transcribe_segments(
@@ -150,6 +168,8 @@ class Transcriber:
         """
         if not segments:
             return []
+
+        t0 = time.perf_counter()
 
         # Load full audio into memory once
         with wave.open(str(audio_path), "rb") as wf:
@@ -194,6 +214,22 @@ class Transcriber:
             pbar.update(chunk.duration_ms)
 
         pbar.close()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        speech_duration_ms = max((s.end_ms for s in segments), default=0)
+        speech_rtf = elapsed_ms / speech_duration_ms if speech_duration_ms > 0 else 0
+        logger.info(
+            "Segment transcription completed",
+            extra={
+                "file": audio_path.name,
+                "segments_in": len(segments),
+                "chunks": len(merged),
+                "segments_out": len(results),
+                "speech_duration_ms": speech_duration_ms,
+                "elapsed_ms": round(elapsed_ms),
+                "speech_rtf": round(speech_rtf, 2),
+            },
+        )
         return results
 
     @staticmethod

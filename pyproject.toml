@@ -1,12 +1,12 @@
 [project]
 name = "meetscribe"
-version = "0.3.2"
+version = "0.4.0"
 description = "Meeting transcription with speaker diarization using remote speaches API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
-    { name = "Egor Korobov" }
+    { name = "Egor Korobov", email = "koe.kaverna@gmail.com" }
 ]
 keywords = [
     "transcription",
@@ -36,6 +36,7 @@ dependencies = [
     "python-dotenv",
     "numpy",
     "scikit-learn",
+    "tenacity",
 ]
 
 [project.optional-dependencies]
@@ -46,8 +47,10 @@ dev = [
     "ruff",
     "mypy",
     "types-PyYAML",
+    "types-tqdm",
+    "types-colorama",
     "bandit[toml]",
-    "pre-commit",
+    "mutmut",
 ]
 web = [
     "fastapi>=0.115",
@@ -57,9 +60,9 @@ web = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/korobov/meetscribe"
-Repository = "https://github.com/korobov/meetscribe"
-Issues = "https://github.com/korobov/meetscribe/issues"
+Homepage = "https://github.com/koekaverna/meetscribe"
+Repository = "https://github.com/koekaverna/meetscribe"
+Issues = "https://github.com/koekaverna/meetscribe/issues"
 
 [project.scripts]
 meetscribe = "meetscribe.cli:main"
@@ -78,15 +81,22 @@ asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"
-warn_return_any = false
-warn_unused_configs = true
-disallow_untyped_defs = false
+warn_return_any = true
+disallow_untyped_defs = true
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "sklearn.*"
 ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests"]
 skips = ["B101", "B404", "B603"]
+
+[tool.mutmut]
+paths_to_mutate = ["src/meetscribe/pipeline/", "src/meetscribe/database.py", "src/meetscribe/config.py", "src/meetscribe/team.py"]
+tests_dir = ["tests/"]
+also_copy = ["src/meetscribe/", "config.example.yaml"]
 
 [tool.ruff]
 line-length = 100

@@ -9,6 +9,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 TEAM_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 
 def _validate_team_name(name: str) -> None:
@@ -32,84 +33,63 @@ def get_db(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _get_schema_version(conn: sqlite3.Connection) -> int:
+    """Get current schema version. Returns 0 if schema_version table doesn't exist."""
+    try:
+        row = conn.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()
+        return row["version"] if row and row["version"] is not None else 0
+    except sqlite3.OperationalError:
+        return 0
+
+
+def _discover_migrations() -> list[Path]:
+    """Find SQL migration files sorted by number prefix (001_, 002_, ...)."""
+    if not _MIGRATIONS_DIR.is_dir():
+        return []
+    return sorted(_MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
+
+
+def get_schema_version_expected() -> int:
+    """Return the number of available migration files (expected final version)."""
+    return len(_discover_migrations())
+
+
 def _run_migrations(conn: sqlite3.Connection) -> None:
-    """Create tables if they don't exist."""
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS teams (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL UNIQUE,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            description TEXT
-        );
+    """Apply pending SQL migrations to bring the database up to date."""
+    migrations = _discover_migrations()
+    if not migrations:
+        from meetscribe.errors import ConfigurationError
 
-        CREATE TABLE IF NOT EXISTS voiceprints (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            team_id     INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-            name        TEXT NOT NULL,
-            embedding   TEXT NOT NULL,
-            model       TEXT NOT NULL,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(team_id, name)
-        );
+        raise ConfigurationError(f"No migration files found in {_MIGRATIONS_DIR}")
 
-        CREATE TABLE IF NOT EXISTS users (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            username      TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            team_id       INTEGER NOT NULL REFERENCES teams(id),
-            is_admin      INTEGER NOT NULL DEFAULT 0,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-        );
+    current = _get_schema_version(conn)
+    if current >= len(migrations):
+        logger.debug("Database schema up to date", extra={"version": current})
+        return
 
-        CREATE TABLE IF NOT EXISTS auth_sessions (
-            token      TEXT PRIMARY KEY,
-            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            expires_at TEXT NOT NULL
-        );
+    for version, path in enumerate(migrations[current:], start=current + 1):
+        logger.info(
+            "Applying migration",
+            extra={"migration": path.name, "version": version, "total": len(migrations)},
+        )
+        sql = path.read_text()
+        # executescript() auto-commits pending work, then runs the script.
+        # BEGIN inside starts a new transaction covering DDL + version INSERT.
+        try:
+            conn.executescript(f"BEGIN;\n{sql}")
+            conn.execute(
+                "INSERT INTO schema_version (version, name) VALUES (?, ?)",
+                (version, path.stem),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
-        CREATE TABLE IF NOT EXISTS sessions (
-            id         TEXT PRIMARY KEY,
-            team_id    INTEGER NOT NULL REFERENCES teams(id),
-            status     TEXT NOT NULL DEFAULT 'created',
-            language   TEXT NOT NULL DEFAULT 'ru',
-            transcript TEXT,
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-
-        CREATE TABLE IF NOT EXISTS session_tracks (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            track_num    INTEGER NOT NULL,
-            filename     TEXT NOT NULL,
-            speaker_name TEXT,
-            diarize      INTEGER NOT NULL DEFAULT 1,
-            UNIQUE(session_id, track_num)
-        );
-
-        CREATE TABLE IF NOT EXISTS session_speakers (
-            id         TEXT NOT NULL,
-            session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            name       TEXT NOT NULL,
-            PRIMARY KEY (session_id, id)
-        );
-
-        CREATE TABLE IF NOT EXISTS session_samples (
-            id                 TEXT NOT NULL,
-            session_id         TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-            track_num          INTEGER NOT NULL,
-            cluster_id         INTEGER NOT NULL,
-            filename           TEXT NOT NULL,
-            duration_ms        INTEGER NOT NULL,
-            speaker_id         TEXT,
-            is_known           INTEGER NOT NULL DEFAULT 0,
-            known_speaker_name TEXT,
-            PRIMARY KEY (session_id, id)
-        );
-    """)
-
-    conn.commit()
+    logger.info(
+        "Migrations applied",
+        extra={"from_version": current, "to_version": len(migrations)},
+    )
 
 
 def ensure_default_team(conn: sqlite3.Connection) -> None:
@@ -134,7 +114,7 @@ def create_team(conn: sqlite3.Connection, name: str, description: str | None = N
 
 def get_team(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
     """Fetch a team by name."""
-    return conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()
+    return conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()  # type: ignore[no-any-return]
 
 
 def list_teams(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -173,7 +153,7 @@ def save_voiceprint(
         (team_id, name, embedding_json, model),
     )
     conn.commit()
-    logger.info("Saved voiceprint for '%s' (team_id=%d)", name, team_id)
+    logger.info("Voiceprint saved", extra={"speaker": name, "team_id": team_id})
     return cursor.lastrowid  # type: ignore[return-value]
 
 
@@ -202,7 +182,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
         "SELECT COUNT(*) as cnt FROM voiceprints WHERE team_id = ?",
         (team_id,),
     ).fetchone()
-    return row["cnt"]  # type: ignore[index]
+    return row["cnt"]  # type: ignore[no-any-return]
 
 
 # --- User CRUD ---
@@ -226,7 +206,7 @@ def create_user(
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
     """Fetch a user by username (with team name)."""
-    return conn.execute(
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
         "WHERE u.username = ?",
         (username,),
@@ -235,7 +215,7 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row
 
 def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
     """Fetch a user by id (with team name)."""
-    return conn.execute(
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
         "WHERE u.id = ?",
         (user_id,),
@@ -273,7 +253,7 @@ def create_auth_session(
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     """Get auth session with user and team info. Returns None if expired or not found."""
-    return conn.execute(
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
         "u.team_id, u.is_admin, t.name as team_name "
         "FROM auth_sessions s "

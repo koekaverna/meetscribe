@@ -1,17 +1,26 @@
 """FastAPI application for MeetScribe Web UI."""
 
 import secrets
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import RequestResponseEndpoint
+
+from meetscribe import config
+from meetscribe.config import get_config
+from meetscribe.database import get_db
+from meetscribe.log import apply_log_level
 
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
-from .services.auth import get_secure_cookies
+from .services.auth import get_secure_cookies, init_auth_service
+from .services.session import init_session_service
 
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -27,10 +36,25 @@ PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    # Apply log level from config
+    apply_log_level(get_config().log_level)
+
+    # Single DB connection for the app lifetime
+    conn = get_db(config.DB_PATH)
+    init_auth_service(conn)
+    init_session_service(conn)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+        yield
+        shutdown_threads()
+        conn.close()
+
     app = FastAPI(
         title="MeetScribe",
         description="Meeting transcription with speaker diarization",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     # Mount static files
@@ -60,7 +84,9 @@ def create_app() -> FastAPI:
     app.state.templates = templates
 
     @app.middleware("http")
-    async def csrf_cookie_middleware(request: Request, call_next):
+    async def csrf_cookie_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         """Ensure CSRF cookie is set on every response."""
         response: Response = await call_next(request)
         if not request.cookies.get(CSRF_COOKIE_NAME):
@@ -78,7 +104,7 @@ def create_app() -> FastAPI:
 
     # Auth middleware: redirect unauthenticated page requests to /login
     @app.middleware("http")
-    async def auth_middleware(request: Request, call_next):
+    async def auth_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
         path = request.url.path
 
         # Skip public paths
@@ -134,7 +160,7 @@ def create_app() -> FastAPI:
     # Page routes
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request):
+    async def login_page(request: Request) -> Response:
         """Render login page."""
         # Redirect if already authenticated
         user = await get_current_user_or_none(request)
@@ -143,7 +169,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "login.html")
 
     @app.get("/register", response_class=HTMLResponse)
-    async def register_page(request: Request):
+    async def register_page(request: Request) -> Response:
         """Render registration page. Only admins can access."""
         user = await get_current_user_or_none(request)
         if not user:
@@ -153,12 +179,12 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request):
+    async def index(request: Request) -> HTMLResponse:
         """Render the main page."""
         return templates.TemplateResponse(request, "index.html")
 
     @app.get("/step/{step_num}", response_class=HTMLResponse)
-    async def get_step(request: Request, step_num: int):
+    async def get_step(request: Request, step_num: int) -> HTMLResponse:
         """Render a specific step."""
         step_templates = {
             1: "steps/step1_upload.html",
@@ -172,12 +198,8 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, template_name)
 
     @app.get("/health")
-    async def health():
+    async def health() -> dict[str, str]:
         return {"status": "ok"}
-
-    @app.on_event("shutdown")
-    async def on_shutdown():
-        shutdown_threads()
 
     return app
 
@@ -197,7 +219,8 @@ def run(host: str = "127.0.0.1", port: int = 8080) -> None:  # defaults for dire
     app = create_app()
     print("\n  MeetScribe Web UI")
     print(f"  http://{host}:{port}\n")
-    uvicorn.run(app, host=host, port=port)
+    # Disable uvicorn's own log config so it inherits our root logger setup
+    uvicorn.run(app, host=host, port=port, log_config=None)
 
 
 if __name__ == "__main__":

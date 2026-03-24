@@ -4,6 +4,7 @@ import io
 import logging
 import math
 import shutil
+import time
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -11,6 +12,8 @@ from pathlib import Path
 
 import httpx
 from tqdm import tqdm
+
+from meetscribe.errors import SpeachesAPIError, speaches_retry
 
 from .models import SpeechSegment
 
@@ -26,6 +29,7 @@ class EmbeddingExtractor:
         self.min_duration_ms = min_duration_ms
         self.model = model
 
+    @speaches_retry
     def extract(self, audio_bytes: bytes, filename: str = "audio.wav") -> list[float]:
         """Extract speaker embedding from audio bytes.
 
@@ -36,18 +40,38 @@ class EmbeddingExtractor:
         Returns:
             Embedding vector as list of floats.
         """
-        response = httpx.post(
-            f"{self.server_url}/v1/audio/speech/embedding",
-            files={"file": (filename, audio_bytes, "audio/wav")},
-            data={"model": self.model},
-            timeout=self.timeout,
-        )
-        if response.status_code != 200:
-            logger.error("Embedding failed: %s %s", response.status_code, response.text)
-        response.raise_for_status()
+        endpoint = f"{self.server_url}/v1/audio/speech/embedding"
+        try:
+            response = httpx.post(
+                endpoint,
+                files={"file": (filename, audio_bytes, "audio/wav")},
+                data={"model": self.model},
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise SpeachesAPIError(
+                f"Embedding failed: {e.response.status_code}",
+                status_code=e.response.status_code,
+                endpoint=endpoint,
+                detail=e.response.text,
+            ) from e
+        except httpx.RequestError as e:
+            raise SpeachesAPIError(
+                f"Embedding connection error: {e}",
+                endpoint=endpoint,
+            ) from e
 
         result = response.json()
-        return result["data"][0]["embedding"]
+        try:
+            embedding = result["data"][0]["embedding"]
+            return [float(x) for x in embedding]
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            raise SpeachesAPIError(
+                f"Unexpected embedding response format: {e}",
+                endpoint=endpoint,
+                detail=str(result)[:200],
+            ) from e
 
     def extract_from_file(self, audio_path: Path) -> list[float]:
         """Extract speaker embedding from an audio file."""
@@ -86,9 +110,11 @@ class EmbeddingExtractor:
             return seg, embedding
         except Exception:
             logger.warning(
-                "Failed to extract embedding for segment %d-%dms",
-                seg.start_ms,
-                seg.end_ms,
+                "Embedding extraction failed",
+                extra={
+                    "segment_start_ms": seg.start_ms,
+                    "segment_end_ms": seg.end_ms,
+                },
                 exc_info=True,
             )
             return seg, None
@@ -107,6 +133,8 @@ class EmbeddingExtractor:
         Returns:
             List of (segment, embedding_or_None) tuples in original order.
         """
+        t0 = time.perf_counter()
+
         # Load full audio into memory once
         with wave.open(str(audio_path), "rb") as wf:
             sample_rate = wf.getframerate()
@@ -120,10 +148,12 @@ class EmbeddingExtractor:
         for i, seg in enumerate(segments):
             if seg.duration_ms < self.min_duration_ms:
                 logger.debug(
-                    "Skipping short segment %d-%dms (%dms)",
-                    seg.start_ms,
-                    seg.end_ms,
-                    seg.duration_ms,
+                    "Skipping short segment",
+                    extra={
+                        "segment_start_ms": seg.start_ms,
+                        "segment_end_ms": seg.end_ms,
+                        "duration_ms": seg.duration_ms,
+                    },
                 )
                 ordered[i] = (seg, None)
             else:
@@ -143,7 +173,24 @@ class EmbeddingExtractor:
                 pbar.update(1)
 
         pbar.close()
-        return [ordered[i] for i in range(len(segments))]
+
+        result = [ordered[i] for i in range(len(segments))]
+        extracted = sum(1 for _, emb in result if emb is not None)
+        skipped_short = len(segments) - len(to_extract)
+        failed = len(to_extract) - extracted
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Embedding extraction completed",
+            extra={
+                "file": audio_path.name,
+                "segments_in": len(segments),
+                "segments_out": extracted,
+                "skipped_short": skipped_short,
+                "failed": failed,
+                "elapsed_ms": round(elapsed_ms),
+            },
+        )
+        return result
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -205,7 +252,13 @@ class SpeakerIdentifier:
         self.confident_gap = confident_gap
         self.min_threshold = min_threshold
         self.unknown_cluster_threshold = unknown_cluster_threshold
-        logger.info("Loaded %d voiceprints (threshold=%.2f)", len(self.voiceprints), threshold)
+        logger.info(
+            "Speaker identifier initialized",
+            extra={
+                "voiceprints": len(self.voiceprints),
+                "threshold": threshold,
+            },
+        )
 
     def identify(self, embedding: list[float]) -> tuple[str | None, float]:
         """Find the best matching known speaker.
@@ -233,10 +286,12 @@ class SpeakerIdentifier:
         gap = best_sim - second_sim
         if best_sim >= self.min_threshold and gap >= self.confident_gap:
             logger.debug(
-                "Accepted %s via confident gap: sim=%.3f, gap=%.3f",
-                best_name,
-                best_sim,
-                gap,
+                "Accepted via confident gap",
+                extra={
+                    "speaker": best_name,
+                    "similarity": round(best_sim, 3),
+                    "gap": round(gap, 3),
+                },
             )
             return best_name, best_sim
 
@@ -255,6 +310,8 @@ class SpeakerIdentifier:
         identified neighbor by time proximity.
         """
         from .clustering import cluster_embeddings
+
+        t0 = time.perf_counter()
 
         result: list[SpeechSegment] = []
         deferred: list[int] = []  # indices with None embedding
@@ -275,11 +332,13 @@ class SpeakerIdentifier:
             if name is not None:
                 seg.speaker = name
                 logger.debug(
-                    "Segment %d-%dms -> %s (sim=%.3f)",
-                    seg.start_ms,
-                    seg.end_ms,
-                    name,
-                    sim,
+                    "Segment identified",
+                    extra={
+                        "segment_start_ms": seg.start_ms,
+                        "segment_end_ms": seg.end_ms,
+                        "speaker": name,
+                        "similarity": round(sim, 3),
+                    },
                 )
             else:
                 seg.speaker = None  # resolved in phase 2
@@ -292,10 +351,12 @@ class SpeakerIdentifier:
             for i, idx in enumerate(unknown_indices):
                 result[idx].speaker = f"Unknown-{labels[i] + 1}"
                 logger.debug(
-                    "Segment %d-%dms -> Unknown-%d",
-                    result[idx].start_ms,
-                    result[idx].end_ms,
-                    labels[i] + 1,
+                    "Segment clustered",
+                    extra={
+                        "segment_start_ms": result[idx].start_ms,
+                        "segment_end_ms": result[idx].end_ms,
+                        "speaker": f"Unknown-{labels[i] + 1}",
+                    },
                 )
 
         # Phase 3: assign deferred (short) segments to nearest neighbor
@@ -304,11 +365,29 @@ class SpeakerIdentifier:
             neighbor = self._find_nearest_labeled(idx, result)
             seg.speaker = neighbor or "Unknown"
             logger.debug(
-                "Segment %d-%dms -> %s (inherited from neighbor)",
-                seg.start_ms,
-                seg.end_ms,
-                seg.speaker,
+                "Segment inherited from neighbor",
+                extra={
+                    "segment_start_ms": seg.start_ms,
+                    "segment_end_ms": seg.end_ms,
+                    "speaker": seg.speaker,
+                },
             )
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        speakers = {s.speaker for s in result if s.speaker}
+        known = sum(1 for s in speakers if not s.startswith("Unknown"))
+        unknown = len(speakers) - known
+        logger.info(
+            "Speaker identification completed",
+            extra={
+                "segments": len(result),
+                "speakers": len(speakers),
+                "known": known,
+                "unknown": unknown,
+                "deferred": len(deferred),
+                "elapsed_ms": round(elapsed_ms),
+            },
+        )
 
         return result
 

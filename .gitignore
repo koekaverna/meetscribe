@@ -25,6 +25,9 @@ wheels/
 venv/
 ENV/
 
+# Config
+config.yaml
+
 # IDE
 .idea/
 .vscode/
@@ -40,6 +43,9 @@ CLAUDE.md
 htmlcov/
 .tox/
 .nox/
+.mutmut-cache
+.mutmut-cache-journal
+mutants/
 
 # Type checking
 .mypy_cache/
