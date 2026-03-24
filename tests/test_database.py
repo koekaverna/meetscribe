@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from meetscribe.database import (
-    SCHEMA_VERSION,
     _get_schema_version,
     _validate_team_name,
     count_voiceprints,
@@ -21,6 +20,7 @@ from meetscribe.database import (
     ensure_default_team,
     get_auth_session,
     get_db,
+    get_schema_version_expected,
     get_team,
     load_voiceprints,
     save_voiceprint,
@@ -50,7 +50,7 @@ class TestMigrations:
 
     def test_schema_version_set(self, tmp_path: Path):
         conn = get_db(tmp_path / "test.db")
-        assert _get_schema_version(conn) == SCHEMA_VERSION
+        assert _get_schema_version(conn) == get_schema_version_expected()
         conn.close()
 
     def test_schema_version_table_exists(self, tmp_path: Path):
@@ -92,7 +92,7 @@ class TestMigrations:
         conn.close()
         # Now open with versioned get_db
         conn = get_db(db_path)
-        assert _get_schema_version(conn) == SCHEMA_VERSION
+        assert _get_schema_version(conn) == get_schema_version_expected()
         # Old data preserved
         team = conn.execute("SELECT * FROM teams WHERE name = 'default'").fetchone()
         assert team is not None

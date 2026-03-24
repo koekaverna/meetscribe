@@ -5,7 +5,6 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +42,6 @@ def _get_schema_version(conn: sqlite3.Connection) -> int:
         return 0
 
 
-def _set_schema_version(conn: sqlite3.Connection, version: int) -> None:
-    """Set schema version (upsert single row)."""
-    conn.execute(
-        "INSERT INTO schema_version (id, version) VALUES (1, ?) "
-        "ON CONFLICT(id) DO UPDATE SET version = excluded.version",
-        (version,),
-    )
-
-
 def _discover_migrations() -> list[Path]:
     """Find SQL migration files sorted by number prefix (001_, 002_, ...)."""
     if not _MIGRATIONS_DIR.is_dir():
@@ -59,14 +49,18 @@ def _discover_migrations() -> list[Path]:
     return sorted(_MIGRATIONS_DIR.glob("[0-9][0-9][0-9]_*.sql"))
 
 
-SCHEMA_VERSION = len(_discover_migrations())
+def get_schema_version_expected() -> int:
+    """Return the number of available migration files (expected final version)."""
+    return len(_discover_migrations())
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply pending SQL migrations to bring the database up to date."""
-    current = _get_schema_version(conn)
     migrations = _discover_migrations()
+    if not migrations:
+        raise RuntimeError(f"No migration files found in {_MIGRATIONS_DIR}")
 
+    current = _get_schema_version(conn)
     if current >= len(migrations):
         return
 
@@ -75,9 +69,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "Applying migration",
             extra={"migration": path.name, "version": version, "total": len(migrations)},
         )
-        conn.executescript(path.read_text())
-        _set_schema_version(conn, version)
-        conn.commit()
+        sql = path.read_text()
+        version_sql = (
+            f"INSERT INTO schema_version (id, version) VALUES (1, {version}) "
+            f"ON CONFLICT(id) DO UPDATE SET version = excluded.version;"
+        )
+        conn.executescript(f"{sql}\n{version_sql}")
 
     logger.info("Database schema up to date", extra={"version": len(migrations)})
 
@@ -104,8 +101,7 @@ def create_team(conn: sqlite3.Connection, name: str, description: str | None = N
 
 def get_team(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
     """Fetch a team by name."""
-    row = conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()
-    return cast("sqlite3.Row | None", row)
+    return conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()  # type: ignore[return-value]
 
 
 def list_teams(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -173,7 +169,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
         "SELECT COUNT(*) as cnt FROM voiceprints WHERE team_id = ?",
         (team_id,),
     ).fetchone()
-    return cast(int, row["cnt"])
+    return row["cnt"]  # type: ignore[return-value]
 
 
 # --- User CRUD ---
@@ -197,26 +193,20 @@ def create_user(
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
     """Fetch a user by username (with team name)."""
-    return cast(
-        "sqlite3.Row | None",
-        conn.execute(
-            "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
-            "WHERE u.username = ?",
-            (username,),
-        ).fetchone(),
-    )
+    return conn.execute(  # type: ignore[return-value]
+        "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
+        "WHERE u.username = ?",
+        (username,),
+    ).fetchone()
 
 
 def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
     """Fetch a user by id (with team name)."""
-    return cast(
-        "sqlite3.Row | None",
-        conn.execute(
-            "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
-            "WHERE u.id = ?",
-            (user_id,),
-        ).fetchone(),
-    )
+    return conn.execute(  # type: ignore[return-value]
+        "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
+        "WHERE u.id = ?",
+        (user_id,),
+    ).fetchone()
 
 
 def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -250,18 +240,15 @@ def create_auth_session(
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     """Get auth session with user and team info. Returns None if expired or not found."""
-    return cast(
-        "sqlite3.Row | None",
-        conn.execute(
-            "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
-            "u.team_id, u.is_admin, t.name as team_name "
-            "FROM auth_sessions s "
-            "JOIN users u ON s.user_id = u.id "
-            "JOIN teams t ON u.team_id = t.id "
-            "WHERE s.token = ? AND s.expires_at > datetime('now')",
-            (token,),
-        ).fetchone(),
-    )
+    return conn.execute(  # type: ignore[return-value]
+        "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
+        "u.team_id, u.is_admin, t.name as team_name "
+        "FROM auth_sessions s "
+        "JOIN users u ON s.user_id = u.id "
+        "JOIN teams t ON u.team_id = t.id "
+        "WHERE s.token = ? AND s.expires_at > datetime('now')",
+        (token,),
+    ).fetchone()
 
 
 def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:

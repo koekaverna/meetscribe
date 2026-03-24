@@ -226,22 +226,45 @@ class TestAppConfigMethods:
         urls = cfg.get_transcription_urls()
         assert urls == ["http://a:8000", "http://b:8000"]
 
-    def test_get_transcription_urls_empty_raises(self):
+    def test_get_transcription_urls_empty(self):
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
             transcription=TranscriptionConfig(servers=[]),
         )
-        with pytest.raises(ConfigurationError, match="not configured"):
-            cfg.get_transcription_urls()
+        assert cfg.get_transcription_urls() == []
 
-    def test_validate_empty_server_field_ok(self):
-        """Empty server string should not trigger 'not found' error."""
+    def test_validate_empty_vad_server_raises(self):
+        """Empty vad.server should fail validation."""
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
             vad=VadConfig(server=""),
-            embeddings=EmbeddingsConfig(server=""),
+            embeddings=EmbeddingsConfig(server="gpu1"),
+            transcription=TranscriptionConfig(servers=["gpu1"]),
         )
-        cfg.validate()  # should not raise
+        with pytest.raises(ConfigurationError, match="vad.server not configured"):
+            cfg.validate()
+
+    def test_validate_empty_embeddings_server_raises(self):
+        """Empty embeddings.server should fail validation."""
+        cfg = AppConfig(
+            servers=[ServerInfo(url="http://a:8000", name="gpu1")],
+            vad=VadConfig(server="gpu1"),
+            embeddings=EmbeddingsConfig(server=""),
+            transcription=TranscriptionConfig(servers=["gpu1"]),
+        )
+        with pytest.raises(ConfigurationError, match="embeddings.server not configured"):
+            cfg.validate()
+
+    def test_validate_empty_transcription_servers_raises(self):
+        """Empty transcription.servers should fail validation."""
+        cfg = AppConfig(
+            servers=[ServerInfo(url="http://a:8000", name="gpu1")],
+            vad=VadConfig(server="gpu1"),
+            embeddings=EmbeddingsConfig(server="gpu1"),
+            transcription=TranscriptionConfig(servers=[]),
+        )
+        with pytest.raises(ConfigurationError, match="transcription.servers not configured"):
+            cfg.validate()
 
 
 class TestDefaultsMatchConfigYaml:

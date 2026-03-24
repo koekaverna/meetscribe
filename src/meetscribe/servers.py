@@ -94,8 +94,6 @@ class AppConfig:
 
     def get_transcription_urls(self) -> list[str]:
         """Get transcription server URLs."""
-        if not self.transcription.servers:
-            raise ConfigurationError("Transcription servers not configured")
         return [self.get_server_url(name) for name in self.transcription.servers]
 
     def validate(self) -> None:
@@ -103,11 +101,19 @@ class AppConfig:
         if not self.servers:
             raise ConfigurationError("No servers configured. See config.example.yaml")
         server_names = {s.name for s in self.servers}
-        if self.vad.server and self.vad.server not in server_names:
+        if not self.vad.server:
+            raise ConfigurationError("vad.server not configured. See config.example.yaml")
+        if self.vad.server not in server_names:
             raise ConfigurationError(f"VAD server '{self.vad.server}' not found in servers list")
-        if self.embeddings.server and self.embeddings.server not in server_names:
+        if not self.embeddings.server:
+            raise ConfigurationError("embeddings.server not configured. See config.example.yaml")
+        if self.embeddings.server not in server_names:
             raise ConfigurationError(
                 f"Embeddings server '{self.embeddings.server}' not found in servers list"
+            )
+        if not self.transcription.servers:
+            raise ConfigurationError(
+                "transcription.servers not configured. See config.example.yaml"
             )
         for name in self.transcription.servers:
             if name not in server_names:
