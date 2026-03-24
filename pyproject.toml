@@ -6,7 +6,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
 authors = [
-    { name = "Egor Korobov" }
+    { name = "Egor Korobov", email = "koe.kaverna@gmail.com" }
 ]
 keywords = [
     "transcription",
@@ -60,9 +60,9 @@ web = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/korobov/meetscribe"
-Repository = "https://github.com/korobov/meetscribe"
-Issues = "https://github.com/korobov/meetscribe/issues"
+Homepage = "https://github.com/koekaverna/meetscribe"
+Repository = "https://github.com/koekaverna/meetscribe"
+Issues = "https://github.com/koekaverna/meetscribe/issues"
 
 [project.scripts]
 meetscribe = "meetscribe.cli:main"

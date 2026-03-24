@@ -270,10 +270,25 @@ For video files with multiple audio tracks (e.g., track 1 = host, track 2 = gues
 uv venv
 uv pip install -e ".[dev,web]"
 
-pytest
-ruff check src/
-ruff format src/
+uv run pytest
+uv run ruff check src/
+uv run ruff format src/
+uv run mypy src/
 ```
+
+### Test suite
+
+Unit, functional, and integration tests covering the pipeline, database, config, and web services:
+
+```bash
+uv run pytest                  # all tests
+uv run pytest --cov            # with coverage
+uv run pytest tests/test_models.py  # single file
+```
+
+### CI
+
+GitHub Actions runs on every push and PR: ruff, mypy, pytest, bandit — on Python 3.12 and 3.13.
 
 ## License
 
