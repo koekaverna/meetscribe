@@ -2,6 +2,7 @@
 
 import io
 import logging
+import time
 import wave
 from pathlib import Path
 
@@ -124,6 +125,7 @@ class Transcriber:
         Useful for named tracks where the speaker is already known.
         Uses a longer timeout since the file may be large.
         """
+        t0 = time.perf_counter()
         client = self.clients[0]
         # Use longer timeout for whole-file transcription
         orig_timeout = client.timeout
@@ -134,6 +136,17 @@ class Transcriber:
             client.timeout = orig_timeout
         for seg in segments:
             seg.speaker = speaker
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "File transcription completed",
+            extra={
+                "file": audio_path.name,
+                "segments": len(segments),
+                "speaker": speaker,
+                "elapsed_ms": round(elapsed_ms),
+            },
+        )
         return segments
 
     def transcribe_segments(
@@ -155,6 +168,8 @@ class Transcriber:
         """
         if not segments:
             return []
+
+        t0 = time.perf_counter()
 
         # Load full audio into memory once
         with wave.open(str(audio_path), "rb") as wf:
@@ -199,6 +214,22 @@ class Transcriber:
             pbar.update(chunk.duration_ms)
 
         pbar.close()
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        audio_duration_ms = segments[-1].end_ms if segments else 0
+        rtf = elapsed_ms / audio_duration_ms if audio_duration_ms > 0 else 0
+        logger.info(
+            "Segment transcription completed",
+            extra={
+                "file": audio_path.name,
+                "segments_in": len(segments),
+                "chunks": len(merged),
+                "segments_out": len(results),
+                "audio_duration_ms": audio_duration_ms,
+                "elapsed_ms": round(elapsed_ms),
+                "rtf": round(rtf, 2),
+            },
+        )
         return results
 
     @staticmethod

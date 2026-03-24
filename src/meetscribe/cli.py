@@ -49,6 +49,7 @@ from .database import (
     load_voiceprints,
     save_voiceprint,
 )
+from .log import StructuredFormatter
 from .servers import AppConfig, load_config
 from .team import TeamContext, resolve_team
 
@@ -63,11 +64,11 @@ _log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
 
 _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
 _file_handler.setLevel(logging.DEBUG)
-_file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+_file_handler.setFormatter(StructuredFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
 
 _console_handler = logging.StreamHandler()
 _console_handler.setLevel(logging.ERROR)
-_console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+_console_handler.setFormatter(StructuredFormatter("[%(levelname)s] %(message)s"))
 
 logging.basicConfig(level=logging.DEBUG, handlers=[_file_handler, _console_handler])
 logging.captureWarnings(True)

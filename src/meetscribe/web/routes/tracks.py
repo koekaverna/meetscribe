@@ -103,13 +103,15 @@ async def upload_tracks(
                         try:
                             wav_path.unlink(missing_ok=True)
                         except OSError:
-                            logger.warning("Failed to clean up temp file: %s", wav_path)
+                            logger.warning(
+                                "Failed to clean up temp file", extra={"path": str(wav_path)}
+                            )
         finally:
             if tmp_path is not None:
                 try:
                     tmp_path.unlink(missing_ok=True)
                 except OSError:
-                    logger.warning("Failed to clean up temp file: %s", tmp_path)
+                    logger.warning("Failed to clean up temp file", extra={"path": str(tmp_path)})
 
     return responses
 

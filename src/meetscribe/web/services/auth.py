@@ -127,7 +127,7 @@ class AuthService:
         try:
             row = get_user_by_username(conn, username)
             if not row or not verify_password(password, row["password_hash"]):
-                logger.warning("Failed login attempt for user: %s", username)
+                logger.warning("Failed login attempt", extra={"username": username})
                 raise ValueError("Invalid username or password")
 
             # Clean up expired sessions

@@ -1,6 +1,7 @@
 """Speaker clustering using Agglomerative Hierarchical Clustering."""
 
 import logging
+import time
 from typing import cast
 
 import numpy as np
@@ -29,6 +30,8 @@ def cluster_embeddings(embeddings: list[list[float]], threshold: float) -> list[
     if n == 1:
         return [0]
 
+    t0 = time.perf_counter()
+
     X = np.array(embeddings, dtype=np.float64)
 
     # L2-normalize for cosine distance = 1 - dot(a, b)
@@ -45,19 +48,20 @@ def cluster_embeddings(embeddings: list[list[float]], threshold: float) -> list[
 
     # Diagnostic: distance distribution (helps tune threshold)
     upper = distance[np.triu_indices(n, k=1)]
-    logger.info(
-        "Distance stats: min=%.3f, p5=%.3f, p25=%.3f, median=%.3f, p75=%.3f, p95=%.3f, max=%.3f",
-        np.min(upper),
-        np.percentile(upper, 5),
-        np.percentile(upper, 25),
-        np.median(upper),
-        np.percentile(upper, 75),
-        np.percentile(upper, 95),
-        np.max(upper),
+    logger.debug(
+        "Distance distribution",
+        extra={
+            "min": round(float(np.min(upper)), 3),
+            "p5": round(float(np.percentile(upper, 5)), 3),
+            "p25": round(float(np.percentile(upper, 25)), 3),
+            "median": round(float(np.median(upper)), 3),
+            "p75": round(float(np.percentile(upper, 75)), 3),
+            "p95": round(float(np.percentile(upper, 95)), 3),
+            "max": round(float(np.max(upper)), 3),
+        },
     )
 
     distance_threshold = 1.0 - threshold
-    logger.info("Using distance_threshold=%.3f (similarity=%.3f)", distance_threshold, threshold)
 
     model = AgglomerativeClustering(
         n_clusters=None,
@@ -68,11 +72,15 @@ def cluster_embeddings(embeddings: list[list[float]], threshold: float) -> list[
     labels = model.fit_predict(distance)
 
     n_clusters = len(set(labels))
+    elapsed_ms = (time.perf_counter() - t0) * 1000
     logger.info(
-        "AHC clustering: %d embeddings -> %d clusters (threshold=%.2f)",
-        n,
-        n_clusters,
-        threshold,
+        "Clustering completed",
+        extra={
+            "embeddings": n,
+            "clusters": n_clusters,
+            "threshold": threshold,
+            "elapsed_ms": round(elapsed_ms),
+        },
     )
 
     return cast(list[int], labels.tolist())

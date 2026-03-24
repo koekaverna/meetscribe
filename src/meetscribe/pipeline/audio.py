@@ -4,11 +4,15 @@ All functions use system FFmpeg binary.
 """
 
 import asyncio
+import logging
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from meetscribe.errors import PipelineError
+
+logger = logging.getLogger(__name__)
 
 FFMPEG_BIN = "ffmpeg"
 FFPROBE_BIN = "ffprobe"
@@ -59,11 +63,17 @@ def probe_audio_tracks(file_path: Path) -> list[int]:
         capture_output=True,
         text=True,
     )
-    return [int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()]
+    tracks = [int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()]
+    logger.info(
+        "Audio tracks probed",
+        extra={"file": file_path.name, "tracks": len(tracks)},
+    )
+    return tracks
 
 
 def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path:
     """Extract audio track from video file as 16kHz mono WAV."""
+    t0 = time.perf_counter()
     cmd = [
         FFMPEG_BIN,
         "-y",
@@ -80,11 +90,23 @@ def extract_audio(video_path: Path, output_path: Path, track_index: int) -> Path
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise PipelineError(f"Failed to extract track {track_index}: {result.stderr}")
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "Audio track extracted",
+        extra={
+            "file": video_path.name,
+            "track_index": track_index,
+            "output": output_path.name,
+            "elapsed_ms": round(elapsed_ms),
+        },
+    )
     return output_path
 
 
 def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     """Convert audio file to 16kHz mono WAV."""
+    t0 = time.perf_counter()
     cmd = [
         FFMPEG_BIN,
         "-y",
@@ -99,6 +121,16 @@ def convert_to_wav(input_path: Path, output_path: Path) -> Path:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise PipelineError(f"Failed to convert {input_path.name}: {result.stderr}")
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "Audio converted to WAV",
+        extra={
+            "file": input_path.name,
+            "output": output_path.name,
+            "elapsed_ms": round(elapsed_ms),
+        },
+    )
     return output_path
 
 
@@ -119,11 +151,17 @@ async def probe_audio_tracks_async(file_path: Path) -> list[int]:
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, _ = await proc.communicate()
-    return [int(line.strip()) for line in stdout.decode().strip().split("\n") if line.strip()]
+    tracks = [int(line.strip()) for line in stdout.decode().strip().split("\n") if line.strip()]
+    logger.info(
+        "Audio tracks probed",
+        extra={"file": file_path.name, "tracks": len(tracks)},
+    )
+    return tracks
 
 
 async def extract_audio_async(video_path: Path, output_path: Path, track_index: int) -> Path:
     """Extract audio track from video file as 16kHz mono WAV (async)."""
+    t0 = time.perf_counter()
     cmd = [
         FFMPEG_BIN,
         "-y",
@@ -146,11 +184,23 @@ async def extract_audio_async(video_path: Path, output_path: Path, track_index: 
     if proc.returncode != 0:
         err = stderr.decode(errors="replace")
         raise PipelineError(f"Failed to extract track {track_index}: {err}")
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "Audio track extracted",
+        extra={
+            "file": video_path.name,
+            "track_index": track_index,
+            "output": output_path.name,
+            "elapsed_ms": round(elapsed_ms),
+        },
+    )
     return output_path
 
 
 async def convert_to_wav_async(input_path: Path, output_path: Path) -> Path:
     """Convert audio file to 16kHz mono WAV (async)."""
+    t0 = time.perf_counter()
     cmd = [
         FFMPEG_BIN,
         "-y",
@@ -171,6 +221,16 @@ async def convert_to_wav_async(input_path: Path, output_path: Path) -> Path:
     if proc.returncode != 0:
         err = stderr.decode(errors="replace")
         raise PipelineError(f"Failed to convert {input_path.name}: {err}")
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    logger.info(
+        "Audio converted to WAV",
+        extra={
+            "file": input_path.name,
+            "output": output_path.name,
+            "elapsed_ms": round(elapsed_ms),
+        },
+    )
     return output_path
 
 

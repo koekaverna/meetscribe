@@ -71,12 +71,15 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         return
 
     for version, path in enumerate(migrations[current:], start=current + 1):
-        logger.info("Applying migration %s (%d/%d)", path.name, version, len(migrations))
+        logger.info(
+            "Applying migration",
+            extra={"migration": path.name, "version": version, "total": len(migrations)},
+        )
         conn.executescript(path.read_text())
         _set_schema_version(conn, version)
         conn.commit()
 
-    logger.info("Database schema is at version %d", len(migrations))
+    logger.info("Database schema up to date", extra={"version": len(migrations)})
 
 
 def ensure_default_team(conn: sqlite3.Connection) -> None:
@@ -141,7 +144,7 @@ def save_voiceprint(
         (team_id, name, embedding_json, model),
     )
     conn.commit()
-    logger.info("Saved voiceprint for '%s' (team_id=%d)", name, team_id)
+    logger.info("Voiceprint saved", extra={"speaker": name, "team_id": team_id})
     return cursor.lastrowid  # type: ignore[return-value]
 
 

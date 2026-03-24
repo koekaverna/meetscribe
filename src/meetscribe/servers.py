@@ -200,5 +200,5 @@ def load_config(config_path: Path) -> AppConfig:
     )
     cfg.validate()
 
-    logger.info("Loaded config: %d servers", len(servers))
+    logger.info("Config loaded", extra={"servers": len(servers)})
     return cfg

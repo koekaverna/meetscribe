@@ -40,7 +40,7 @@ def shutdown_threads(timeout: float = 30.0) -> None:
     for thread in threads:
         thread.join(timeout=timeout / max(len(threads), 1))
         if thread.is_alive():
-            logger.warning("Thread %s did not finish within timeout", thread.name)
+            logger.warning("Thread did not finish within timeout", extra={"thread": thread.name})
 
 
 def run_generator_with_queue(
@@ -70,7 +70,7 @@ async def stream_from_queue(
             msg_type, data = result_queue.get_nowait()
 
             if msg_type == "error":
-                logger.error("Task error: %s", data)
+                logger.error("Task error", extra={"error": data})
                 if on_error:
                     await on_error(data)
                 yield f"data: {json.dumps({'error': data})}\n\n"
@@ -182,7 +182,7 @@ async def stream_extraction(
 
     async def on_error(error_msg: str) -> None:
         """Rollback status on extraction failure."""
-        logger.error("Extraction failed for session %s: %s", session_id, error_msg)
+        logger.error("Extraction failed", extra={"session_id": session_id, "error": error_msg})
 
     return StreamingResponse(
         stream_from_queue(result_queue, on_complete=on_complete, on_error=on_error),
@@ -256,7 +256,7 @@ async def stream_enrollment(
 
     async def on_error(error_msg: str) -> None:
         """Log enrollment failure."""
-        logger.error("Enrollment failed for session %s: %s", session_id, error_msg)
+        logger.error("Enrollment failed", extra={"session_id": session_id, "error": error_msg})
 
     return StreamingResponse(
         stream_from_queue(result_queue, on_complete=on_complete, on_error=on_error),
@@ -336,7 +336,7 @@ async def stream_transcription(
 
     async def on_error(error_msg: str) -> None:
         """Log transcription failure."""
-        logger.error("Transcription failed for session %s: %s", session_id, error_msg)
+        logger.error("Transcription failed", extra={"session_id": session_id, "error": error_msg})
 
     return StreamingResponse(
         stream_from_queue(result_queue, on_complete=on_complete, on_error=on_error),

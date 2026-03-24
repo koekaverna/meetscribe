@@ -40,7 +40,7 @@ class VoiceActivityDetector:
         Returns:
             List of SpeechSegment with start/end times (speaker=None).
         """
-        logger.info("VAD started | file=%s", audio_path.name)
+        logger.info("VAD started", extra={"file": audio_path.name})
         t0 = time.perf_counter()
         endpoint = f"{self.server_url}/v1/audio/speech/timestamps"
 
@@ -76,10 +76,12 @@ class VoiceActivityDetector:
         elapsed_ms = (time.perf_counter() - t0) * 1000
         audio_duration_ms = segments[-1].end_ms if segments else 0
         logger.info(
-            "VAD completed | file=%s segments=%d audio_duration=%dms elapsed=%.0fms",
-            audio_path.name,
-            len(segments),
-            audio_duration_ms,
-            elapsed_ms,
+            "VAD completed",
+            extra={
+                "file": audio_path.name,
+                "segments": len(segments),
+                "audio_duration_ms": audio_duration_ms,
+                "elapsed_ms": round(elapsed_ms),
+            },
         )
         return segments
