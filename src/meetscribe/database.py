@@ -36,8 +36,8 @@ def get_db(db_path: Path) -> sqlite3.Connection:
 def _get_schema_version(conn: sqlite3.Connection) -> int:
     """Get current schema version. Returns 0 if schema_version table doesn't exist."""
     try:
-        row = conn.execute("SELECT version FROM schema_version").fetchone()
-        return row["version"] if row else 0
+        row = conn.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()
+        return row["version"] if row and row["version"] is not None else 0
     except sqlite3.OperationalError:
         return 0
 
@@ -70,12 +70,12 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "Applying migration",
             extra={"migration": path.name, "version": version, "total": len(migrations)},
         )
-        sql = path.read_text()
-        version_sql = (
-            f"INSERT INTO schema_version (id, version) VALUES (1, {version}) "  # nosec B608
-            f"ON CONFLICT(id) DO UPDATE SET version = excluded.version;"
+        conn.executescript(path.read_text())
+        conn.execute(
+            "INSERT INTO schema_version (version, name) VALUES (?, ?)",
+            (version, path.stem),
         )
-        conn.executescript(f"{sql}\n{version_sql}")
+        conn.commit()
 
     logger.info(
         "Migrations applied",

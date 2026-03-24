@@ -1,8 +1,9 @@
 -- Initial schema: teams, voiceprints, users, auth, sessions.
 
 CREATE TABLE IF NOT EXISTS schema_version (
-    id      INTEGER PRIMARY KEY CHECK (id = 1),
-    version INTEGER NOT NULL
+    version    INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS teams (
