@@ -92,39 +92,54 @@ class TestSpeakerIdentifierIdentify:
         assert name == "Alice"
 
 
-class TestFindNearestLabeled:
-    def test_left_neighbor(self):
-        segs = [
-            SpeechSegment(0, 100, "Alice"),
-            SpeechSegment(100, 200, None),
-        ]
-        result = SpeakerIdentifier._find_nearest_labeled(1, segs)
-        assert result == "Alice"
+class TestNearestLabeledInheritance:
+    """Short segments (no embedding) inherit speaker from nearest labeled neighbor."""
 
-    def test_right_neighbor(self):
-        segs = [
-            SpeechSegment(0, 100, None),
-            SpeechSegment(100, 200, "Bob"),
+    def _make_identifier(self, voiceprints):
+        return SpeakerIdentifier(
+            voiceprints,
+            threshold=0.8,
+            confident_gap=0.2,
+            min_threshold=0.4,
+            unknown_cluster_threshold=0.25,
+        )
+
+    def test_inherits_from_left(self):
+        ident = self._make_identifier({"Alice": ALICE_EMB})
+        segments = [
+            (SpeechSegment(0, 1000), ALICE_EMB),
+            (SpeechSegment(1000, 1500), None),  # short, no embedding
         ]
-        result = SpeakerIdentifier._find_nearest_labeled(0, segs)
-        assert result == "Bob"
+        result = ident.identify_segments(segments)
+        assert result[1].speaker == "Alice"
+
+    def test_inherits_from_right(self):
+        ident = self._make_identifier({"Bob": BOB_EMB})
+        segments = [
+            (SpeechSegment(0, 500), None),  # short, no embedding
+            (SpeechSegment(500, 1500), BOB_EMB),
+        ]
+        result = ident.identify_segments(segments)
+        assert result[0].speaker == "Bob"
 
     def test_left_preferred_when_equidistant(self):
-        segs = [
-            SpeechSegment(0, 100, "Alice"),
-            SpeechSegment(100, 200, None),
-            SpeechSegment(200, 300, "Bob"),
+        ident = self._make_identifier({"Alice": ALICE_EMB, "Bob": BOB_EMB})
+        segments = [
+            (SpeechSegment(0, 1000), ALICE_EMB),
+            (SpeechSegment(1000, 1500), None),  # short, equidistant
+            (SpeechSegment(1500, 2500), BOB_EMB),
         ]
-        result = SpeakerIdentifier._find_nearest_labeled(1, segs)
-        assert result == "Alice"
+        result = ident.identify_segments(segments)
+        assert result[1].speaker == "Alice"
 
-    def test_no_labeled_neighbors(self):
-        segs = [
-            SpeechSegment(0, 100, None),
-            SpeechSegment(100, 200, None),
+    def test_no_labeled_neighbors_gets_unknown(self):
+        ident = self._make_identifier({})
+        segments = [
+            (SpeechSegment(0, 500), None),
+            (SpeechSegment(500, 1000), None),
         ]
-        result = SpeakerIdentifier._find_nearest_labeled(0, segs)
-        assert result is None
+        result = ident.identify_segments(segments)
+        assert result[0].speaker == "Unknown"
 
 
 class TestIdentifySegments:
@@ -198,7 +213,7 @@ class TestEnrollSamples:
 
         assert new == 2
         assert total == 2
-        assert len(embedding) > 0
+        assert len(embedding) == 256
         # Files actually copied to enrolled_dir
         assert len(list(enrolled_dir.glob("*.wav"))) == 2
 

@@ -58,7 +58,9 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
     """Apply pending SQL migrations to bring the database up to date."""
     migrations = _discover_migrations()
     if not migrations:
-        raise RuntimeError(f"No migration files found in {_MIGRATIONS_DIR}")
+        from meetscribe.errors import ConfigurationError
+
+        raise ConfigurationError(f"No migration files found in {_MIGRATIONS_DIR}")
 
     current = _get_schema_version(conn)
     if current >= len(migrations):
@@ -70,12 +72,19 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
             "Applying migration",
             extra={"migration": path.name, "version": version, "total": len(migrations)},
         )
-        conn.executescript(path.read_text())
-        conn.execute(
-            "INSERT INTO schema_version (version, name) VALUES (?, ?)",
-            (version, path.stem),
-        )
-        conn.commit()
+        sql = path.read_text()
+        # executescript() auto-commits pending work, then runs the script.
+        # BEGIN inside starts a new transaction covering DDL + version INSERT.
+        try:
+            conn.executescript(f"BEGIN;\n{sql}")
+            conn.execute(
+                "INSERT INTO schema_version (version, name) VALUES (?, ?)",
+                (version, path.stem),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     logger.info(
         "Migrations applied",

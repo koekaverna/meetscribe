@@ -3,11 +3,13 @@
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from meetscribe.database import (
     _get_schema_version,
+    _run_migrations,
     _validate_team_name,
     count_voiceprints,
     create_auth_session,
@@ -96,6 +98,40 @@ class TestMigrations:
         # Old data preserved
         team = conn.execute("SELECT * FROM teams WHERE name = 'default'").fetchone()
         assert team is not None
+        conn.close()
+
+    def test_failed_migration_does_not_bump_version(self, tmp_path: Path):
+        """If a migration SQL fails, schema_version must not be updated."""
+        migrations_dir = tmp_path / "migrations"
+        migrations_dir.mkdir()
+
+        # Copy the real 001_initial.sql
+        real_001 = Path(__file__).parent.parent / "src/meetscribe/migrations/001_initial.sql"
+        (migrations_dir / "001_initial.sql").write_text(real_001.read_text())
+
+        # Create a broken second migration
+        (migrations_dir / "002_broken.sql").write_text(
+            "CREATE TABLE migration_test_ok (id INTEGER);\nINVALID SQL THAT WILL FAIL;\n"
+        )
+
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+
+        with patch("meetscribe.database._MIGRATIONS_DIR", migrations_dir):
+            with pytest.raises(Exception):
+                _run_migrations(conn)
+
+        # Version should be 1 (only first migration applied), not 2
+        assert _get_schema_version(conn) == 1
+        # The partial table from broken migration should NOT exist
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        assert "migration_test_ok" not in tables
         conn.close()
 
 

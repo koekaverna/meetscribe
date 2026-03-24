@@ -3,8 +3,9 @@
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import get_origin, get_type_hints
 
 import yaml
 from dotenv import load_dotenv
@@ -101,7 +102,37 @@ _logger = logging.getLogger(__name__)
 
 
 @dataclass
-class ServerInfo:
+class ValidatedConfig:
+    """Base for config dataclasses with field type validation on construction."""
+
+    def __post_init__(self) -> None:
+        hints = get_type_hints(type(self))
+        cls_name = type(self).__name__
+        for f in fields(self):
+            value = getattr(self, f.name)
+            expected = hints[f.name]
+            if get_origin(expected) is list:
+                ok, label = isinstance(value, list), "list"
+            elif expected is float:
+                ok = not isinstance(value, bool) and isinstance(value, (int, float))
+                label = "number"
+            elif expected is int:
+                ok = not isinstance(value, bool) and isinstance(value, int)
+                label = "integer"
+            elif expected is str:
+                ok, label = isinstance(value, str), "string"
+            elif expected is bool:
+                ok, label = isinstance(value, bool), "boolean"
+            else:
+                continue
+            if not ok:
+                raise ConfigurationError(
+                    f"{cls_name}.{f.name}: expected {label}, got {type(value).__name__}"
+                )
+
+
+@dataclass
+class ServerInfo(ValidatedConfig):
     """A remote processing server."""
 
     url: str
@@ -109,7 +140,7 @@ class ServerInfo:
 
 
 @dataclass
-class VadConfig:
+class VadConfig(ValidatedConfig):
     """VAD endpoint configuration."""
 
     server: str = ""
@@ -120,7 +151,7 @@ class VadConfig:
 
 
 @dataclass
-class EmbeddingsConfig:
+class EmbeddingsConfig(ValidatedConfig):
     """Speaker embeddings configuration."""
 
     server: str = ""
@@ -135,7 +166,7 @@ class EmbeddingsConfig:
 
 
 @dataclass
-class TranscriptionConfig:
+class TranscriptionConfig(ValidatedConfig):
     """Transcription configuration."""
 
     servers: list[str] = field(default_factory=list)
@@ -147,7 +178,7 @@ class TranscriptionConfig:
 
 
 @dataclass
-class WebConfig:
+class WebConfig(ValidatedConfig):
     """Web UI configuration."""
 
     host: str = "127.0.0.1"
@@ -165,7 +196,7 @@ class AppConfig:
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     web: WebConfig = field(default_factory=WebConfig)
-    log_level: str = "DEBUG"
+    log_level: str = "INFO"
 
     def get_server_url(self, name: str) -> str:
         """Get server URL by name."""
@@ -239,14 +270,20 @@ def load_config(config_path: Path) -> AppConfig:
     if not isinstance(data, dict):
         raise ConfigurationError(f"Config root must be a mapping, got {type(data).__name__}")
 
-    for section in ("servers", "vad", "embeddings", "transcription", "web"):
-        if section in data and not isinstance(data[section], (dict, list)):
-            raise ConfigurationError(f"Config section '{section}' must be a mapping")
+    for section in ("vad", "embeddings", "transcription", "web"):
+        if section in data and not isinstance(data[section], dict):
+            raise ConfigurationError(
+                f"Config section '{section}' must be a mapping, got {type(data[section]).__name__}"
+            )
 
     servers_raw = data.get("servers", [])
     if not isinstance(servers_raw, list):
         raise ConfigurationError("Config section 'servers' must be a list")
-    servers = [ServerInfo(url=s["url"], name=s["name"]) for s in servers_raw]
+    servers: list[ServerInfo] = []
+    for i, s in enumerate(servers_raw):
+        if not isinstance(s, dict) or "url" not in s or "name" not in s:
+            raise ConfigurationError(f"servers[{i}]: each entry must have 'url' and 'name'")
+        servers.append(ServerInfo(url=s["url"], name=s["name"]))
 
     vad = VadConfig()
     if "vad" in data:
@@ -296,7 +333,12 @@ def load_config(config_path: Path) -> AppConfig:
             secure_cookies=d.get("secure_cookies", False),
         )
 
-    log_level = str(data.get("log_level", "DEBUG")).upper()
+    log_level = str(data.get("log_level", AppConfig.log_level)).upper()
+    if log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
+        raise ConfigurationError(
+            f"Invalid log_level '{log_level}'. "
+            "Must be one of: DEBUG, INFO, WARNING, ERROR, CRITICAL"
+        )
 
     cfg = AppConfig(
         servers=servers,

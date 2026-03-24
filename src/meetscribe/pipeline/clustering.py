@@ -2,7 +2,6 @@
 
 import logging
 import time
-from typing import cast
 
 import numpy as np
 from sklearn.cluster import AgglomerativeClustering
@@ -83,4 +82,5 @@ def cluster_embeddings(embeddings: list[list[float]], threshold: float) -> list[
         },
     )
 
-    return cast(list[int], labels.tolist())
+    result: list[int] = labels.tolist()
+    return result

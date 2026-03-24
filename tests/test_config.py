@@ -1,5 +1,6 @@
 """Tests for config.py — config loading, validation, defaults matching config.yaml."""
 
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from meetscribe.config import (
     ServerInfo,
     TranscriptionConfig,
     VadConfig,
+    ValidatedConfig,
     WebConfig,
     load_config,
 )
@@ -265,6 +267,99 @@ class TestAppConfigMethods:
         )
         with pytest.raises(ConfigurationError, match="transcription.servers not configured"):
             cfg.validate()
+
+
+@dataclass
+class _StubConfig(ValidatedConfig):
+    """Test-only config with one field per supported type."""
+
+    name: str = ""
+    timeout: float = 1.0
+    count: int = 0
+    enabled: bool = False
+    items: list[str] = field(default_factory=list)
+
+
+class TestValidatedConfig:
+    """Test ValidatedConfig type validation on a test-only dataclass."""
+
+    # -- str --
+    def test_str_accepts_str(self):
+        assert _StubConfig(name="ok").name == "ok"
+
+    def test_str_rejects_int(self):
+        with pytest.raises(ConfigurationError, match="expected string"):
+            _StubConfig(name=123)
+
+    # -- float (accepts int too, YAML `120` → int) --
+    def test_float_accepts_float(self):
+        assert _StubConfig(timeout=1.5).timeout == 1.5
+
+    def test_float_accepts_int(self):
+        assert _StubConfig(timeout=120).timeout == 120
+
+    def test_float_rejects_str(self):
+        with pytest.raises(ConfigurationError, match="expected number"):
+            _StubConfig(timeout="slow")
+
+    def test_float_rejects_bool(self):
+        with pytest.raises(ConfigurationError, match="expected number"):
+            _StubConfig(timeout=True)
+
+    # -- int --
+    def test_int_accepts_int(self):
+        assert _StubConfig(count=5).count == 5
+
+    def test_int_rejects_float(self):
+        with pytest.raises(ConfigurationError, match="expected integer"):
+            _StubConfig(count=1.5)
+
+    def test_int_rejects_bool(self):
+        with pytest.raises(ConfigurationError, match="expected integer"):
+            _StubConfig(count=True)
+
+    # -- bool --
+    def test_bool_accepts_bool(self):
+        assert _StubConfig(enabled=True).enabled is True
+
+    def test_bool_rejects_int(self):
+        with pytest.raises(ConfigurationError, match="expected boolean"):
+            _StubConfig(enabled=1)
+
+    # -- list --
+    def test_list_accepts_list(self):
+        assert _StubConfig(items=["a"]).items == ["a"]
+
+    def test_list_rejects_str(self):
+        with pytest.raises(ConfigurationError, match="expected list"):
+            _StubConfig(items="a,b")
+
+    # -- error message format --
+    def test_error_includes_class_and_field(self):
+        with pytest.raises(ConfigurationError, match=r"_StubConfig\.timeout"):
+            _StubConfig(timeout="bad")
+
+    # -- defaults pass validation --
+    def test_all_defaults_pass(self):
+        cfg = _StubConfig()
+        assert cfg.name == ""
+        assert cfg.timeout == 1.0
+        assert cfg.count == 0
+        assert cfg.enabled is False
+        assert cfg.items == []
+
+    # -- integration: wrong type in YAML bubbles up through load_config --
+    def test_yaml_with_wrong_type_raises(self, tmp_path: Path):
+        data = {**MINIMAL_CONFIG, "vad": {"server": "gpu1", "timeout": "slow"}}
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        with pytest.raises(ConfigurationError, match="expected number"):
+            load_config(p)
+
+    def test_section_as_list_raises(self, tmp_path: Path):
+        data = {**MINIMAL_CONFIG, "vad": ["server", "gpu1"]}
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        with pytest.raises(ConfigurationError, match="must be a mapping"):
+            load_config(p)
 
 
 class TestDefaultsMatchConfigYaml:

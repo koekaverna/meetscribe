@@ -25,10 +25,10 @@ _BUILTIN_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None, None)._
 
 
 def apply_log_level(level: str) -> None:
-    """Apply log level to the root logger and file handler."""
+    """Apply log level to the root logger and file handlers (not console)."""
     numeric = getattr(logging, level, None)
     if not isinstance(numeric, int):
-        numeric = logging.DEBUG
+        numeric = logging.INFO
     logging.getLogger().setLevel(numeric)
     for handler in logging.getLogger().handlers:
         if isinstance(handler, logging.FileHandler):
