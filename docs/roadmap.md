@@ -131,6 +131,74 @@ MeetScribe — CLI + Web инструмент для транскрибации 
 - Проверка что модель есть на сервере — невозможно без запущенного сервера
 - Проверка аргументов HTTP-запроса — нет надёжного способа без e2e
 
+#### Фаза 1.1: Mutation testing hardening
+
+> По результатам mutmut: 988 killed / 626 survived / 348 timeout
+
+**Юнит-тесты:**
+
+`tests/test_models.py` — `merge_by_proximity` (10 survived):
+- [ ] Split сохраняет значения полей (end_ms, start_ms) — не `append(None)`
+- [ ] duration = end - start, не end + start
+- [ ] max_chunk_ms boundary (exact + one-over)
+- [ ] single segment — все поля сохранены
+
+`tests/test_database.py` — CRUD / PRAGMA (41 survived):
+- [ ] `get_db` включает WAL и foreign_keys (PRAGMA query)
+- [ ] `get_db` создаёт parent dirs для несуществующего пути
+- [ ] `_get_schema_version` без таблицы → именно 0
+- [ ] `save_voiceprint` → `count_voiceprints` корректен после нескольких INSERT
+- [ ] Каждая delete-функция → False/0 для несуществующего
+
+`tests/test_config.py` — `load_config` defaults (120 survived):
+- [ ] FileNotFoundError содержит "config.example.yaml"
+- [ ] ConfigurationError содержит путь к файлу
+- [ ] Partial YAML (без секций) → каждый дефолт точно совпадает с dataclass default
+- [ ] Без log_level → AppConfig.log_level (INFO)
+- [ ] Ошибки секций содержат имя секции и тип
+
+`tests/test_config.py` — `get_data_dir` / `get_tmp_dir` (61 survived):
+- [ ] MEETSCRIBE_DATA_DIR override
+- [ ] Linux default → XDG_DATA_HOME (mock sys.platform)
+- [ ] Windows default → LOCALAPPDATA (mock sys.platform)
+- [ ] macOS default → Library/Application Support (mock sys.platform)
+- [ ] MEETSCRIBE_TMP_DIR override
+- [ ] tmp_dir default внутри data_dir
+
+`tests/test_team.py` — `resolve_team` (19 survived):
+- [ ] `resolve_team(None)` → ctx.name == "default"
+- [ ] Directories (samples, enrolled, unknown) созданы
+- [ ] Несуществующая команда → ValueError с именем
+- [ ] ctx.id == id из БД
+
+**Интеграционные тесты (mock HTTP):**
+
+`tests/test_pipeline_integration.py` — `diarization.diarize` (33 survived):
+- [ ] VAD request содержит correct threshold/pad/silence params
+- [ ] Embedding request содержит correct model, timeout
+- [ ] VAD вернул [] → результат []
+- [ ] Все сегменты < min_duration → speaker = "Unknown"
+- [ ] merge_close_segments вызван с правильными max_gap_ms, max_chunk_ms
+
+`tests/test_transcriber.py` — transcriber (26 survived):
+- [ ] Request содержит correct model и language
+- [ ] Segments merged before sending to API
+- [ ] Speaker из input → output TranscriptSegment
+- [ ] Round-robin: 2 сервера → оба получают запросы
+
+`tests/test_audio.py` — audio (100 survived, `@pytest.mark.integration`):
+- [ ] `probe_audio_tracks` → correct track count
+- [ ] `extract_audio` → valid 16kHz mono WAV
+- [ ] `extract_segment` → correct duration
+- [ ] `convert_to_wav` → sample rate == 16000
+- [ ] FFmpeg не найден → `FFmpegNotFoundError`
+
+**Не убиваемые мутанты (~370):**
+- Error message text mutations — безвредные
+- Logging extra fields — не влияют на логику
+- numpy dtype/clip internal ops — эквивалентные мутации
+- clustering internals — sklearn black box
+
 ### CI (GitHub Actions)
 
 - [x] ruff check + ruff format --check

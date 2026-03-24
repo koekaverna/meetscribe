@@ -50,7 +50,7 @@ dev = [
     "types-tqdm",
     "types-colorama",
     "bandit[toml]",
-    "mutmut<3",
+    "mutmut",
 ]
 web = [
     "fastapi>=0.115",
@@ -94,8 +94,9 @@ exclude_dirs = ["tests"]
 skips = ["B101", "B404", "B603"]
 
 [tool.mutmut]
-paths_to_mutate = "src/meetscribe/pipeline/,src/meetscribe/database.py,src/meetscribe/servers.py,src/meetscribe/team.py"
-tests_dir = "tests/"
+paths_to_mutate = ["src/meetscribe/pipeline/", "src/meetscribe/database.py", "src/meetscribe/config.py", "src/meetscribe/team.py"]
+tests_dir = ["tests/"]
+also_copy = ["src/meetscribe/", "config.example.yaml"]
 
 [tool.ruff]
 line-length = 100
