@@ -4,6 +4,7 @@ import io
 import logging
 import math
 import shutil
+import time
 import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -102,7 +103,7 @@ class EmbeddingExtractor:
             return seg, embedding
         except Exception:
             logger.warning(
-                "Failed to extract embedding for segment %d-%dms",
+                "Embedding extraction failed | segment=%d-%dms",
                 seg.start_ms,
                 seg.end_ms,
                 exc_info=True,
@@ -123,6 +124,8 @@ class EmbeddingExtractor:
         Returns:
             List of (segment, embedding_or_None) tuples in original order.
         """
+        t0 = time.perf_counter()
+
         # Load full audio into memory once
         with wave.open(str(audio_path), "rb") as wf:
             sample_rate = wf.getframerate()
@@ -136,7 +139,7 @@ class EmbeddingExtractor:
         for i, seg in enumerate(segments):
             if seg.duration_ms < self.min_duration_ms:
                 logger.debug(
-                    "Skipping short segment %d-%dms (%dms)",
+                    "Skipping short segment | segment=%d-%dms duration=%dms",
                     seg.start_ms,
                     seg.end_ms,
                     seg.duration_ms,
@@ -159,7 +162,20 @@ class EmbeddingExtractor:
                 pbar.update(1)
 
         pbar.close()
-        return [ordered[i] for i in range(len(segments))]
+
+        result = [ordered[i] for i in range(len(segments))]
+        extracted = sum(1 for _, emb in result if emb is not None)
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "Embedding extraction completed"
+            " | file=%s segments_in=%d segments_out=%d skipped=%d elapsed=%.0fms",
+            audio_path.name,
+            len(segments),
+            extracted,
+            len(segments) - extracted,
+            elapsed_ms,
+        )
+        return result
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

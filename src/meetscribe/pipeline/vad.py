@@ -1,6 +1,7 @@
 """Remote Voice Activity Detection via speaches API."""
 
 import logging
+import time
 from pathlib import Path
 
 import httpx
@@ -39,7 +40,8 @@ class VoiceActivityDetector:
         Returns:
             List of SpeechSegment with start/end times (speaker=None).
         """
-        logger.info("VAD: processing %s", audio_path.name)
+        logger.info("VAD started | file=%s", audio_path.name)
+        t0 = time.perf_counter()
         endpoint = f"{self.server_url}/v1/audio/speech/timestamps"
 
         try:
@@ -71,5 +73,13 @@ class VoiceActivityDetector:
         result = response.json()
         segments = [SpeechSegment(start_ms=seg["start"], end_ms=seg["end"]) for seg in result]
 
-        logger.info("VAD returned %d segments", len(segments))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        audio_duration_ms = segments[-1].end_ms if segments else 0
+        logger.info(
+            "VAD completed | file=%s segments=%d audio_duration=%dms elapsed=%.0fms",
+            audio_path.name,
+            len(segments),
+            audio_duration_ms,
+            elapsed_ms,
+        )
         return segments
