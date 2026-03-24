@@ -926,6 +926,10 @@ def main() -> None:
         raise SystemExit(1)
     except SpeachesAPIError as e:
         print(f"\n  {C_RED}\u274c API error:{C_RESET} {e}")
+        if e.endpoint:
+            print(f"    Endpoint: {e.endpoint}")
+        if e.status_code:
+            print(f"    Status: {e.status_code}")
         if e.detail:
             print(f"    {e.detail}")
         raise SystemExit(1)

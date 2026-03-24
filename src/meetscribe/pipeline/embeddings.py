@@ -9,7 +9,6 @@ import wave
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import cast
 
 import httpx
 from tqdm import tqdm
@@ -64,7 +63,15 @@ class EmbeddingExtractor:
             ) from e
 
         result = response.json()
-        return cast(list[float], result["data"][0]["embedding"])
+        try:
+            embedding = result["data"][0]["embedding"]
+            return [float(x) for x in embedding]
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            raise SpeachesAPIError(
+                f"Unexpected embedding response format: {e}",
+                endpoint=endpoint,
+                detail=str(result)[:200],
+            ) from e
 
     def extract_from_file(self, audio_path: Path) -> list[float]:
         """Extract speaker embedding from an audio file."""
@@ -169,6 +176,8 @@ class EmbeddingExtractor:
 
         result = [ordered[i] for i in range(len(segments))]
         extracted = sum(1 for _, emb in result if emb is not None)
+        skipped_short = len(segments) - len(to_extract)
+        failed = len(to_extract) - extracted
         elapsed_ms = (time.perf_counter() - t0) * 1000
         logger.info(
             "Embedding extraction completed",
@@ -176,7 +185,8 @@ class EmbeddingExtractor:
                 "file": audio_path.name,
                 "segments_in": len(segments),
                 "segments_out": extracted,
-                "skipped": len(segments) - extracted,
+                "skipped_short": skipped_short,
+                "failed": failed,
                 "elapsed_ms": round(elapsed_ms),
             },
         )

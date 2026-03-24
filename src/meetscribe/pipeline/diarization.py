@@ -78,18 +78,18 @@ class DiarizationPipeline:
         labeled = self.identifier.identify_segments(segments_with_embeddings)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
-        audio_duration_ms = labeled[-1].end_ms if labeled else 0
+        speech_duration_ms = labeled[-1].end_ms if labeled else 0
         speakers = {s.speaker for s in labeled if s.speaker}
-        rtf = elapsed_ms / audio_duration_ms if audio_duration_ms > 0 else 0
+        speech_rtf = elapsed_ms / speech_duration_ms if speech_duration_ms > 0 else 0
         logger.info(
             "Diarization completed",
             extra={
                 "file": audio_path.name,
                 "segments": len(labeled),
                 "speakers": len(speakers),
-                "audio_duration_ms": audio_duration_ms,
+                "speech_duration_ms": speech_duration_ms,
                 "elapsed_ms": round(elapsed_ms),
-                "rtf": round(rtf, 2),
+                "speech_rtf": round(speech_rtf, 2),
             },
         )
 

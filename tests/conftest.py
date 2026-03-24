@@ -3,6 +3,7 @@
 import io
 import sqlite3
 import wave
+from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -12,15 +13,18 @@ from meetscribe.database import get_db
 
 
 @pytest.fixture
-def db(tmp_path: Path) -> sqlite3.Connection:
+def db(tmp_path: Path) -> Generator[sqlite3.Connection, None, None]:
     """In-memory-like SQLite with all migrations applied."""
-    return get_db(tmp_path / "test.db")
+    conn = get_db(tmp_path / "test.db")
+    yield conn
+    conn.close()
 
 
 @pytest.fixture
 def team_id(db: sqlite3.Connection) -> int:
     """ID of the auto-created 'default' team."""
     row = db.execute("SELECT id FROM teams WHERE name = 'default'").fetchone()
+    assert row is not None, "default team not found — migrations may be missing"
     return row["id"]
 
 

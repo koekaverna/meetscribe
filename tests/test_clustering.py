@@ -37,7 +37,7 @@ class TestClusterEmbeddings:
         assert labels[2] == labels[3]
         assert labels[0] != labels[2]
 
-    def test_higher_threshold_fewer_clusters(self):
+    def test_stricter_threshold_more_clusters(self):
         embs = [_make_embedding(i) for i in range(5)]
         labels_loose = cluster_embeddings(embs, threshold=0.1)
         labels_strict = cluster_embeddings(embs, threshold=0.5)

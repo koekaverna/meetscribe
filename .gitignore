@@ -25,6 +25,9 @@ wheels/
 venv/
 ENV/
 
+# Config
+config.yaml
+
 # IDE
 .idea/
 .vscode/

@@ -63,6 +63,8 @@ def probe_audio_tracks(file_path: Path) -> list[int]:
         capture_output=True,
         text=True,
     )
+    if result.returncode != 0:
+        raise PipelineError(f"Failed to probe audio tracks in {file_path.name}: {result.stderr}")
     tracks = [int(line.strip()) for line in result.stdout.strip().split("\n") if line.strip()]
     logger.info(
         "Audio tracks probed",
@@ -150,7 +152,10 @@ async def probe_audio_tracks_async(file_path: Path) -> list[int]:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, _ = await proc.communicate()
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        err = stderr.decode(errors="replace")
+        raise PipelineError(f"Failed to probe audio tracks in {file_path.name}: {err}")
     tracks = [int(line.strip()) for line in stdout.decode().strip().split("\n") if line.strip()]
     logger.info(
         "Audio tracks probed",

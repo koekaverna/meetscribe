@@ -5,6 +5,7 @@ key=value pairs appended to the message. To switch to JSON, replace
 StructuredFormatter with a JSON-based one — no log call changes needed.
 """
 
+import json
 import logging
 
 # Attributes that LogRecord creates internally plus those injected by handlers/frameworks
@@ -35,6 +36,6 @@ class StructuredFormatter(logging.Formatter):
         if not extras:
             return base
         ctx = " ".join(
-            f'{k}="{v}"' if " " in str(v) else f"{k}={v}" for k, v in extras.items()
+            f"{k}={json.dumps(v)}" if isinstance(v, str) else f"{k}={v}" for k, v in extras.items()
         )
         return f"{base} | {ctx}"

@@ -84,7 +84,7 @@ async def register(
     try:
         auth.register(username, password, admin.team_name)
     except ValueError as e:
-        logger.warning("Registration failed", extra={"username": username, "error": str(e)})
+        logger.warning("Registration failed", extra={"error": str(e)})
         return _render_error("Registration failed. Please try a different username.")
 
     return templates.TemplateResponse(

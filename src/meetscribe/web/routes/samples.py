@@ -1,7 +1,7 @@
 """Sample management routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
 from ..deps import get_current_user, get_session_for_user
@@ -113,7 +113,7 @@ async def delete_sample(
 @router.get("/{session_id}/samples-view", response_class=HTMLResponse)
 async def get_samples_view(
     request: Request, session_id: str, user: AuthUser = Depends(get_current_user)
-) -> HTMLResponse:
+) -> Response:
     """Get HTML view of samples organized by speaker."""
     state = get_session_for_user(session_id, user)
 

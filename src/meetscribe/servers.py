@@ -146,8 +146,17 @@ def load_config(config_path: Path) -> AppConfig:
 
     if not data:
         raise ConfigurationError(f"Empty config file: {config_path}")
+    if not isinstance(data, dict):
+        raise ConfigurationError(f"Config root must be a mapping, got {type(data).__name__}")
 
-    servers = [ServerInfo(url=s["url"], name=s["name"]) for s in data.get("servers", [])]
+    for section in ("servers", "vad", "embeddings", "transcription", "web"):
+        if section in data and not isinstance(data[section], (dict, list)):
+            raise ConfigurationError(f"Config section '{section}' must be a mapping")
+
+    servers_raw = data.get("servers", [])
+    if not isinstance(servers_raw, list):
+        raise ConfigurationError("Config section 'servers' must be a list")
+    servers = [ServerInfo(url=s["url"], name=s["name"]) for s in servers_raw]
 
     vad = VadConfig()
     if "vad" in data:

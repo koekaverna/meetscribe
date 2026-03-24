@@ -216,8 +216,8 @@ class Transcriber:
         pbar.close()
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
-        audio_duration_ms = segments[-1].end_ms if segments else 0
-        rtf = elapsed_ms / audio_duration_ms if audio_duration_ms > 0 else 0
+        speech_duration_ms = max((s.end_ms for s in segments), default=0)
+        speech_rtf = elapsed_ms / speech_duration_ms if speech_duration_ms > 0 else 0
         logger.info(
             "Segment transcription completed",
             extra={
@@ -225,9 +225,9 @@ class Transcriber:
                 "segments_in": len(segments),
                 "chunks": len(merged),
                 "segments_out": len(results),
-                "audio_duration_ms": audio_duration_ms,
+                "speech_duration_ms": speech_duration_ms,
                 "elapsed_ms": round(elapsed_ms),
-                "rtf": round(rtf, 2),
+                "speech_rtf": round(speech_rtf, 2),
             },
         )
         return results

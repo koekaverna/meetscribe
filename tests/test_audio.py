@@ -214,6 +214,7 @@ class TestExtractSegment:
 class TestProbeAudioTracksAsync:
     def test_parses_stdout(self):
         mock_proc = AsyncMock()
+        mock_proc.returncode = 0
         mock_proc.communicate.return_value = (b"0\n1\n", b"")
         with patch(
             "meetscribe.pipeline.audio.asyncio.create_subprocess_exec",
@@ -235,6 +236,7 @@ class TestProbeAudioTracksAsync:
 
     def test_empty_output(self):
         mock_proc = AsyncMock()
+        mock_proc.returncode = 0
         mock_proc.communicate.return_value = (b"", b"")
         with patch(
             "meetscribe.pipeline.audio.asyncio.create_subprocess_exec",

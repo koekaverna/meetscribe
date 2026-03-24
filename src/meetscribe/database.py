@@ -62,6 +62,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
 
     current = _get_schema_version(conn)
     if current >= len(migrations):
+        logger.debug("Database schema up to date", extra={"version": current})
         return
 
     for version, path in enumerate(migrations[current:], start=current + 1):
@@ -71,12 +72,15 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
         )
         sql = path.read_text()
         version_sql = (
-            f"INSERT INTO schema_version (id, version) VALUES (1, {version}) "
+            f"INSERT INTO schema_version (id, version) VALUES (1, {version}) "  # nosec B608
             f"ON CONFLICT(id) DO UPDATE SET version = excluded.version;"
         )
         conn.executescript(f"{sql}\n{version_sql}")
 
-    logger.info("Database schema up to date", extra={"version": len(migrations)})
+    logger.info(
+        "Migrations applied",
+        extra={"from_version": current, "to_version": len(migrations)},
+    )
 
 
 def ensure_default_team(conn: sqlite3.Connection) -> None:
@@ -101,7 +105,7 @@ def create_team(conn: sqlite3.Connection, name: str, description: str | None = N
 
 def get_team(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
     """Fetch a team by name."""
-    return conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()  # type: ignore[return-value]
+    return conn.execute("SELECT * FROM teams WHERE name = ?", (name,)).fetchone()  # type: ignore[no-any-return]
 
 
 def list_teams(conn: sqlite3.Connection) -> list[sqlite3.Row]:
@@ -169,7 +173,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
         "SELECT COUNT(*) as cnt FROM voiceprints WHERE team_id = ?",
         (team_id,),
     ).fetchone()
-    return row["cnt"]  # type: ignore[return-value]
+    return row["cnt"]  # type: ignore[no-any-return]
 
 
 # --- User CRUD ---
@@ -193,7 +197,7 @@ def create_user(
 
 def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
     """Fetch a user by username (with team name)."""
-    return conn.execute(  # type: ignore[return-value]
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
         "WHERE u.username = ?",
         (username,),
@@ -202,7 +206,7 @@ def get_user_by_username(conn: sqlite3.Connection, username: str) -> sqlite3.Row
 
 def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
     """Fetch a user by id (with team name)."""
-    return conn.execute(  # type: ignore[return-value]
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT u.*, t.name as team_name FROM users u JOIN teams t ON u.team_id = t.id "
         "WHERE u.id = ?",
         (user_id,),
@@ -240,7 +244,7 @@ def create_auth_session(
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
     """Get auth session with user and team info. Returns None if expired or not found."""
-    return conn.execute(  # type: ignore[return-value]
+    return conn.execute(  # type: ignore[no-any-return]
         "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
         "u.team_id, u.is_admin, t.name as team_name "
         "FROM auth_sessions s "
