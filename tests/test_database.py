@@ -7,6 +7,8 @@ from pathlib import Path
 import pytest
 
 from meetscribe.database import (
+    SCHEMA_VERSION,
+    _get_schema_version,
     _validate_team_name,
     count_voiceprints,
     create_auth_session,
@@ -45,6 +47,56 @@ class TestMigrations:
         assert "voiceprints" in tables1
         conn1.close()
         conn2.close()
+
+    def test_schema_version_set(self, tmp_path: Path):
+        conn = get_db(tmp_path / "test.db")
+        assert _get_schema_version(conn) == SCHEMA_VERSION
+        conn.close()
+
+    def test_schema_version_table_exists(self, tmp_path: Path):
+        conn = get_db(tmp_path / "test.db")
+        tables = {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+        assert "schema_version" in tables
+        conn.close()
+
+    def test_no_rerun_on_current_version(self, tmp_path: Path):
+        db_path = tmp_path / "test.db"
+        conn = get_db(db_path)
+        version_before = _get_schema_version(conn)
+        conn.close()
+        # Re-open — migrations should not re-run
+        conn = get_db(db_path)
+        assert _get_schema_version(conn) == version_before
+        conn.close()
+
+    def test_pre_versioning_db_upgraded(self, tmp_path: Path):
+        """A database created before versioning gets upgraded correctly."""
+        db_path = tmp_path / "legacy.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        # Create tables as old code would (no schema_version)
+        conn.executescript("""
+            CREATE TABLE teams (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                description TEXT
+            );
+            INSERT INTO teams (name, description) VALUES ('default', 'Default team');
+        """)
+        conn.commit()
+        assert _get_schema_version(conn) == 0
+        conn.close()
+        # Now open with versioned get_db
+        conn = get_db(db_path)
+        assert _get_schema_version(conn) == SCHEMA_VERSION
+        # Old data preserved
+        team = conn.execute("SELECT * FROM teams WHERE name = 'default'").fetchone()
+        assert team is not None
+        conn.close()
 
 
 class TestValidateTeamName:
