@@ -24,6 +24,17 @@ _BUILTIN_ATTRS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None, None)._
 }
 
 
+def apply_log_level(level: str) -> None:
+    """Apply log level to the root logger and file handler."""
+    numeric = getattr(logging, level, None)
+    if not isinstance(numeric, int):
+        numeric = logging.DEBUG
+    logging.getLogger().setLevel(numeric)
+    for handler in logging.getLogger().handlers:
+        if isinstance(handler, logging.FileHandler):
+            handler.setLevel(numeric)
+
+
 class StructuredFormatter(logging.Formatter):
     """Formatter that appends extra fields as key=value pairs.
 
@@ -36,6 +47,7 @@ class StructuredFormatter(logging.Formatter):
         if not extras:
             return base
         ctx = " ".join(
-            f"{k}={json.dumps(v)}" if isinstance(v, str) else f"{k}={v}" for k, v in extras.items()
+            f"{k}={json.dumps(v, ensure_ascii=False)}" if isinstance(v, str) else f"{k}={v}"
+            for k, v in extras.items()
         )
         return f"{base} | {ctx}"

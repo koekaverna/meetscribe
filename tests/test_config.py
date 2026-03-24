@@ -1,12 +1,11 @@
-"""Tests for servers.py — config loading, validation, defaults matching config.yaml."""
+"""Tests for config.py — config loading, validation, defaults matching config.yaml."""
 
 from pathlib import Path
 
 import pytest
 import yaml
 
-from meetscribe.errors import ConfigurationError
-from meetscribe.servers import (
+from meetscribe.config import (
     AppConfig,
     EmbeddingsConfig,
     ServerInfo,
@@ -15,6 +14,7 @@ from meetscribe.servers import (
     WebConfig,
     load_config,
 )
+from meetscribe.errors import ConfigurationError
 
 
 def _write_yaml(path: Path, data: dict) -> Path:

@@ -34,14 +34,11 @@ def session_env(tmp_path: Path):
     )
 
     conn = get_db(db_path)
-    conn.close()
 
-    with (
-        patch("meetscribe.web.services.session.config.DB_PATH", db_path),
-        patch("meetscribe.web.services.session.config.CONFIG_FILE", config_file),
-    ):
-        svc = SessionService(sessions_dir=sessions_dir)
+    with patch("meetscribe.web.services.session.config.CONFIG_FILE", config_file):
+        svc = SessionService(conn, sessions_dir=sessions_dir)
         yield svc, tmp_path
+        conn.close()
 
 
 class TestLifecycle:

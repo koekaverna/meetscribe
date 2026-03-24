@@ -123,6 +123,13 @@ transcription:
   max_chunk_ms: 30000
 
 # -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+# Log level for file handler. Console always logs ERROR and above.
+# Options: DEBUG, INFO, WARNING, ERROR
+log_level: INFO
+
+# -----------------------------------------------------------------------------
 # Web UI
 # -----------------------------------------------------------------------------
 # Built-in web interface settings (FastAPI + Uvicorn).

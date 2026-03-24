@@ -1,6 +1,8 @@
 """FastAPI application for MeetScribe Web UI."""
 
 import secrets
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -9,10 +11,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import RequestResponseEndpoint
 
+from meetscribe import config
+from meetscribe.config import get_config
+from meetscribe.database import get_db
+from meetscribe.log import apply_log_level
+
 from .deps import get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
-from .services.auth import get_secure_cookies
+from .services.auth import get_secure_cookies, init_auth_service
+from .services.session import init_session_service
 
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
@@ -28,10 +36,25 @@ PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    # Apply log level from config
+    apply_log_level(get_config().log_level)
+
+    # Single DB connection for the app lifetime
+    conn = get_db(config.DB_PATH)
+    init_auth_service(conn)
+    init_session_service(conn)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
+        yield
+        shutdown_threads()
+        conn.close()
+
     app = FastAPI(
         title="MeetScribe",
         description="Meeting transcription with speaker diarization",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     # Mount static files
@@ -178,10 +201,6 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    @app.on_event("shutdown")
-    async def on_shutdown() -> None:
-        shutdown_threads()
-
     return app
 
 
@@ -200,7 +219,8 @@ def run(host: str = "127.0.0.1", port: int = 8080) -> None:  # defaults for dire
     app = create_app()
     print("\n  MeetScribe Web UI")
     print(f"  http://{host}:{port}\n")
-    uvicorn.run(app, host=host, port=port)
+    # Disable uvicorn's own log config so it inherits our root logger setup
+    uvicorn.run(app, host=host, port=port, log_config=None)
 
 
 if __name__ == "__main__":

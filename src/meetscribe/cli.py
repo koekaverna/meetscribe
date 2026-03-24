@@ -36,6 +36,7 @@ from pathlib import Path
 import colorama
 
 from . import config
+from .config import AppConfig, get_config
 from .database import (
     count_voiceprints,
     create_team,
@@ -50,7 +51,6 @@ from .database import (
     save_voiceprint,
 )
 from .log import StructuredFormatter
-from .servers import AppConfig, load_config
 from .team import TeamContext, resolve_team
 
 # Enable ANSI colors on Windows
@@ -270,7 +270,7 @@ def cmd_enroll(args: argparse.Namespace, team_ctx: TeamContext) -> None:
             raise FileNotFoundError(f"File not found: {f}")
 
     # Load config
-    cfg = load_config(config.CONFIG_FILE)
+    cfg = get_config()
 
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \U0001f399\ufe0f  {C_BOLD}Speaker Enrollment{C_RESET}")
@@ -416,7 +416,7 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
     track_names = parse_track_args(extra_args)
 
     # Load config
-    cfg = load_config(config.CONFIG_FILE)
+    cfg = get_config()
     language = args.language or cfg.transcription.language
 
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -565,7 +565,7 @@ def cmd_extract_samples(args: argparse.Namespace, team_ctx: TeamContext) -> None
         raise FileNotFoundError(f"Video not found: {video_path}")
 
     # Load config
-    cfg = load_config(config.CONFIG_FILE)
+    cfg = get_config()
 
     date_str = datetime.now().strftime("%Y-%m-%d")
 
@@ -657,7 +657,7 @@ def cmd_web(args: argparse.Namespace) -> None:
             f'  Install with: pip install -e ".[web]"\n'
         )
         raise SystemExit(1)
-    cfg = load_config(config.CONFIG_FILE)
+    cfg = get_config()
     host = args.host or cfg.web.host
     port = args.port or cfg.web.port
     run(host=host, port=port)
@@ -895,6 +895,15 @@ def main() -> None:
     p.set_defaults(func=cmd_user_delete)
 
     args, extra = parser.parse_known_args()
+
+    # Apply log level from config (if config exists)
+    if config.CONFIG_FILE.exists():
+        try:
+            from .log import apply_log_level
+
+            apply_log_level(get_config().log_level)
+        except Exception:  # nosec B110
+            pass  # config errors will be caught later by the command
 
     # Commands that don't need team context
     NO_TEAM_COMMANDS = {
