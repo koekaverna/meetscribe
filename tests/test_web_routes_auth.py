@@ -1,0 +1,108 @@
+"""Tests for auth routes: login, register, logout."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from .conftest_web import *  # noqa: F401, F403 — import web fixtures
+
+
+def _csrf_headers_and_data(client: TestClient) -> tuple[dict, str]:
+    """Get CSRF token from cookie after a GET request."""
+    client.get("/login")  # triggers CSRF cookie
+    token = client.cookies.get("meetscribe_csrf", "")
+    return {}, token
+
+
+class TestLoginRoute:
+    def test_login_success(self, client: TestClient, regular_user) -> None:
+        _, csrf_token = _csrf_headers_and_data(client)
+        resp = client.post(
+            "/auth/login",
+            data={"username": "regular", "password": "userpass1234", "csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
+        assert "meetscribe_session" in resp.cookies
+
+    def test_login_wrong_password(self, client: TestClient, regular_user) -> None:
+        _, csrf_token = _csrf_headers_and_data(client)
+        resp = client.post(
+            "/auth/login",
+            data={"username": "regular", "password": "wrong", "csrf_token": csrf_token},
+        )
+        assert resp.status_code == 400
+
+    def test_login_missing_csrf_rejected(self, client: TestClient, regular_user) -> None:
+        resp = client.post(
+            "/auth/login",
+            data={"username": "regular", "password": "userpass1234", "csrf_token": "bad"},
+        )
+        # No CSRF cookie set, so cookie won't match
+        assert resp.status_code == 403
+
+
+class TestRegisterRoute:
+    def test_register_by_admin(self, admin_client: TestClient) -> None:
+        _, csrf_token = _csrf_headers_and_data(admin_client)
+        resp = admin_client.post(
+            "/auth/register",
+            data={
+                "username": "newuser",
+                "password": "newpass1234",
+                "password_confirm": "newpass1234",
+                "csrf_token": csrf_token,
+            },
+        )
+        assert resp.status_code == 200
+
+    def test_register_password_mismatch(self, admin_client: TestClient) -> None:
+        _, csrf_token = _csrf_headers_and_data(admin_client)
+        resp = admin_client.post(
+            "/auth/register",
+            data={
+                "username": "newuser",
+                "password": "pass1234",
+                "password_confirm": "different",
+                "csrf_token": csrf_token,
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_register_short_password(self, admin_client: TestClient) -> None:
+        _, csrf_token = _csrf_headers_and_data(admin_client)
+        resp = admin_client.post(
+            "/auth/register",
+            data={
+                "username": "newuser",
+                "password": "short",
+                "password_confirm": "short",
+                "csrf_token": csrf_token,
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_register_non_admin_rejected(self, auth_client: TestClient) -> None:
+        _, csrf_token = _csrf_headers_and_data(auth_client)
+        resp = auth_client.post(
+            "/auth/register",
+            data={
+                "username": "newuser",
+                "password": "pass12345",
+                "password_confirm": "pass12345",
+                "csrf_token": csrf_token,
+            },
+        )
+        assert resp.status_code == 400
+
+
+class TestLogoutRoute:
+    def test_logout_clears_session(self, auth_client: TestClient) -> None:
+        _, csrf_token = _csrf_headers_and_data(auth_client)
+        resp = auth_client.post(
+            "/auth/logout",
+            data={"csrf_token": csrf_token},
+            follow_redirects=False,
+        )
+        assert resp.status_code == 303
+        assert "/login" in resp.headers["location"]
