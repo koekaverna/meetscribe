@@ -2,31 +2,9 @@
 
 import io
 
-import pytest
 from fastapi.testclient import TestClient
 
 from meetscribe.web.services.session import get_session_service
-
-from .conftest_web import *  # noqa: F401, F403 — import web fixtures
-
-
-@pytest.fixture
-def session_id(auth_client: TestClient) -> str:
-    return auth_client.post("/api/session").json()["session_id"]
-
-
-@pytest.fixture
-def wav_upload_bytes() -> bytes:
-    """Minimal valid WAV for upload tests."""
-    import wave
-
-    buf = io.BytesIO()
-    with wave.open(buf, "wb") as wf:
-        wf.setnchannels(1)
-        wf.setsampwidth(2)
-        wf.setframerate(16000)
-        wf.writeframes(b"\x00\x00" * 16000)
-    return buf.getvalue()
 
 
 class TestTrackUpload:
@@ -42,6 +20,12 @@ class TestTrackUpload:
         assert len(data) == 1
         assert data[0]["track_num"] == 1
         assert data[0]["filename"] == "test.wav"
+
+        # Verify file actually exists on disk
+        service = get_session_service()
+        path = service.get_track_path(session_id, 1)
+        assert path is not None
+        assert path.stat().st_size > 0
 
     def test_upload_unsupported_format(
         self, auth_client: TestClient, session_id: str
@@ -59,6 +43,16 @@ class TestTrackUpload:
         )
         assert resp.status_code == 404
 
+    def test_upload_updates_session_status(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        auth_client.post(
+            f"/api/session/{session_id}/tracks",
+            files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
+        )
+        state = auth_client.get(f"/api/session/{session_id}").json()
+        assert state["status"] == "uploaded"
+
 
 class TestTrackList:
     def test_list_tracks_empty(self, auth_client: TestClient, session_id: str) -> None:
@@ -75,7 +69,9 @@ class TestTrackList:
         )
         resp = auth_client.get(f"/api/session/{session_id}/tracks")
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
+        tracks = resp.json()
+        assert len(tracks) == 1
+        assert tracks[0]["filename"] == "a.wav"
 
 
 class TestTrackOperations:
@@ -100,7 +96,7 @@ class TestTrackOperations:
         resp = auth_client.get(f"/api/session/{session_id}/tracks/999/audio")
         assert resp.status_code == 404
 
-    def test_update_track(
+    def test_update_track_persists_config(
         self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
     ) -> None:
         track_num = self._upload_track(auth_client, session_id, wav_upload_bytes)
@@ -109,6 +105,12 @@ class TestTrackOperations:
             params={"speaker_name": "Host", "diarize": False},
         )
         assert resp.status_code == 200
+
+        # Verify config persisted
+        state = auth_client.get(f"/api/session/{session_id}").json()
+        track = [t for t in state["tracks"] if t["track_num"] == track_num][0]
+        assert track["speaker_name"] == "Host"
+        assert track["diarize"] is False
 
     def test_update_nonexistent_track(
         self, auth_client: TestClient, session_id: str
@@ -119,12 +121,24 @@ class TestTrackOperations:
         )
         assert resp.status_code == 404
 
-    def test_delete_track(
+    def test_delete_track_removes_file(
         self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
     ) -> None:
         track_num = self._upload_track(auth_client, session_id, wav_upload_bytes)
+
+        # Verify file exists
+        service = get_session_service()
+        assert service.get_track_path(session_id, track_num) is not None
+
         resp = auth_client.delete(f"/api/session/{session_id}/tracks/{track_num}")
         assert resp.status_code == 200
+
+        # Verify file is gone
+        assert service.get_track_path(session_id, track_num) is None
+
+        # Verify track is gone from session
+        state = auth_client.get(f"/api/session/{session_id}").json()
+        assert len(state["tracks"]) == 0
 
     def test_delete_nonexistent_track(
         self, auth_client: TestClient, session_id: str

@@ -1,9 +1,6 @@
 """Tests for FastAPI app: middleware, CSRF, auth, health, and page routes."""
 
-import pytest
 from fastapi.testclient import TestClient
-
-from .conftest_web import *  # noqa: F401, F403 — import web fixtures
 
 
 class TestHealthEndpoint:
@@ -37,6 +34,12 @@ class TestCSRFMiddleware:
         client.get("/login")
         assert "meetscribe_csrf" in client.cookies
 
+    def test_csrf_cookie_is_64_hex_chars(self, client: TestClient) -> None:
+        client.get("/login")
+        token = client.cookies["meetscribe_csrf"]
+        assert len(token) == 64
+        int(token, 16)  # validates hex format
+
 
 class TestPageRoutes:
     def test_login_page_renders(self, client: TestClient) -> None:
@@ -61,7 +64,7 @@ class TestPageRoutes:
     def test_step_pages(self, auth_client: TestClient) -> None:
         for step in range(1, 7):
             resp = auth_client.get(f"/step/{step}")
-            assert resp.status_code == 200
+            assert resp.status_code == 200, f"step {step} failed"
 
     def test_index_page(self, auth_client: TestClient) -> None:
         resp = auth_client.get("/")

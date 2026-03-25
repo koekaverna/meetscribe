@@ -1,6 +1,8 @@
 """Shared fixtures for web/route tests using FastAPI TestClient."""
 
+import io
 import sqlite3
+import wave
 from collections.abc import Generator
 from pathlib import Path
 from unittest.mock import patch
@@ -17,25 +19,19 @@ from meetscribe.web.services.auth import AuthService, AuthUser, init_auth_servic
 from meetscribe.web.services.session import SessionService
 
 
-def _setup_config() -> tuple:
-    """Set default configs and return old values for teardown."""
-    old_web = auth_mod._web_cfg
-    old_app = config_mod._app_config
-    auth_mod._web_cfg = WebConfig()
-    config_mod._app_config = AppConfig()
-    return old_web, old_app
-
-
-def _teardown_config(old: tuple) -> None:
-    old_web, old_app = old
-    auth_mod._web_cfg = old_web
-    config_mod._app_config = old_app
-
-
 @pytest.fixture
 def web_db(tmp_path: Path) -> Generator[sqlite3.Connection, None, None]:
-    """Database connection for web tests with config patching."""
-    old = _setup_config()
+    """Database connection for web tests with config patching and singleton cleanup."""
+    # Save old singletons
+    old_web_cfg = auth_mod._web_cfg
+    old_app_cfg = config_mod._app_config
+    old_auth_svc = auth_mod._auth_service
+    old_session_svc = session_mod._session_service
+
+    # Set default configs so tests don't need config.yaml
+    auth_mod._web_cfg = WebConfig()
+    config_mod._app_config = AppConfig()
+
     # Use get_db for migrations, then reopen with check_same_thread=False
     # because TestClient runs requests in a different thread
     db_path = tmp_path / "web_test.db"
@@ -44,9 +40,16 @@ def web_db(tmp_path: Path) -> Generator[sqlite3.Connection, None, None]:
     conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+
     yield conn
+
     conn.close()
-    _teardown_config(old)
+
+    # Restore all singletons
+    auth_mod._web_cfg = old_web_cfg
+    config_mod._app_config = old_app_cfg
+    auth_mod._auth_service = old_auth_svc
+    session_mod._session_service = old_session_svc
 
 
 @pytest.fixture
@@ -106,3 +109,21 @@ def admin_client(client: TestClient, admin_user: tuple[AuthUser, str]) -> TestCl
     _, token = admin_user
     client.cookies.set("meetscribe_session", token)
     return client
+
+
+@pytest.fixture
+def session_id(auth_client: TestClient) -> str:
+    """Create a session and return its ID."""
+    return auth_client.post("/api/session").json()["session_id"]
+
+
+@pytest.fixture
+def wav_upload_bytes() -> bytes:
+    """1-second 16kHz mono WAV (silence) for upload tests."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(16000)
+        wf.writeframes(b"\x00\x00" * 16000)
+    return buf.getvalue()

@@ -1,7 +1,7 @@
 """Tests for FastAPI dependencies: CSRF validation and auth extraction."""
 
 import sqlite3
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
