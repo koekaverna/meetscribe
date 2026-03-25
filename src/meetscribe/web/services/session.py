@@ -375,6 +375,7 @@ class SessionService:
             (session_id, sample_id),
         )
         if cursor.rowcount == 0:
+            self.conn.rollback()
             return False
         self.conn.commit()
 
