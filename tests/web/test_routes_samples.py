@@ -11,8 +11,12 @@ def sample_id(session_id: str) -> str:
     """Create a sample via service and return its ID."""
     service = get_session_service()
     sample = service.add_sample(
-        session_id, track_num=1, cluster_id=0,
-        filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
+        session_id,
+        track_num=1,
+        cluster_id=0,
+        filename="test.wav",
+        duration_ms=1000,
+        content=b"\x00" * 100,
     )
     return sample.id
 
@@ -29,7 +33,8 @@ class TestSpeakerCreate:
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.post(
-            f"/api/session/{session_id}/speakers", json={"name": "Alice"},
+            f"/api/session/{session_id}/speakers",
+            json={"name": "Alice"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -56,7 +61,8 @@ class TestSpeakerRename:
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.patch(
-            f"/api/session/{session_id}/speakers/nope", json={"name": "Bob"},
+            f"/api/session/{session_id}/speakers/nope",
+            json={"name": "Bob"},
         )
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -80,18 +86,14 @@ class TestSpeakerDelete:
 
 
 class TestSampleList:
-    def test_new_session_returns_empty_list(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_new_session_returns_empty_list(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/samples")
         assert resp.status_code == 200
         assert resp.json() == []
 
 
 class TestSampleAudio:
-    def test_nonexistent_sample_returns_404(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_nonexistent_sample_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/samples/nope/audio")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -147,8 +149,6 @@ class TestSampleDelete:
 
         assert service.get_sample_path(session_id, sample_id) is None
 
-    def test_nonexistent_sample_returns_404(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_nonexistent_sample_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.delete(f"/api/session/{session_id}/samples/nope")
         assert resp.status_code == 404

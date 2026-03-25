@@ -9,7 +9,6 @@ import pytest
 from meetscribe.database import get_db
 from meetscribe.web.models import SessionStatus
 from meetscribe.web.services.session import SessionService
-
 from tests.conftest import make_wav_file
 
 

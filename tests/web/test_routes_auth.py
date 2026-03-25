@@ -91,9 +91,7 @@ class TestRegister:
         )
         assert resp.status_code == 400
 
-    def test_non_admin_cannot_register_users(
-        self, auth_client: TestClient, web_db
-    ) -> None:
+    def test_non_admin_cannot_register_users(self, auth_client: TestClient, web_db) -> None:
         csrf_token = _get_csrf_token(auth_client)
         resp = auth_client.post(
             "/auth/register",

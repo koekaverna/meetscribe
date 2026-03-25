@@ -29,8 +29,13 @@ class TestApplyLogLevel:
 class TestStructuredFormatter:
     def _make_record(self, msg: str, **extras) -> logging.LogRecord:
         record = logging.LogRecord(
-            name="test", level=logging.INFO, pathname="", lineno=0,
-            msg=msg, args=(), exc_info=None,
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=msg,
+            args=(),
+            exc_info=None,
         )
         for k, v in extras.items():
             setattr(record, k, v)

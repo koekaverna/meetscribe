@@ -10,7 +10,6 @@ import pytest
 from meetscribe.errors import ConfigurationError
 from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
 from meetscribe.pipeline.transcriber import RemoteTranscriber, Transcriber
-
 from tests.conftest import make_wav_file
 
 

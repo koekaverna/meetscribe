@@ -56,13 +56,16 @@ class TestPasswordHashing:
         assert verify_password("same", h1)
         assert verify_password("same", h2)
 
-    @pytest.mark.parametrize("malformed_hash", [
-        "garbage",
-        "a$b",
-        "a$b$c$d",
-        "",
-        "pbkdf2:sha256:100$ZZZZ$abcd",
-    ])
+    @pytest.mark.parametrize(
+        "malformed_hash",
+        [
+            "garbage",
+            "a$b",
+            "a$b$c$d",
+            "",
+            "pbkdf2:sha256:100$ZZZZ$abcd",
+        ],
+    )
     def test_malformed_hash_returns_false(self, malformed_hash: str) -> None:
         assert not verify_password("x", malformed_hash)
 

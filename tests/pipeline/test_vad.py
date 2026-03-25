@@ -8,7 +8,6 @@ import pytest
 
 from meetscribe.errors import SpeachesAPIError
 from meetscribe.pipeline.vad import VoiceActivityDetector
-
 from tests.conftest import make_wav_file
 
 

@@ -94,9 +94,7 @@ class TestAudio:
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "audio/wav"
 
-    def test_nonexistent_track_returns_404(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_nonexistent_track_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/tracks/999/audio")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
@@ -117,9 +115,7 @@ class TestUpdate:
         assert track["speaker_name"] == "Host"
         assert track["diarize"] is False
 
-    def test_nonexistent_track_returns_404(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_nonexistent_track_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.patch(
             f"/api/session/{session_id}/tracks/999",
             params={"speaker_name": "Host", "diarize": False},
@@ -141,8 +137,6 @@ class TestDelete:
         state = auth_client.get(f"/api/session/{session_id}").json()
         assert len(state["tracks"]) == 0
 
-    def test_nonexistent_track_returns_404(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
+    def test_nonexistent_track_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.delete(f"/api/session/{session_id}/tracks/999")
         assert resp.status_code == 404

@@ -36,18 +36,14 @@ class TestGetSession:
 
 
 class TestDeleteSession:
-    def test_removes_session_from_db_and_api(
-        self, auth_client: TestClient, web_db
-    ) -> None:
+    def test_removes_session_from_db_and_api(self, auth_client: TestClient, web_db) -> None:
         session_id = auth_client.post("/api/session").json()["session_id"]
 
         resp = auth_client.delete(f"/api/session/{session_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "deleted"
 
-        row = web_db.execute(
-            "SELECT id FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+        row = web_db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
         assert row is None
 
         resp = auth_client.get(f"/api/session/{session_id}")
@@ -70,9 +66,7 @@ class TestTeamIsolation:
         client.cookies.set("meetscribe_session", other_token)
         return client.post("/api/session").json()["session_id"]
 
-    def _switch_to_default_team(
-        self, client: TestClient, web_auth_service: AuthService
-    ) -> None:
+    def _switch_to_default_team(self, client: TestClient, web_auth_service: AuthService) -> None:
         """Helper: switch client to a user from 'default' team."""
         _, token = web_auth_service.register("default_user", "password123", "default")
         client.cookies.set("meetscribe_session", token)

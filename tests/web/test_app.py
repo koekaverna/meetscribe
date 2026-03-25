@@ -43,9 +43,7 @@ class TestPageRoutes:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
 
-    def test_login_page_redirects_authenticated_user_to_home(
-        self, auth_client: TestClient
-    ) -> None:
+    def test_login_page_redirects_authenticated_user_to_home(self, auth_client: TestClient) -> None:
         resp = auth_client.get("/login", follow_redirects=False)
         assert resp.status_code == 303
         assert resp.headers["location"] == "/"
