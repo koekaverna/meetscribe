@@ -85,13 +85,14 @@ async def move_sample(
     speaker_name = None
     if data.speaker_id:
         state = service.get(session_id)
-        if state:
-            for speaker in state.speakers:
-                if speaker.id == data.speaker_id:
-                    speaker_name = speaker.name
-                    break
-            else:
-                raise HTTPException(status_code=404, detail="Speaker not found in this session")
+        if not state:
+            raise HTTPException(status_code=404, detail="Session not found")
+        for speaker in state.speakers:
+            if speaker.id == data.speaker_id:
+                speaker_name = speaker.name
+                break
+        else:
+            raise HTTPException(status_code=404, detail="Speaker not found in this session")
 
     if not service.move_sample(session_id, sample_id, data.speaker_id, speaker_name):
         raise HTTPException(status_code=404, detail="Sample not found")

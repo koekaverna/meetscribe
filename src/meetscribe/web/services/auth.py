@@ -77,7 +77,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         expected = bytes.fromhex(hash_hex)
         dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
         return hmac.compare_digest(dk, expected)
-    except Exception:
+    except (ValueError, KeyError):
         return False
 
 

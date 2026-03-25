@@ -16,13 +16,12 @@ from meetscribe.config import get_config
 from meetscribe.database import get_db
 from meetscribe.log import apply_log_level
 
-from .deps import get_current_user, get_current_user_or_none
+from .deps import CSRF_COOKIE_NAME, get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
 from .services.auth import get_secure_cookies, init_auth_service
 from .services.session import init_session_service
 
-CSRF_COOKIE_NAME = "meetscribe_csrf"
 CSRF_FORM_FIELD = "csrf_token"
 
 # Package directories

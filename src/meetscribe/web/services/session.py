@@ -374,9 +374,9 @@ class SessionService:
             "DELETE FROM session_samples WHERE session_id = ? AND id = ?",
             (session_id, sample_id),
         )
-        self.conn.commit()
         if cursor.rowcount == 0:
             return False
+        self.conn.commit()
 
         sample_path = self._samples_dir(session_id) / f"{sample_id}.wav"
         sample_path.unlink(missing_ok=True)
