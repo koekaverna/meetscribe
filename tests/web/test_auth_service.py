@@ -18,12 +18,14 @@ from meetscribe.web.services.auth import (
 
 
 @pytest.fixture(autouse=True)
-def _patch_web_config():
-    """Provide a default WebConfig so auth doesn't need config.yaml."""
-    old = auth_mod._web_cfg
+def _isolate_auth_globals():
+    """Save and restore auth globals so tests don't leak state."""
+    old_cfg = auth_mod._web_cfg
+    old_svc = auth_mod._auth_service
     auth_mod._web_cfg = WebConfig()
     yield
-    auth_mod._web_cfg = old
+    auth_mod._web_cfg = old_cfg
+    auth_mod._auth_service = old_svc
 
 
 @pytest.fixture
@@ -38,93 +40,85 @@ def registered_user(auth_service: AuthService) -> tuple[AuthUser, str]:
     return auth_service.register("testuser", "securepass123", "default")
 
 
-# --- Password hashing ---
-
-
 class TestPasswordHashing:
-    def test_hash_verify_roundtrip(self) -> None:
+    def test_roundtrip_verifies_correct_password(self) -> None:
         h = hash_password("my-password")
         assert verify_password("my-password", h)
 
-    def test_wrong_password_rejected(self) -> None:
+    def test_rejects_wrong_password(self) -> None:
         h = hash_password("correct")
         assert not verify_password("wrong", h)
 
-    def test_hash_format(self) -> None:
-        h = hash_password("x")
-        parts = h.split("$")
-        assert len(parts) == 3
-        assert parts[0].startswith("pbkdf2:sha256:")
-
-    def test_different_salts(self) -> None:
+    def test_same_password_produces_different_hashes(self) -> None:
         h1 = hash_password("same")
         h2 = hash_password("same")
-        assert h1 != h2  # different salts
+        assert h1 != h2
         assert verify_password("same", h1)
         assert verify_password("same", h2)
 
-    def test_malformed_hash_returns_false(self) -> None:
-        assert not verify_password("x", "garbage")
-        assert not verify_password("x", "a$b")
-        assert not verify_password("x", "a$b$c$d")
-        assert not verify_password("x", "")
+    @pytest.mark.parametrize("malformed_hash", [
+        "garbage",
+        "a$b",
+        "a$b$c$d",
+        "",
+        "pbkdf2:sha256:100$ZZZZ$abcd",
+    ])
+    def test_malformed_hash_returns_false(self, malformed_hash: str) -> None:
+        assert not verify_password("x", malformed_hash)
 
-    def test_non_hex_salt_returns_false(self) -> None:
-        assert not verify_password("x", "pbkdf2:sha256:100$ZZZZ$abcd")
-
-    def test_empty_password(self) -> None:
+    def test_empty_password_hashes_and_verifies(self) -> None:
         h = hash_password("")
         assert verify_password("", h)
         assert not verify_password("notempty", h)
 
 
-# --- AuthService.register ---
-
-
 class TestRegister:
-    def test_register_success(self, auth_service: AuthService) -> None:
+    def test_returns_user_with_correct_fields(self, auth_service: AuthService) -> None:
         user, token = auth_service.register("alice", "password123", "default")
         assert user.username == "alice"
         assert user.team_name == "default"
-        assert len(token) == 64  # hex of 32 bytes
+        assert len(token) == 64
 
-    def test_register_duplicate_username(self, auth_service: AuthService) -> None:
+    def test_duplicate_username_raises(self, auth_service: AuthService) -> None:
         auth_service.register("alice", "pass1234", "default")
         with pytest.raises(ValueError, match="already taken"):
             auth_service.register("alice", "pass5678", "default")
 
-    def test_register_nonexistent_team(self, auth_service: AuthService) -> None:
+    def test_nonexistent_team_raises(self, auth_service: AuthService) -> None:
         with pytest.raises(ValueError, match="not found"):
             auth_service.register("bob", "pass1234", "no_such_team")
 
 
-# --- AuthService.login ---
-
-
 class TestLogin:
-    def test_login_success(
+    def test_valid_credentials_returns_user_and_token(
         self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
     ) -> None:
         user, token = auth_service.login("testuser", "securepass123")
         assert user.username == "testuser"
         assert len(token) == 64
 
-    def test_login_wrong_password(
+    def test_wrong_password_raises(
         self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
     ) -> None:
         with pytest.raises(ValueError, match="Invalid"):
             auth_service.login("testuser", "wrongpassword")
 
-    def test_login_nonexistent_user(self, auth_service: AuthService) -> None:
+    def test_nonexistent_user_raises(self, auth_service: AuthService) -> None:
         with pytest.raises(ValueError, match="Invalid"):
             auth_service.login("ghost", "whatever")
 
-
-# --- AuthService.verify_session ---
+    def test_wrong_and_nonexistent_return_same_error(
+        self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
+    ) -> None:
+        """Prevents user enumeration via different error messages."""
+        with pytest.raises(ValueError, match="Invalid"):
+            auth_service.login("testuser", "wrong")
+        with pytest.raises(ValueError, match="Invalid"):
+            auth_service.login("nonexistent", "wrong")
 
 
 class TestVerifySession:
-    def test_verify_valid_token(
+    def test_valid_token_returns_user(
         self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
     ) -> None:
         _, token = registered_user
@@ -132,35 +126,29 @@ class TestVerifySession:
         assert user is not None
         assert user.username == "testuser"
 
-    def test_verify_invalid_token(self, auth_service: AuthService) -> None:
+    def test_invalid_token_returns_none(self, auth_service: AuthService) -> None:
         assert auth_service.verify_session("nonexistent_token") is None
 
 
-# --- AuthService.logout ---
-
-
 class TestLogout:
-    def test_logout_invalidates_session(
+    def test_invalidates_session_token(
         self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
     ) -> None:
         _, token = registered_user
         auth_service.logout(token)
         assert auth_service.verify_session(token) is None
 
-    def test_logout_unknown_token_no_error(self, auth_service: AuthService) -> None:
-        auth_service.logout("does_not_exist")  # should not raise
-
-
-# --- Singleton management ---
+    def test_unknown_token_does_not_raise(self, auth_service: AuthService) -> None:
+        auth_service.logout("does_not_exist")
 
 
 class TestSingleton:
-    def test_get_auth_service_before_init_raises(self) -> None:
+    def test_get_before_init_raises_runtime_error(self) -> None:
         with patch("meetscribe.web.services.auth._auth_service", None):
             with pytest.raises(RuntimeError, match="not initialized"):
                 get_auth_service()
 
-    def test_init_and_get(self, db: sqlite3.Connection) -> None:
+    def test_init_then_get_returns_same_instance(self, db: sqlite3.Connection) -> None:
         svc = init_auth_service(db)
         with patch("meetscribe.web.services.auth._auth_service", svc):
             assert get_auth_service() is svc

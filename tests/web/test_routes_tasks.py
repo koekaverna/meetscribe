@@ -7,83 +7,83 @@ from fastapi.testclient import TestClient
 from meetscribe.web.services.session import get_session_service
 
 
+def _upload_track(auth_client: TestClient, session_id: str, wav_upload_bytes: bytes) -> None:
+    """Helper: upload a WAV track to the session."""
+    auth_client.post(
+        f"/api/session/{session_id}/tracks",
+        files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
+    )
+
+
 class TestExtraction:
-    def test_start_extraction_no_tracks(
+    def test_without_tracks_returns_400(
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.post(f"/api/session/{session_id}/extract")
         assert resp.status_code == 400
         assert "No tracks" in resp.json()["detail"]
 
-    def test_start_extraction_with_tracks(
+    def test_with_tracks_returns_started(
         self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
     ) -> None:
-        auth_client.post(
-            f"/api/session/{session_id}/tracks",
-            files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
-        )
+        _upload_track(auth_client, session_id, wav_upload_bytes)
         resp = auth_client.post(f"/api/session/{session_id}/extract")
         assert resp.status_code == 200
         assert resp.json()["status"] == "started"
 
 
 class TestEnrollment:
-    def test_start_enrollment_no_speakers(
+    def test_without_speakers_returns_400(
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.post(f"/api/session/{session_id}/enroll")
         assert resp.status_code == 400
         assert "No speakers" in resp.json()["detail"]
 
-    def test_start_enrollment_with_speakers(
+    def test_with_speakers_returns_started(
         self, auth_client: TestClient, session_id: str
     ) -> None:
-        auth_client.post(
-            f"/api/session/{session_id}/speakers", json={"name": "Alice"}
-        )
+        auth_client.post(f"/api/session/{session_id}/speakers", json={"name": "Alice"})
         resp = auth_client.post(f"/api/session/{session_id}/enroll")
         assert resp.status_code == 200
         assert resp.json()["status"] == "started"
 
 
 class TestTranscription:
-    def test_start_transcription_no_tracks(
+    def test_without_tracks_returns_400(
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.post(
             f"/api/session/{session_id}/transcribe", json={"language": "en"}
         )
         assert resp.status_code == 400
+        assert "No tracks" in resp.json()["detail"]
 
-    def test_start_transcription_saves_language(
+    def test_saves_language_option(
         self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
     ) -> None:
-        auth_client.post(
-            f"/api/session/{session_id}/tracks",
-            files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
-        )
+        _upload_track(auth_client, session_id, wav_upload_bytes)
         resp = auth_client.post(
             f"/api/session/{session_id}/transcribe", json={"language": "en"}
         )
         assert resp.status_code == 200
 
-        # Verify language was saved
         state = auth_client.get(f"/api/session/{session_id}").json()
         assert state["language"] == "en"
 
 
 class TestTranscript:
-    def test_get_transcript_not_available(
+    def test_missing_transcript_returns_404(
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/transcript")
         assert resp.status_code == 404
+        assert "not available" in resp.json()["detail"].lower()
 
-    def test_get_transcript_after_set(
+    def test_returns_transcript_after_set(
         self, auth_client: TestClient, session_id: str
     ) -> None:
-        service = get_session_service()
-        service.set_transcript(session_id, "Hello world transcript")
+        get_session_service().set_transcript(session_id, "Hello world")
         resp = auth_client.get(f"/api/session/{session_id}/transcript")
         assert resp.status_code == 200
-        assert resp.json()["transcript"] == "Hello world transcript"
+        assert resp.json()["transcript"] == "Hello world"

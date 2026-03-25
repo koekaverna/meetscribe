@@ -7,12 +7,12 @@ from meetscribe.web.services.auth import get_auth_service
 
 def _get_csrf_token(client: TestClient) -> str:
     """Get CSRF token from cookie after a GET request."""
-    client.get("/login")  # triggers CSRF cookie
+    client.get("/login")
     return client.cookies.get("meetscribe_csrf", "")
 
 
-class TestLoginRoute:
-    def test_login_success(self, client: TestClient, regular_user) -> None:
+class TestLogin:
+    def test_valid_credentials_redirects_to_home(self, client: TestClient, regular_user) -> None:
         csrf_token = _get_csrf_token(client)
         resp = client.post(
             "/auth/login",
@@ -23,7 +23,7 @@ class TestLoginRoute:
         assert resp.headers["location"] == "/"
         assert "meetscribe_session" in resp.cookies
 
-    def test_login_wrong_password(self, client: TestClient, regular_user) -> None:
+    def test_wrong_password_returns_400(self, client: TestClient, regular_user) -> None:
         csrf_token = _get_csrf_token(client)
         resp = client.post(
             "/auth/login",
@@ -31,7 +31,7 @@ class TestLoginRoute:
         )
         assert resp.status_code == 400
 
-    def test_login_missing_csrf_rejected(self, client: TestClient, regular_user) -> None:
+    def test_invalid_csrf_returns_403(self, client: TestClient, regular_user) -> None:
         resp = client.post(
             "/auth/login",
             data={"username": "regular", "password": "userpass1234", "csrf_token": "bad"},
@@ -39,8 +39,8 @@ class TestLoginRoute:
         assert resp.status_code == 403
 
 
-class TestRegisterRoute:
-    def test_register_creates_user_in_db(self, admin_client: TestClient, web_db) -> None:
+class TestRegister:
+    def test_admin_creates_user_persisted_in_db(self, admin_client: TestClient, web_db) -> None:
         csrf_token = _get_csrf_token(admin_client)
         resp = admin_client.post(
             "/auth/register",
@@ -53,14 +53,14 @@ class TestRegisterRoute:
         )
         assert resp.status_code == 200
 
-        # Verify user actually exists in DB
         row = web_db.execute(
             "SELECT username FROM users WHERE username = ?", ("newuser",)
         ).fetchone()
         assert row is not None
-        assert row["username"] == "newuser"
 
-    def test_register_password_mismatch(self, admin_client: TestClient) -> None:
+    def test_password_mismatch_returns_400_and_no_user_created(
+        self, admin_client: TestClient, web_db
+    ) -> None:
         csrf_token = _get_csrf_token(admin_client)
         resp = admin_client.post(
             "/auth/register",
@@ -73,7 +73,12 @@ class TestRegisterRoute:
         )
         assert resp.status_code == 400
 
-    def test_register_short_password(self, admin_client: TestClient) -> None:
+        row = web_db.execute(
+            "SELECT username FROM users WHERE username = ?", ("newuser",)
+        ).fetchone()
+        assert row is None
+
+    def test_short_password_returns_400(self, admin_client: TestClient) -> None:
         csrf_token = _get_csrf_token(admin_client)
         resp = admin_client.post(
             "/auth/register",
@@ -86,7 +91,9 @@ class TestRegisterRoute:
         )
         assert resp.status_code == 400
 
-    def test_register_non_admin_rejected(self, auth_client: TestClient) -> None:
+    def test_non_admin_cannot_register_users(
+        self, auth_client: TestClient, web_db
+    ) -> None:
         csrf_token = _get_csrf_token(auth_client)
         resp = auth_client.post(
             "/auth/register",
@@ -99,9 +106,16 @@ class TestRegisterRoute:
         )
         assert resp.status_code == 400
 
+        row = web_db.execute(
+            "SELECT username FROM users WHERE username = ?", ("newuser",)
+        ).fetchone()
+        assert row is None
 
-class TestLogoutRoute:
-    def test_logout_invalidates_token(self, auth_client: TestClient, regular_user) -> None:
+
+class TestLogout:
+    def test_invalidates_token_and_deletes_cookie(
+        self, auth_client: TestClient, regular_user
+    ) -> None:
         _, token = regular_user
         csrf_token = _get_csrf_token(auth_client)
         resp = auth_client.post(
@@ -112,6 +126,9 @@ class TestLogoutRoute:
         assert resp.status_code == 303
         assert "/login" in resp.headers["location"]
 
-        # Verify the old token no longer works
-        auth = get_auth_service()
-        assert auth.verify_session(token) is None
+        # Verify token invalidated server-side
+        assert get_auth_service().verify_session(token) is None
+
+        # Verify cookie deleted in response
+        session_cookie = resp.cookies.get("meetscribe_session")
+        assert session_cookie is None or session_cookie == ""

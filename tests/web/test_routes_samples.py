@@ -1,141 +1,154 @@
 """Tests for sample and speaker bin routes."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from meetscribe.web.services.session import get_session_service
 
 
-class TestSpeakerBins:
-    def test_create_speaker(self, auth_client: TestClient, session_id: str) -> None:
+@pytest.fixture
+def sample_id(session_id: str) -> str:
+    """Create a sample via service and return its ID."""
+    service = get_session_service()
+    sample = service.add_sample(
+        session_id, track_num=1, cluster_id=0,
+        filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
+    )
+    return sample.id
+
+
+@pytest.fixture
+def speaker_id(session_id: str) -> str:
+    """Create a speaker via service and return its ID."""
+    service = get_session_service()
+    return service.add_speaker(session_id, "Alice").id
+
+
+class TestSpeakerCreate:
+    def test_returns_speaker_with_name_and_id(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
         resp = auth_client.post(
-            f"/api/session/{session_id}/speakers",
-            json={"name": "Alice"},
+            f"/api/session/{session_id}/speakers", json={"name": "Alice"},
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "Alice"
         assert "id" in data
 
-    def test_rename_speaker_persists(self, auth_client: TestClient, session_id: str) -> None:
-        speaker = auth_client.post(
-            f"/api/session/{session_id}/speakers", json={"name": "Alice"}
-        ).json()
+
+class TestSpeakerRename:
+    def test_new_name_persists_in_session(
+        self, auth_client: TestClient, session_id: str, speaker_id: str
+    ) -> None:
         resp = auth_client.patch(
-            f"/api/session/{session_id}/speakers/{speaker['id']}",
+            f"/api/session/{session_id}/speakers/{speaker_id}",
             json={"name": "Bob"},
         )
         assert resp.status_code == 200
 
-        # Verify rename persisted in session state
         state = auth_client.get(f"/api/session/{session_id}").json()
-        speaker_names = [s["name"] for s in state["speakers"]]
-        assert "Bob" in speaker_names
-        assert "Alice" not in speaker_names
+        names = [s["name"] for s in state["speakers"]]
+        assert "Bob" in names
+        assert "Alice" not in names
 
-    def test_rename_nonexistent_speaker(self, auth_client: TestClient, session_id: str) -> None:
-        resp = auth_client.patch(
-            f"/api/session/{session_id}/speakers/nope",
-            json={"name": "Bob"},
-        )
-        assert resp.status_code == 404
-
-    def test_delete_speaker_removes_from_session(
+    def test_nonexistent_speaker_returns_404(
         self, auth_client: TestClient, session_id: str
     ) -> None:
-        speaker = auth_client.post(
-            f"/api/session/{session_id}/speakers", json={"name": "Alice"}
-        ).json()
-        resp = auth_client.delete(f"/api/session/{session_id}/speakers/{speaker['id']}")
+        resp = auth_client.patch(
+            f"/api/session/{session_id}/speakers/nope", json={"name": "Bob"},
+        )
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+
+class TestSpeakerDelete:
+    def test_removes_speaker_from_session(
+        self, auth_client: TestClient, session_id: str, speaker_id: str
+    ) -> None:
+        resp = auth_client.delete(f"/api/session/{session_id}/speakers/{speaker_id}")
         assert resp.status_code == 200
 
-        # Verify speaker is gone
         state = auth_client.get(f"/api/session/{session_id}").json()
         assert len(state["speakers"]) == 0
 
-    def test_delete_nonexistent_speaker(self, auth_client: TestClient, session_id: str) -> None:
+    def test_nonexistent_speaker_returns_404(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
         resp = auth_client.delete(f"/api/session/{session_id}/speakers/nope")
         assert resp.status_code == 404
 
 
-class TestSamples:
-    def test_list_samples_empty(self, auth_client: TestClient, session_id: str) -> None:
+class TestSampleList:
+    def test_new_session_returns_empty_list(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/samples")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_get_nonexistent_sample_audio(
+
+class TestSampleAudio:
+    def test_nonexistent_sample_returns_404(
         self, auth_client: TestClient, session_id: str
     ) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/samples/nope/audio")
         assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
 
-    def test_delete_nonexistent_sample(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
-        resp = auth_client.delete(f"/api/session/{session_id}/samples/nope")
-        assert resp.status_code == 404
 
-    def test_move_sample_to_nonexistent_speaker(
-        self, auth_client: TestClient, session_id: str
+class TestSampleMove:
+    def test_assigns_sample_to_speaker(
+        self, auth_client: TestClient, session_id: str, sample_id: str, speaker_id: str
     ) -> None:
-        service = get_session_service()
-        sample = service.add_sample(
-            session_id, track_num=1, cluster_id=0,
-            filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
-        )
         resp = auth_client.post(
-            f"/api/session/{session_id}/samples/{sample.id}/move",
-            json={"speaker_id": "nonexistent"},
-        )
-        assert resp.status_code == 404
-
-    def test_move_sample_persists_assignment(
-        self, auth_client: TestClient, session_id: str
-    ) -> None:
-        service = get_session_service()
-        sample = service.add_sample(
-            session_id, track_num=1, cluster_id=0,
-            filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
-        )
-        speaker = service.add_speaker(session_id, "Alice")
-        resp = auth_client.post(
-            f"/api/session/{session_id}/samples/{sample.id}/move",
-            json={"speaker_id": speaker.id},
+            f"/api/session/{session_id}/samples/{sample_id}/move",
+            json={"speaker_id": speaker_id},
         )
         assert resp.status_code == 200
 
-        # Verify sample is now assigned to speaker
         state = auth_client.get(f"/api/session/{session_id}").json()
-        moved = [s for s in state["samples"] if s["id"] == sample.id]
-        assert len(moved) == 1
-        assert moved[0]["speaker_id"] == speaker.id
+        moved = [s for s in state["samples"] if s["id"] == sample_id][0]
+        assert moved["speaker_id"] == speaker_id
 
-    def test_move_sample_unassign(self, auth_client: TestClient, session_id: str) -> None:
-        service = get_session_service()
-        sample = service.add_sample(
-            session_id, track_num=1, cluster_id=0,
-            filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
-        )
+    def test_null_speaker_clears_assignment(
+        self, auth_client: TestClient, session_id: str, sample_id: str
+    ) -> None:
         resp = auth_client.post(
-            f"/api/session/{session_id}/samples/{sample.id}/move",
+            f"/api/session/{session_id}/samples/{sample_id}/move",
             json={"speaker_id": None},
         )
         assert resp.status_code == 200
 
-    def test_delete_sample_removes_file(
-        self, auth_client: TestClient, session_id: str
+        state = auth_client.get(f"/api/session/{session_id}").json()
+        moved = [s for s in state["samples"] if s["id"] == sample_id][0]
+        assert moved["speaker_id"] is None
+
+    def test_nonexistent_speaker_returns_404(
+        self, auth_client: TestClient, session_id: str, sample_id: str
+    ) -> None:
+        resp = auth_client.post(
+            f"/api/session/{session_id}/samples/{sample_id}/move",
+            json={"speaker_id": "nonexistent"},
+        )
+        assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
+
+
+class TestSampleDelete:
+    def test_removes_sample_and_file(
+        self, auth_client: TestClient, session_id: str, sample_id: str
     ) -> None:
         service = get_session_service()
-        sample = service.add_sample(
-            session_id, track_num=1, cluster_id=0,
-            filename="test.wav", duration_ms=1000, content=b"\x00" * 100,
-        )
-        # Verify file exists before delete
-        path = service.get_sample_path(session_id, sample.id)
-        assert path is not None
+        assert service.get_sample_path(session_id, sample_id) is not None
 
-        resp = auth_client.delete(f"/api/session/{session_id}/samples/{sample.id}")
+        resp = auth_client.delete(f"/api/session/{session_id}/samples/{sample_id}")
         assert resp.status_code == 200
 
-        # Verify file is gone
-        assert service.get_sample_path(session_id, sample.id) is None
+        assert service.get_sample_path(session_id, sample_id) is None
+
+    def test_nonexistent_sample_returns_404(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
+        resp = auth_client.delete(f"/api/session/{session_id}/samples/nope")
+        assert resp.status_code == 404

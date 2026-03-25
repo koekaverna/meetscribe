@@ -1,30 +1,27 @@
 """Tests for session management routes."""
 
-import sqlite3
-
-import pytest
 from fastapi.testclient import TestClient
 
 from meetscribe.database import create_team
-from meetscribe.web.services.auth import AuthService, AuthUser, init_auth_service
-from meetscribe.web.services.session import get_session_service
+from meetscribe.web.services.auth import AuthService
 
 
 class TestCreateSession:
-    def test_create_session(self, auth_client: TestClient) -> None:
+    def test_returns_session_id(self, auth_client: TestClient) -> None:
         resp = auth_client.post("/api/session")
         assert resp.status_code == 200
         data = resp.json()
         assert "session_id" in data
         assert len(data["session_id"]) > 0
 
-    def test_create_session_unauthenticated(self, client: TestClient) -> None:
+    def test_unauthenticated_returns_401(self, client: TestClient) -> None:
         resp = client.post("/api/session")
         assert resp.status_code == 401
+        assert "Not authenticated" in resp.json()["detail"]
 
 
 class TestGetSession:
-    def test_get_session(self, auth_client: TestClient) -> None:
+    def test_returns_session_with_created_status(self, auth_client: TestClient) -> None:
         session_id = auth_client.post("/api/session").json()["session_id"]
         resp = auth_client.get(f"/api/session/{session_id}")
         assert resp.status_code == 200
@@ -32,65 +29,68 @@ class TestGetSession:
         assert data["id"] == session_id
         assert data["status"] == "created"
 
-    def test_get_nonexistent_session(self, auth_client: TestClient) -> None:
+    def test_nonexistent_returns_404(self, auth_client: TestClient) -> None:
         resp = auth_client.get("/api/session/nonexistent")
         assert resp.status_code == 404
+        assert "not found" in resp.json()["detail"].lower()
 
 
 class TestDeleteSession:
-    def test_delete_session_removes_from_db(self, auth_client: TestClient, web_db) -> None:
+    def test_removes_session_from_db_and_api(
+        self, auth_client: TestClient, web_db
+    ) -> None:
         session_id = auth_client.post("/api/session").json()["session_id"]
+
         resp = auth_client.delete(f"/api/session/{session_id}")
         assert resp.status_code == 200
         assert resp.json()["status"] == "deleted"
 
-        # Verify it's gone from DB
         row = web_db.execute(
             "SELECT id FROM sessions WHERE id = ?", (session_id,)
         ).fetchone()
         assert row is None
 
-        # Verify API also returns 404
         resp = auth_client.get(f"/api/session/{session_id}")
         assert resp.status_code == 404
 
-    def test_delete_nonexistent_session(self, auth_client: TestClient) -> None:
+    def test_nonexistent_returns_404(self, auth_client: TestClient) -> None:
         resp = auth_client.delete("/api/session/nonexistent")
         assert resp.status_code == 404
 
 
 class TestTeamIsolation:
-    """Verify that users from different teams cannot access each other's sessions."""
+    """Users from different teams cannot access each other's sessions."""
 
-    def test_user_cannot_access_other_teams_session(
+    def _create_other_team_session(
+        self, client: TestClient, web_db, web_auth_service: AuthService
+    ) -> str:
+        """Helper: create a session belonging to 'other_team'."""
+        create_team(web_db, "other_team")
+        _, other_token = web_auth_service.register("other_user", "password123", "other_team")
+        client.cookies.set("meetscribe_session", other_token)
+        return client.post("/api/session").json()["session_id"]
+
+    def _switch_to_default_team(
+        self, client: TestClient, web_auth_service: AuthService
+    ) -> None:
+        """Helper: switch client to a user from 'default' team."""
+        _, token = web_auth_service.register("default_user", "password123", "default")
+        client.cookies.set("meetscribe_session", token)
+
+    def test_cannot_read_other_teams_session(
         self, client: TestClient, web_db, web_auth_service: AuthService
     ) -> None:
-        # Create a second team and user
-        create_team(web_db, "other_team")
-        other_user, other_token = web_auth_service.register(
-            "other_user", "password123", "other_team"
-        )
+        other_session_id = self._create_other_team_session(client, web_db, web_auth_service)
+        self._switch_to_default_team(client, web_auth_service)
 
-        # Create a session as the "other" user
-        client.cookies.set("meetscribe_session", other_token)
-        resp = client.post("/api/session")
-        assert resp.status_code == 200
-        other_session_id = resp.json()["session_id"]
-
-        # Verify the other user can see their own session
-        resp = client.get(f"/api/session/{other_session_id}")
-        assert resp.status_code == 200
-
-        # Now switch to the "regular" user (default team)
-        regular_user, regular_token = web_auth_service.register(
-            "regular_iso", "password123", "default"
-        )
-        client.cookies.set("meetscribe_session", regular_token)
-
-        # Regular user should NOT see the other team's session
         resp = client.get(f"/api/session/{other_session_id}")
         assert resp.status_code == 404
 
-        # Regular user should NOT be able to delete it
+    def test_cannot_delete_other_teams_session(
+        self, client: TestClient, web_db, web_auth_service: AuthService
+    ) -> None:
+        other_session_id = self._create_other_team_session(client, web_db, web_auth_service)
+        self._switch_to_default_team(client, web_auth_service)
+
         resp = client.delete(f"/api/session/{other_session_id}")
         assert resp.status_code == 404
