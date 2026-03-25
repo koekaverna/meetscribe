@@ -10,7 +10,7 @@ from meetscribe.database import get_db
 from meetscribe.web.models import SessionStatus
 from meetscribe.web.services.session import SessionService
 
-from .conftest import make_wav_file
+from tests.conftest import make_wav_file
 
 
 @pytest.fixture
