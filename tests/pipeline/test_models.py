@@ -117,8 +117,10 @@ class TestMergeByProximity:
         assert len(result) == 2
         assert result[0].start_ms == 0
         assert result[0].end_ms == 2000
+        assert result[0].speaker == "Alice"
         assert result[1].start_ms == 2100
         assert result[1].end_ms == 4000
+        assert result[1].speaker == "Bob"
 
     def test_exact_boundary_gap_merges(self):
         segs = [

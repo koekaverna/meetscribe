@@ -15,7 +15,10 @@ def _uploaded_track(auth_client: TestClient, session_id: str, wav_upload_bytes: 
         f"/api/session/{session_id}/tracks",
         files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
     )
-    return resp.json()[0]["track_num"]
+    assert resp.status_code == 200, f"Track upload failed: {resp.text}"
+    data = resp.json()
+    assert len(data) >= 1, "Expected at least one track in response"
+    return data[0]["track_num"]
 
 
 class TestUpload:

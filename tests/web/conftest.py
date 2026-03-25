@@ -85,7 +85,10 @@ def app(web_auth_service: AuthService, web_session_service: SessionService):
     """Create a FastAPI app with test services already initialized."""
     from meetscribe.web.app import create_app
 
-    with patch("meetscribe.web.app.get_db", return_value=web_auth_service.conn):
+    with (
+        patch("meetscribe.web.app.get_db", return_value=web_auth_service.conn),
+        patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
+    ):
         return create_app()
 
 

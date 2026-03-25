@@ -8,7 +8,9 @@ from meetscribe.web.services.auth import get_auth_service
 def _get_csrf_token(client: TestClient) -> str:
     """Get CSRF token from cookie after a GET request."""
     client.get("/login")
-    return client.cookies.get("meetscribe_csrf", "")
+    token = client.cookies.get("meetscribe_csrf")
+    assert token, "CSRF cookie not set after GET /login"
+    return token
 
 
 class TestLogin:
@@ -23,20 +25,26 @@ class TestLogin:
         assert resp.headers["location"] == "/"
         assert "meetscribe_session" in resp.cookies
 
-    def test_wrong_password_returns_400(self, client: TestClient, regular_user) -> None:
+    def test_wrong_password_returns_400_without_session(
+        self, client: TestClient, regular_user
+    ) -> None:
         csrf_token = _get_csrf_token(client)
         resp = client.post(
             "/auth/login",
             data={"username": "regular", "password": "wrong", "csrf_token": csrf_token},
         )
         assert resp.status_code == 400
+        assert "meetscribe_session" not in resp.cookies
 
-    def test_invalid_csrf_returns_403(self, client: TestClient, regular_user) -> None:
+    def test_invalid_csrf_returns_403_without_session(
+        self, client: TestClient, regular_user
+    ) -> None:
         resp = client.post(
             "/auth/login",
             data={"username": "regular", "password": "userpass1234", "csrf_token": "bad"},
         )
         assert resp.status_code == 403
+        assert "meetscribe_session" not in resp.cookies
 
 
 class TestRegister:

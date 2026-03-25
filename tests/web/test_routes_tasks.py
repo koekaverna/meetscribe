@@ -9,10 +9,11 @@ from meetscribe.web.services.session import get_session_service
 
 def _upload_track(auth_client: TestClient, session_id: str, wav_upload_bytes: bytes) -> None:
     """Helper: upload a WAV track to the session."""
-    auth_client.post(
+    resp = auth_client.post(
         f"/api/session/{session_id}/tracks",
         files=[("files", ("t.wav", io.BytesIO(wav_upload_bytes), "audio/wav"))],
     )
+    assert resp.status_code == 200, f"Track upload failed: {resp.text}"
 
 
 class TestExtraction:

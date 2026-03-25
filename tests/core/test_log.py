@@ -7,15 +7,24 @@ from meetscribe.log import StructuredFormatter, apply_log_level
 
 class TestApplyLogLevel:
     def test_sets_root_logger_level(self) -> None:
-        apply_log_level("DEBUG")
-        assert logging.getLogger().level == logging.DEBUG
+        original = logging.getLogger().level
+        try:
+            apply_log_level("DEBUG")
+            assert logging.getLogger().level == logging.DEBUG
+        finally:
+            logging.getLogger().setLevel(original)
 
     def test_invalid_level_falls_back_to_info(self) -> None:
-        apply_log_level("NONSENSE")
-        assert logging.getLogger().level == logging.INFO
+        original = logging.getLogger().level
+        try:
+            apply_log_level("NONSENSE")
+            assert logging.getLogger().level == logging.INFO
+        finally:
+            logging.getLogger().setLevel(original)
 
     def test_sets_file_handler_level(self, tmp_path) -> None:
         root = logging.getLogger()
+        original = root.level
         handler = logging.FileHandler(tmp_path / "test.log")
         root.addHandler(handler)
         try:
@@ -24,6 +33,7 @@ class TestApplyLogLevel:
         finally:
             root.removeHandler(handler)
             handler.close()
+            root.setLevel(original)
 
 
 class TestStructuredFormatter:
