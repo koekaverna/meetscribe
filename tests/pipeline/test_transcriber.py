@@ -11,7 +11,7 @@ from meetscribe.errors import ConfigurationError
 from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
 from meetscribe.pipeline.transcriber import RemoteTranscriber, Transcriber
 
-from .conftest import make_wav_file
+from tests.conftest import make_wav_file
 
 
 class TestRemoteTranscriberInit:

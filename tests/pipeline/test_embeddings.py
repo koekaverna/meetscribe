@@ -14,7 +14,7 @@ from meetscribe.pipeline.embeddings import (
 )
 from meetscribe.pipeline.models import SpeechSegment
 
-from .conftest import make_wav_file
+from tests.conftest import make_wav_file
 
 
 class TestCosineSimilarity:
