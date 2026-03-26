@@ -371,7 +371,7 @@ class TestDefaultsMatchConfigYaml:
 
     @pytest.fixture
     def config_yaml(self) -> dict:
-        config_path = Path(__file__).parent.parent / "config.example.yaml"
+        config_path = Path(__file__).parent.parent.parent / "config.example.yaml"
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 

@@ -106,7 +106,7 @@ class TestMigrations:
         migrations_dir.mkdir()
 
         # Copy the real 001_initial.sql
-        real_001 = Path(__file__).parent.parent / "src/meetscribe/migrations/001_initial.sql"
+        real_001 = Path(__file__).parent.parent.parent / "src/meetscribe/migrations/001_initial.sql"
         (migrations_dir / "001_initial.sql").write_text(real_001.read_text())
 
         # Create a broken second migration
