@@ -78,20 +78,18 @@ async def move_sample(
     session_id: str, sample_id: str, data: SampleMove, user: AuthUser = Depends(get_current_user)
 ) -> dict[str, str]:
     """Move sample to a speaker bin."""
-    get_session_for_user(session_id, user)
+    state = get_session_for_user(session_id, user)
     service = get_session_service()
 
     # Find and validate speaker belongs to this session
     speaker_name = None
     if data.speaker_id:
-        state = service.get(session_id)
-        if state:
-            for speaker in state.speakers:
-                if speaker.id == data.speaker_id:
-                    speaker_name = speaker.name
-                    break
-            else:
-                raise HTTPException(status_code=404, detail="Speaker not found in this session")
+        for speaker in state.speakers:
+            if speaker.id == data.speaker_id:
+                speaker_name = speaker.name
+                break
+        else:
+            raise HTTPException(status_code=404, detail="Speaker not found in this session")
 
     if not service.move_sample(session_id, sample_id, data.speaker_id, speaker_name):
         raise HTTPException(status_code=404, detail="Sample not found")
