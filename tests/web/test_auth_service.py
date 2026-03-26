@@ -85,7 +85,7 @@ class TestRegister:
     def test_duplicate_username_raises(self, auth_service: AuthService) -> None:
         auth_service.register("alice", "test-pass-000", "default")
         with pytest.raises(ValueError, match="already taken"):
-            auth_service.register("alice", "pass5678", "default")
+            auth_service.register("alice", "test-pass-000", "default")
 
     def test_nonexistent_team_raises(self, auth_service: AuthService) -> None:
         with pytest.raises(ValueError, match="not found"):
