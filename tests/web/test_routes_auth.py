@@ -18,7 +18,7 @@ class TestLogin:
         csrf_token = _get_csrf_token(client)
         resp = client.post(
             "/auth/login",
-            data={"username": "regular", "password": "userpass1234", "csrf_token": csrf_token},
+            data={"username": "regular", "password": "test-pass-000", "csrf_token": csrf_token},
             follow_redirects=False,
         )
         assert resp.status_code == 303
@@ -41,7 +41,7 @@ class TestLogin:
     ) -> None:
         resp = client.post(
             "/auth/login",
-            data={"username": "regular", "password": "userpass1234", "csrf_token": "bad"},
+            data={"username": "regular", "password": "test-pass-000", "csrf_token": "bad"},
         )
         assert resp.status_code == 403
         assert "meetscribe_session" not in resp.cookies
@@ -54,8 +54,8 @@ class TestRegister:
             "/auth/register",
             data={
                 "username": "newuser",
-                "password": "newpass1234",
-                "password_confirm": "newpass1234",
+                "password": "test-pass-000",
+                "password_confirm": "test-pass-000",
                 "csrf_token": csrf_token,
             },
         )
@@ -74,7 +74,7 @@ class TestRegister:
             "/auth/register",
             data={
                 "username": "newuser",
-                "password": "pass1234",
+                "password": "test-pass-000",
                 "password_confirm": "different",
                 "csrf_token": csrf_token,
             },
@@ -105,8 +105,8 @@ class TestRegister:
             "/auth/register",
             data={
                 "username": "newuser",
-                "password": "pass12345",
-                "password_confirm": "pass12345",
+                "password": "test-pass-000",
+                "password_confirm": "test-pass-000",
                 "csrf_token": csrf_token,
             },
         )

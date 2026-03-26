@@ -62,13 +62,13 @@ class TestTeamIsolation:
     ) -> str:
         """Helper: create a session belonging to 'other_team'."""
         create_team(web_db, "other_team")
-        _, other_token = web_auth_service.register("other_user", "password123", "other_team")
+        _, other_token = web_auth_service.register("other_user", "test-pass-000", "other_team")
         client.cookies.set("meetscribe_session", other_token)
         return client.post("/api/session").json()["session_id"]
 
     def _switch_to_default_team(self, client: TestClient, web_auth_service: AuthService) -> None:
         """Helper: switch client to a user from 'default' team."""
-        _, token = web_auth_service.register("default_user", "password123", "default")
+        _, token = web_auth_service.register("default_user", "test-pass-000", "default")
         client.cookies.set("meetscribe_session", token)
 
     def test_cannot_read_other_teams_session(

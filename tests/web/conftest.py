@@ -67,7 +67,7 @@ def web_session_service(web_db: sqlite3.Connection, tmp_path: Path) -> SessionSe
 @pytest.fixture
 def admin_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
     """Create an admin user. Returns (AuthUser, session_token)."""
-    user, token = web_auth_service.register("admin", "adminpass123", "default")
+    user, token = web_auth_service.register("admin", "test-pass-000", "default")
     web_auth_service.conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user.id,))
     web_auth_service.conn.commit()
     user.is_admin = True
@@ -77,7 +77,7 @@ def admin_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
 @pytest.fixture
 def regular_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
     """Create a regular (non-admin) user. Returns (AuthUser, session_token)."""
-    return web_auth_service.register("regular", "userpass1234", "default")
+    return web_auth_service.register("regular", "test-pass-000", "default")
 
 
 @pytest.fixture

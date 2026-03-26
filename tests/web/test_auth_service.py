@@ -37,7 +37,7 @@ def auth_service(db: sqlite3.Connection) -> AuthService:
 @pytest.fixture
 def registered_user(auth_service: AuthService) -> tuple[AuthUser, str]:
     """Register a test user and return (user, token)."""
-    return auth_service.register("testuser", "securepass123", "default")
+    return auth_service.register("testuser", "test-pass-000", "default")
 
 
 class TestPasswordHashing:
@@ -77,26 +77,26 @@ class TestPasswordHashing:
 
 class TestRegister:
     def test_returns_user_with_correct_fields(self, auth_service: AuthService) -> None:
-        user, token = auth_service.register("alice", "password123", "default")
+        user, token = auth_service.register("alice", "test-pass-000", "default")
         assert user.username == "alice"
         assert user.team_name == "default"
         assert len(token) == 64
 
     def test_duplicate_username_raises(self, auth_service: AuthService) -> None:
-        auth_service.register("alice", "pass1234", "default")
+        auth_service.register("alice", "test-pass-000", "default")
         with pytest.raises(ValueError, match="already taken"):
             auth_service.register("alice", "pass5678", "default")
 
     def test_nonexistent_team_raises(self, auth_service: AuthService) -> None:
         with pytest.raises(ValueError, match="not found"):
-            auth_service.register("bob", "pass1234", "no_such_team")
+            auth_service.register("bob", "test-pass-000", "no_such_team")
 
 
 class TestLogin:
     def test_valid_credentials_returns_user_and_token(
         self, auth_service: AuthService, registered_user: tuple[AuthUser, str]
     ) -> None:
-        user, token = auth_service.login("testuser", "securepass123")
+        user, token = auth_service.login("testuser", "test-pass-000")
         assert user.username == "testuser"
         assert len(token) == 64
 

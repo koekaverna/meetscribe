@@ -40,7 +40,7 @@ def auth_service(db: sqlite3.Connection) -> AuthService:
 
 @pytest.fixture
 def user_and_token(auth_service: AuthService) -> tuple[AuthUser, str]:
-    return auth_service.register("testuser", "password123", "default")
+    return auth_service.register("testuser", "test-pass-000", "default")
 
 
 # --- verify_csrf ---
