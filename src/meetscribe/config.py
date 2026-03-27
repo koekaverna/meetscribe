@@ -163,6 +163,10 @@ class EmbeddingsConfig(ValidatedConfig):
     confident_gap: float = 0.2
     min_threshold: float = 0.45
     max_workers: int = 4
+    sample_min_duration_ms: int = 4000
+    sample_max_duration_ms: int = 12000
+    sample_ideal_duration_ms: int = 7000
+    max_samples_per_speaker: int = 8
 
 
 @dataclass
@@ -285,53 +289,16 @@ def load_config(config_path: Path) -> AppConfig:
             raise ConfigurationError(f"servers[{i}]: each entry must have 'url' and 'name'")
         servers.append(ServerInfo(url=s["url"], name=s["name"]))
 
-    vad = VadConfig()
-    if "vad" in data:
-        d = data["vad"]
-        vad = VadConfig(
-            server=d.get("server", ""),
-            timeout=d.get("timeout", 120.0),
-            min_silence_duration_ms=d.get("min_silence_duration_ms", 1200),
-            speech_pad_ms=d.get("speech_pad_ms", 30),
-            threshold=d.get("threshold", 0.5),
-        )
-
-    embeddings = EmbeddingsConfig()
-    if "embeddings" in data:
-        d = data["embeddings"]
-        embeddings = EmbeddingsConfig(
-            server=d.get("server", ""),
-            model=d.get("model", "Wespeaker/wespeaker-voxceleb-resnet34-LM"),
-            timeout=d.get("timeout", 60.0),
-            threshold=d.get("threshold", 0.6),
-            min_duration_ms=d.get("min_duration_ms", 1500),
-            unknown_cluster_threshold=d.get("unknown_cluster_threshold", 0.25),
-            confident_gap=d.get("confident_gap", 0.2),
-            min_threshold=d.get("min_threshold", 0.45),
-            max_workers=d.get("max_workers", 4),
-        )
-
-    transcription = TranscriptionConfig()
-    if "transcription" in data:
-        d = data["transcription"]
-        transcription = TranscriptionConfig(
-            servers=d.get("servers", []),
-            model=d.get("model", "Systran/faster-whisper-medium"),
-            language=d.get("language", "ru"),
-            timeout=d.get("timeout", 120.0),
-            max_gap_ms=d.get("max_gap_ms", 500),
-            max_chunk_ms=d.get("max_chunk_ms", 30000),
-        )
-
-    web = WebConfig()
-    if "web" in data:
-        d = data["web"]
-        web = WebConfig(
-            host=d.get("host", "127.0.0.1"),
-            port=d.get("port", 8080),
-            session_ttl_days=d.get("session_ttl_days", 7),
-            secure_cookies=d.get("secure_cookies", False),
-        )
+    vad = VadConfig(**data["vad"]) if "vad" in data else VadConfig()
+    embeddings = (
+        EmbeddingsConfig(**data["embeddings"]) if "embeddings" in data else EmbeddingsConfig()
+    )
+    transcription = (
+        TranscriptionConfig(**data["transcription"])
+        if "transcription" in data
+        else TranscriptionConfig()
+    )
+    web = WebConfig(**data["web"]) if "web" in data else WebConfig()
 
     log_level = str(data.get("log_level", AppConfig.log_level)).upper()
     if log_level not in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
