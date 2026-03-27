@@ -91,6 +91,21 @@ embeddings:
   # Increase if the server supports concurrent requests.
   max_workers: 4
 
+  # --- Sample extraction (for speaker enrollment) ---
+
+  # Minimum segment duration (ms) to use as a sample.
+  sample_min_duration_ms: 4000
+
+  # Maximum segment duration (ms) before slicing into chunks.
+  # Segments longer than this are split into ~sample_ideal_duration_ms pieces.
+  sample_max_duration_ms: 12000
+
+  # Target chunk size (ms) when slicing long segments.
+  sample_ideal_duration_ms: 7000
+
+  # Maximum samples to extract per speaker.
+  max_samples_per_speaker: 8
+
 # -----------------------------------------------------------------------------
 # Transcription
 # -----------------------------------------------------------------------------

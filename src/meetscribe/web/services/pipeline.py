@@ -16,12 +16,12 @@ from meetscribe.database import (
 from meetscribe.pipeline import (
     DiarizationPipeline,
     EmbeddingExtractor,
-    SpeechSegment,
     Transcriber,
     TranscriptSegment,
     audio,
     enroll_samples,
 )
+from meetscribe.pipeline.models import collect_sample_segments
 from meetscribe.team import TeamContext, resolve_team
 
 logger = logging.getLogger(__name__)
@@ -151,23 +151,20 @@ class PipelineRunner:
                 labeled_segments = diarization.identifier.identify_segments(segments_with_emb)
                 speakers = {s.speaker for s in labeled_segments if s.speaker}
 
-                # Extract audio samples — prefer medium-length segments (5-10s)
-                min_duration_ms = 3000
-                max_duration_ms = 12000
-                max_samples_per_speaker = 10
-                ideal_ms = 7000
-
-                # Group segments by speaker, filter by duration range
-                speaker_segments: dict[str, list[SpeechSegment]] = {}
-                for seg in labeled_segments:
-                    if seg.speaker and min_duration_ms <= seg.duration_ms <= max_duration_ms:
-                        speaker_segments.setdefault(seg.speaker, []).append(seg)
+                # Extract audio samples
+                emb_cfg = self.cfg.embeddings
+                speaker_segments = collect_sample_segments(
+                    labeled_segments,
+                    min_duration_ms=emb_cfg.sample_min_duration_ms,
+                    max_duration_ms=emb_cfg.sample_max_duration_ms,
+                    ideal_ms=emb_cfg.sample_ideal_duration_ms,
+                )
 
                 for speaker_name, segs in speaker_segments.items():
-                    segs.sort(key=lambda s: abs(s.duration_ms - ideal_ms))
+                    segs.sort(key=lambda s: abs(s.duration_ms - emb_cfg.sample_ideal_duration_ms))
                     is_known = not speaker_name.startswith("Unknown")
 
-                    for i, seg in enumerate(segs[:max_samples_per_speaker]):
+                    for i, seg in enumerate(segs[: emb_cfg.max_samples_per_speaker]):
                         # Extract segment audio via FFmpeg
                         with tempfile.NamedTemporaryFile(
                             suffix=".wav", delete=False, dir=config.TMP_DIR
