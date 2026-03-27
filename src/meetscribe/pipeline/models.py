@@ -56,6 +56,35 @@ def merge_close_segments(
     return merged
 
 
+def collect_sample_segments(
+    segments: list[SpeechSegment],
+    min_duration_ms: int,
+    max_duration_ms: int,
+    ideal_ms: int,
+) -> dict[str, list[SpeechSegment]]:
+    """Group labeled segments by speaker for sample extraction.
+
+    Segments in [min_duration_ms, max_duration_ms] are kept as-is.
+    Segments longer than max_duration_ms are sliced into ~ideal_ms chunks.
+    Segments shorter than min_duration_ms or without a speaker are skipped.
+    """
+    speaker_segments: dict[str, list[SpeechSegment]] = {}
+    for seg in segments:
+        if not seg.speaker:
+            continue
+        if min_duration_ms <= seg.duration_ms <= max_duration_ms:
+            speaker_segments.setdefault(seg.speaker, []).append(seg)
+        elif seg.duration_ms > max_duration_ms:
+            pos = seg.start_ms
+            while pos < seg.end_ms:
+                chunk_end = min(pos + ideal_ms, seg.end_ms)
+                if chunk_end - pos >= min_duration_ms:
+                    chunk = SpeechSegment(start_ms=pos, end_ms=chunk_end, speaker=seg.speaker)
+                    speaker_segments.setdefault(seg.speaker, []).append(chunk)
+                pos = chunk_end
+    return speaker_segments
+
+
 def merge_by_proximity(
     segments: list[SpeechSegment],
     max_gap_ms: int,
