@@ -1,8 +1,10 @@
 """FastAPI application for MeetScribe Web UI."""
 
+import logging
 import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
@@ -14,7 +16,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from meetscribe import config
 from meetscribe.config import get_config
 from meetscribe.database import get_db
-from meetscribe.log import apply_log_level
+from meetscribe.log import StructuredFormatter, apply_log_level
 
 from .deps import CSRF_COOKIE_NAME, get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
@@ -35,7 +37,16 @@ PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    # Apply log level from config
+    # File logging (same as CLI)
+    config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = config.LOGS_DIR / f"web_{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(
+        StructuredFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+    logging.getLogger().addHandler(file_handler)
+
     apply_log_level(get_config().log_level)
 
     # Single DB connection for the app lifetime
