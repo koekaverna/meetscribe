@@ -43,6 +43,7 @@ from .database import (
     create_user,
     delete_team,
     delete_user,
+    delete_voiceprint,
     get_db,
     get_team,
     list_teams,
@@ -344,6 +345,21 @@ def cmd_list(args: argparse.Namespace, team_ctx: TeamContext) -> None:
         sample_count = len(list(sample_dir.glob("*.wav"))) if sample_dir.exists() else 0
         print(f"  {C_GREEN}\u2714{C_RESET} {i}. {name} ({sample_count} samples)")
     print()
+
+
+def cmd_delete_speaker(args: argparse.Namespace, team_ctx: TeamContext) -> None:
+    """Delete an enrolled speaker's voiceprint and samples."""
+    name = args.name
+    deleted = delete_voiceprint(team_ctx.conn, team_ctx.id, name)
+    if not deleted:
+        warn(f"Speaker '{name}' not found.")
+        return
+
+    sample_dir = team_ctx.enrolled_samples_dir / name
+    if sample_dir.exists():
+        shutil.rmtree(sample_dir)
+
+    print(f"  {C_GREEN}✔{C_RESET} Deleted speaker '{name}'")
 
 
 def cmd_extract(args: argparse.Namespace) -> None:
@@ -827,6 +843,11 @@ def main() -> None:
     # list-speakers
     p = subs.add_parser("list-speakers", help="List enrolled speakers")
     p.set_defaults(func=cmd_list)
+
+    # delete-speaker
+    p = subs.add_parser("delete-speaker", help="Delete enrolled speaker")
+    p.add_argument("name", help="Speaker name")
+    p.set_defaults(func=cmd_delete_speaker)
 
     # extract-samples
     p = subs.add_parser("extract-samples", help="Extract speaker samples (fast, no transcription)")
