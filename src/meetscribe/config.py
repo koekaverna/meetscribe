@@ -159,7 +159,6 @@ class EmbeddingsConfig(ValidatedConfig):
     min_duration_ms: int = 1500
     confident_gap: float = 0.2
     min_threshold: float = 0.45
-    max_workers: int = 4
     sample_min_duration_ms: int = 4000
     sample_max_duration_ms: int = 12000
     sample_ideal_duration_ms: int = 7000

@@ -4,14 +4,11 @@ import io
 import logging
 import math
 import shutil
-import time
 import wave
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
 import httpx
-from tqdm import tqdm
 
 from meetscribe.errors import SpeachesAPIError, speaches_retry
 
@@ -77,120 +74,21 @@ class EmbeddingExtractor:
         """Extract speaker embedding from an audio file."""
         return self.extract(audio_path.read_bytes(), audio_path.name)
 
-    @staticmethod
-    def _slice_wav(
-        raw_frames: bytes, sample_rate: int, sample_width: int, seg: SpeechSegment
-    ) -> bytes:
-        """Slice raw PCM frames and wrap into WAV bytes in memory."""
-        start_sample = seg.start_ms * sample_rate // 1000
-        end_sample = seg.end_ms * sample_rate // 1000
-        frame_size = sample_width  # mono
-        chunk = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(sample_width)
-            wf.setframerate(sample_rate)
-            wf.writeframes(chunk)
-        return buf.getvalue()
+def slice_wav(raw_frames: bytes, sample_rate: int, sample_width: int, seg: SpeechSegment) -> bytes:
+    """Slice raw PCM frames and wrap into WAV bytes in memory."""
+    start_sample = seg.start_ms * sample_rate // 1000
+    end_sample = seg.end_ms * sample_rate // 1000
+    frame_size = sample_width  # mono
+    chunk = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
-    def _extract_one_mem(
-        self,
-        raw_frames: bytes,
-        sample_rate: int,
-        sample_width: int,
-        seg: SpeechSegment,
-    ) -> tuple[SpeechSegment, list[float] | None]:
-        """Extract embedding for a single segment from pre-loaded audio."""
-        try:
-            wav_bytes = self._slice_wav(raw_frames, sample_rate, sample_width, seg)
-            filename = f"seg_{seg.start_ms}_{seg.end_ms}.wav"
-            embedding = self.extract(wav_bytes, filename)
-            return seg, embedding
-        except Exception:
-            logger.warning(
-                "Embedding extraction failed",
-                extra={
-                    "segment_start_ms": seg.start_ms,
-                    "segment_end_ms": seg.end_ms,
-                },
-                exc_info=True,
-            )
-            return seg, None
-
-    def extract_segments(
-        self,
-        audio_path: Path,
-        segments: list[SpeechSegment],
-        max_workers: int,
-    ) -> list[tuple[SpeechSegment, list[float] | None]]:
-        """Extract embeddings for each speech segment in parallel.
-
-        Loads audio into memory once, slices segments as WAV bytes,
-        then sends to the embedding API. No FFmpeg subprocess per segment.
-
-        Returns:
-            List of (segment, embedding_or_None) tuples in original order.
-        """
-        t0 = time.perf_counter()
-
-        # Load full audio into memory once
-        with wave.open(str(audio_path), "rb") as wf:
-            sample_rate = wf.getframerate()
-            sample_width = wf.getsampwidth()
-            raw_frames = wf.readframes(wf.getnframes())
-
-        # Separate short segments (skip) from ones needing extraction
-        ordered: dict[int, tuple[SpeechSegment, list[float] | None]] = {}
-        to_extract: list[tuple[int, SpeechSegment]] = []
-
-        for i, seg in enumerate(segments):
-            if seg.duration_ms < self.min_duration_ms:
-                logger.debug(
-                    "Skipping short segment",
-                    extra={
-                        "segment_start_ms": seg.start_ms,
-                        "segment_end_ms": seg.end_ms,
-                        "duration_ms": seg.duration_ms,
-                    },
-                )
-                ordered[i] = (seg, None)
-            else:
-                to_extract.append((i, seg))
-
-        pbar = tqdm(total=len(segments), desc="  Embeddings", unit="seg", leave=False)
-        pbar.update(len(ordered))  # short segments already done
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(self._extract_one_mem, raw_frames, sample_rate, sample_width, seg): idx
-                for idx, seg in to_extract
-            }
-            for future in as_completed(futures):
-                idx = futures[future]
-                ordered[idx] = future.result()
-                pbar.update(1)
-
-        pbar.close()
-
-        result = [ordered[i] for i in range(len(segments))]
-        extracted = sum(1 for _, emb in result if emb is not None)
-        skipped_short = len(segments) - len(to_extract)
-        failed = len(to_extract) - extracted
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(
-            "Embedding extraction completed",
-            extra={
-                "file": audio_path.name,
-                "segments_in": len(segments),
-                "segments_out": extracted,
-                "skipped_short": skipped_short,
-                "failed": failed,
-                "elapsed_ms": round(elapsed_ms),
-            },
-        )
-        return result
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(sample_rate)
+        wf.writeframes(chunk)
+    return buf.getvalue()
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

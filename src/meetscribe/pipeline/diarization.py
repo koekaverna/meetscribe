@@ -9,7 +9,7 @@ import httpx
 
 from meetscribe.errors import SpeachesAPIError, speaches_retry
 
-from .embeddings import EmbeddingExtractor, SpeakerIdentifier
+from .embeddings import EmbeddingExtractor, SpeakerIdentifier, slice_wav
 from .models import SpeechSegment
 
 logger = logging.getLogger(__name__)
@@ -182,9 +182,7 @@ class DiarizationPipeline:
 
             # Extract embedding from representative segment
             try:
-                wav_bytes = EmbeddingExtractor._slice_wav(
-                    raw_frames, sample_rate, sample_width, representative
-                )
+                wav_bytes = slice_wav(raw_frames, sample_rate, sample_width, representative)
                 embedding = self.embeddings.extract(wav_bytes)
             except Exception:
                 logger.warning(

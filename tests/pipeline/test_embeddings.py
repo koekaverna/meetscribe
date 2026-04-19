@@ -11,9 +11,9 @@ from meetscribe.pipeline.embeddings import (
     EmbeddingExtractor,
     compute_voiceprint,
     cosine_similarity,
+    slice_wav,
 )
 from meetscribe.pipeline.models import SpeechSegment
-from tests.conftest import make_wav_file
 
 
 class TestCosineSimilarity:
@@ -122,7 +122,7 @@ class TestSliceWav:
         raw = self._make_raw_frames(sample_rate, 3.0)
         seg = SpeechSegment(start_ms=1000, end_ms=2000)
 
-        wav_bytes = EmbeddingExtractor._slice_wav(raw, sample_rate, 2, seg)
+        wav_bytes = slice_wav(raw, sample_rate, 2, seg)
 
         # Parse the WAV to check frame count
         buf = io.BytesIO(wav_bytes)
@@ -137,7 +137,7 @@ class TestSliceWav:
         raw = self._make_raw_frames(sample_rate, 3.0)
         seg = SpeechSegment(start_ms=500, end_ms=1500)
 
-        wav_bytes = EmbeddingExtractor._slice_wav(raw, sample_rate, 2, seg)
+        wav_bytes = slice_wav(raw, sample_rate, 2, seg)
 
         buf = io.BytesIO(wav_bytes)
         with wave.open(buf, "rb") as wf:
@@ -153,36 +153,10 @@ class TestSliceWav:
         raw = self._make_raw_frames(sample_rate, 1.0)
         seg = SpeechSegment(start_ms=0, end_ms=500)
 
-        wav_bytes = EmbeddingExtractor._slice_wav(raw, sample_rate, 2, seg)
+        wav_bytes = slice_wav(raw, sample_rate, 2, seg)
 
         buf = io.BytesIO(wav_bytes)
         with wave.open(buf, "rb") as wf:
             assert wf.getnchannels() == 1
             assert wf.getsampwidth() == 2
             assert wf.getframerate() == 16000
-
-
-class TestExtractSegmentsFiltering:
-    def test_short_segments_get_none_embedding(self, tmp_path: Path):
-        audio = make_wav_file(tmp_path / "test.wav", duration_s=3.0)
-        embedding = [0.1] * 256
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"data": [{"embedding": embedding}]}
-        mock_resp.raise_for_status = MagicMock()
-
-        segments = [
-            SpeechSegment(0, 2000),  # long enough
-            SpeechSegment(2000, 2500),  # too short (< 1500ms)
-        ]
-
-        with patch("meetscribe.pipeline.embeddings.httpx.post", return_value=mock_resp):
-            ext = EmbeddingExtractor(
-                "http://fake:8000", timeout=10.0, min_duration_ms=1500, model="m"
-            )
-            results = ext.extract_segments(audio, segments, max_workers=1)
-
-        assert len(results) == 2
-        assert results[0][1] == embedding
-        assert results[1][1] is None

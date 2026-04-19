@@ -69,10 +69,6 @@ embeddings:
   # Below this value, the match is never accepted.
   min_threshold: 0.45
 
-  # Number of threads for parallel embedding extraction.
-  # Increase if the server supports concurrent requests.
-  max_workers: 4
-
   # --- Sample extraction (for speaker enrollment) ---
 
   # Minimum segment duration (ms) to use as a sample.

@@ -124,7 +124,6 @@ class TestPartialConfig:
         assert cfg.embeddings.min_duration_ms == 1500
         assert cfg.embeddings.confident_gap == 0.2
         assert cfg.embeddings.min_threshold == 0.45
-        assert cfg.embeddings.max_workers == 4
 
         assert cfg.transcription.model == "Systran/faster-whisper-medium"
         assert cfg.transcription.language == "ru"
@@ -151,14 +150,13 @@ class TestPartialConfig:
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
             "diarization": {"server": "gpu1", "timeout": 300.0},
-            "embeddings": {"server": "gpu1", "timeout": 30.0, "max_workers": 8},
+            "embeddings": {"server": "gpu1", "timeout": 30.0},
             "transcription": {"servers": ["gpu1"], "language": "en", "max_gap_ms": 1000},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
         cfg = load_config(p)
         assert cfg.diarization.timeout == 300.0
         assert cfg.embeddings.timeout == 30.0
-        assert cfg.embeddings.max_workers == 8
         assert cfg.transcription.language == "en"
         assert cfg.transcription.max_gap_ms == 1000
 
