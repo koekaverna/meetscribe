@@ -191,11 +191,11 @@ MeetScribe — CLI + Web tool for meeting transcription with speaker diarization
 ### Transcript playback (web)
 
 - [x] Structured segments stored in DB alongside markdown
-- [ ] Global audio player: play/pause, seekable progress bar, time display
-- [ ] Synchronized multi-track playback, per-track mute
-- [ ] Active segment highlighting during playback
-- [ ] Active track highlighting (which track the current segment belongs to)
-- [ ] Click segment to play from that point
+- [x] Global audio player: play/pause, seekable progress bar, time display
+- [x] Synchronized multi-track playback, per-track mute
+- [x] Active segment highlighting during playback
+- [x] Active track highlighting (which track the current segment belongs to)
+- [x] Click segment to play from that point
 
 ### Transcript editing (web)
 
