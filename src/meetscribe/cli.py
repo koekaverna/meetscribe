@@ -153,21 +153,17 @@ def _create_diarization(cfg: AppConfig, team_ctx: TeamContext) -> DiarizationPip
     """Create a DiarizationPipeline from config and team context."""
     voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
     return DiarizationPipeline(
-        vad_url=cfg.get_vad_url(),
+        diarization_url=cfg.get_diarization_url(),
         embedding_url=cfg.get_embeddings_url(),
         voiceprints=voiceprints,
         threshold=cfg.embeddings.threshold,
-        vad_timeout=cfg.vad.timeout,
-        embedding_timeout=cfg.embeddings.timeout,
-        min_duration_ms=cfg.embeddings.min_duration_ms,
-        unknown_cluster_threshold=cfg.embeddings.unknown_cluster_threshold,
         confident_gap=cfg.embeddings.confident_gap,
         min_threshold=cfg.embeddings.min_threshold,
-        max_workers=cfg.embeddings.max_workers,
+        diarization_timeout=cfg.diarization.timeout,
+        embedding_timeout=cfg.embeddings.timeout,
+        min_duration_ms=cfg.embeddings.min_duration_ms,
         embedding_model=cfg.embeddings.model,
-        vad_min_silence_duration_ms=cfg.vad.min_silence_duration_ms,
-        vad_speech_pad_ms=cfg.vad.speech_pad_ms,
-        vad_threshold=cfg.vad.threshold,
+        diarization_model=cfg.diarization.model,
     )
 
 
@@ -524,24 +520,14 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
                         ok(f"{len(segs)} transcribed segments")
                     all_segments.extend(segs)
                 else:
-                    # Diarize track: VAD -> embeddings -> identification
-                    with substep("Voice activity detection", "\U0001f50d"):
-                        segments = diarization.vad.detect(track_path)
+                    # Diarize track: server-side segmentation + local speaker matching
+                    with substep("Speaker diarization", "\U0001f465"):
+                        segments = diarization.diarize(track_path)
                         if not segments:
                             warn(f"No speech in track {track_num}")
                             continue
-                        ok(f"{len(segments)} speech segments")
-
-                    with substep("Speaker embeddings", "\U0001f511"):
-                        segments_with_emb = diarization.embeddings.extract_segments(
-                            track_path, segments, diarization.max_workers
-                        )
-                        ok(f"{len(segments_with_emb)} embeddings extracted")
-
-                    with substep("Speaker identification", "\U0001f465"):
-                        segments = diarization.identifier.identify_segments(segments_with_emb)
                         speakers = {s.speaker for s in segments if s.speaker}
-                        ok(f"{len(speakers)} speaker(s) identified")
+                        ok(f"{len(segments)} segments, {len(speakers)} speaker(s)")
                         for spk in sorted(speakers):
                             is_known = not spk.startswith("Unknown")
                             marker = f"{C_GREEN}\u2714" if is_known else f"{C_YELLOW}\u2753"
@@ -613,23 +599,13 @@ def cmd_extract_samples(args: argparse.Namespace, team_ctx: TeamContext) -> None
             for track_num, track_path in enumerate(track_files, 1):
                 print(f"\n    {C_BLUE}\u2500\u2500 Track {track_num} \u2500\u2500{C_RESET}")
 
-                with substep("Voice activity detection", "\U0001f50d"):
-                    segments = diarization.vad.detect(track_path)
+                with substep("Speaker diarization", "\U0001f465"):
+                    segments = diarization.diarize(track_path)
                     if not segments:
                         warn(f"No speech in track {track_num}")
                         continue
-                    ok(f"{len(segments)} speech segments")
-
-                with substep("Speaker embeddings", "\U0001f511"):
-                    segments_with_emb = diarization.embeddings.extract_segments(
-                        track_path, segments, diarization.max_workers
-                    )
-                    ok(f"{len(segments_with_emb)} embeddings extracted")
-
-                with substep("Speaker identification", "\U0001f465"):
-                    segments = diarization.identifier.identify_segments(segments_with_emb)
                     speakers = {s.speaker for s in segments if s.speaker}
-                    ok(f"{len(speakers)} speaker(s) identified")
+                    ok(f"{len(segments)} segments, {len(speakers)} speaker(s)")
                     for spk in sorted(speakers):
                         is_known = not spk.startswith("Unknown")
                         marker = f"{C_GREEN}\u2714" if is_known else f"{C_YELLOW}\u2753"

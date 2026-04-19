@@ -245,13 +245,11 @@ class SpeakerIdentifier:
         threshold: float,
         confident_gap: float,
         min_threshold: float,
-        unknown_cluster_threshold: float,
     ):
         self.voiceprints = voiceprints
         self.threshold = threshold
         self.confident_gap = confident_gap
         self.min_threshold = min_threshold
-        self.unknown_cluster_threshold = unknown_cluster_threshold
         logger.info(
             "Speaker identifier initialized",
             extra={
@@ -296,111 +294,3 @@ class SpeakerIdentifier:
             return best_name, best_sim
 
         return None, best_sim
-
-    def identify_segments(
-        self,
-        segments_with_embeddings: list[tuple[SpeechSegment, list[float] | None]],
-    ) -> list[SpeechSegment]:
-        """Assign speaker labels to segments.
-
-        Known speakers are matched by voiceprint similarity.
-        Unknown speakers are clustered using Agglomerative Hierarchical Clustering
-        so the same voice gets a consistent label.
-        Segments with no embedding (too short) inherit speaker from the nearest
-        identified neighbor by time proximity.
-        """
-        from .clustering import cluster_embeddings
-
-        t0 = time.perf_counter()
-
-        result: list[SpeechSegment] = []
-        deferred: list[int] = []  # indices with None embedding
-        unknown_indices: list[int] = []
-        unknown_embeddings: list[list[float]] = []
-
-        # Phase 1: known speaker identification
-        for seg, embedding in segments_with_embeddings:
-            idx = len(result)
-            result.append(seg)
-
-            if embedding is None:
-                seg.speaker = None
-                deferred.append(idx)
-                continue
-
-            name, sim = self.identify(embedding)
-            if name is not None:
-                seg.speaker = name
-                logger.debug(
-                    "Segment identified",
-                    extra={
-                        "segment_start_ms": seg.start_ms,
-                        "segment_end_ms": seg.end_ms,
-                        "speaker": name,
-                        "similarity": round(sim, 3),
-                    },
-                )
-            else:
-                seg.speaker = None  # resolved in phase 2
-                unknown_indices.append(idx)
-                unknown_embeddings.append(embedding)
-
-        # Phase 2: cluster unknown speakers via AHC
-        if unknown_embeddings:
-            labels = cluster_embeddings(unknown_embeddings, self.unknown_cluster_threshold)
-            for i, idx in enumerate(unknown_indices):
-                result[idx].speaker = f"Unknown-{labels[i] + 1}"
-                logger.debug(
-                    "Segment clustered",
-                    extra={
-                        "segment_start_ms": result[idx].start_ms,
-                        "segment_end_ms": result[idx].end_ms,
-                        "speaker": f"Unknown-{labels[i] + 1}",
-                    },
-                )
-
-        # Phase 3: assign deferred (short) segments to nearest neighbor
-        for idx in deferred:
-            seg = result[idx]
-            neighbor = self._find_nearest_labeled(idx, result)
-            seg.speaker = neighbor or "Unknown"
-            logger.debug(
-                "Segment inherited from neighbor",
-                extra={
-                    "segment_start_ms": seg.start_ms,
-                    "segment_end_ms": seg.end_ms,
-                    "speaker": seg.speaker,
-                },
-            )
-
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        speakers = {s.speaker for s in result if s.speaker}
-        known = sum(1 for s in speakers if not s.startswith("Unknown"))
-        unknown = len(speakers) - known
-        logger.info(
-            "Speaker identification completed",
-            extra={
-                "segments": len(result),
-                "speakers": len(speakers),
-                "known": known,
-                "unknown": unknown,
-                "deferred": len(deferred),
-                "elapsed_ms": round(elapsed_ms),
-            },
-        )
-
-        return result
-
-    @staticmethod
-    def _find_nearest_labeled(idx: int, segments: list[SpeechSegment]) -> str | None:
-        """Find speaker of the nearest segment that has a label."""
-        # Search outward from idx
-        left, right = idx - 1, idx + 1
-        while left >= 0 or right < len(segments):
-            if left >= 0 and segments[left].speaker:
-                return segments[left].speaker
-            if right < len(segments) and segments[right].speaker:
-                return segments[right].speaker
-            left -= 1
-            right += 1
-        return None

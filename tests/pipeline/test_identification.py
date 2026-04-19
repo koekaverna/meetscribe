@@ -7,7 +7,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from meetscribe.pipeline.embeddings import SpeakerIdentifier, enroll_samples
-from meetscribe.pipeline.models import SpeechSegment
 from tests.conftest import make_wav_file
 
 
@@ -34,13 +33,7 @@ class TestSpeakerIdentifierIdentify:
         min_threshold=0.4,
     ):
         vp = voiceprints or {}
-        return SpeakerIdentifier(
-            vp,
-            threshold,
-            confident_gap,
-            min_threshold,
-            unknown_cluster_threshold=0.25,
-        )
+        return SpeakerIdentifier(vp, threshold, confident_gap, min_threshold)
 
     def test_no_voiceprints_returns_none(self):
         ident = self._make_identifier()
@@ -90,112 +83,6 @@ class TestSpeakerIdentifierIdentify:
         ident = self._make_identifier({"Alice": ALICE_EMB, "Bob": BOB_EMB})
         name, _ = ident.identify(ALICE_LIKE)
         assert name == "Alice"
-
-
-class TestNearestLabeledInheritance:
-    """Short segments (no embedding) inherit speaker from nearest labeled neighbor."""
-
-    def _make_identifier(self, voiceprints):
-        return SpeakerIdentifier(
-            voiceprints,
-            threshold=0.8,
-            confident_gap=0.2,
-            min_threshold=0.4,
-            unknown_cluster_threshold=0.25,
-        )
-
-    def test_inherits_from_left(self):
-        ident = self._make_identifier({"Alice": ALICE_EMB})
-        segments = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 1500), None),  # short, no embedding
-        ]
-        result = ident.identify_segments(segments)
-        assert result[1].speaker == "Alice"
-
-    def test_inherits_from_right(self):
-        ident = self._make_identifier({"Bob": BOB_EMB})
-        segments = [
-            (SpeechSegment(0, 500), None),  # short, no embedding
-            (SpeechSegment(500, 1500), BOB_EMB),
-        ]
-        result = ident.identify_segments(segments)
-        assert result[0].speaker == "Bob"
-
-    def test_left_preferred_when_equidistant(self):
-        ident = self._make_identifier({"Alice": ALICE_EMB, "Bob": BOB_EMB})
-        segments = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 1500), None),  # short, equidistant
-            (SpeechSegment(1500, 2500), BOB_EMB),
-        ]
-        result = ident.identify_segments(segments)
-        assert result[1].speaker == "Alice"
-
-    def test_no_labeled_neighbors_gets_unknown(self):
-        ident = self._make_identifier({})
-        segments = [
-            (SpeechSegment(0, 500), None),
-            (SpeechSegment(500, 1000), None),
-        ]
-        result = ident.identify_segments(segments)
-        assert result[0].speaker == "Unknown"
-
-
-class TestIdentifySegments:
-    def _make_identifier(self, voiceprints):
-        return SpeakerIdentifier(
-            voiceprints,
-            threshold=0.8,
-            confident_gap=0.2,
-            min_threshold=0.4,
-            unknown_cluster_threshold=0.25,
-        )
-
-    def test_all_known_speakers(self):
-        ident = self._make_identifier({"Alice": ALICE_EMB, "Bob": BOB_EMB})
-        segments_with_emb = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 2000), BOB_EMB),
-        ]
-        result = ident.identify_segments(segments_with_emb)
-        assert result[0].speaker == "Alice"
-        assert result[1].speaker == "Bob"
-
-    def test_all_unknown_get_cluster_labels(self):
-        ident = self._make_identifier({})
-        segments_with_emb = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 2000), ALICE_EMB),
-            (SpeechSegment(2000, 3000), BOB_EMB),
-        ]
-        result = ident.identify_segments(segments_with_emb)
-        # All should have "Unknown-N" labels
-        assert all(s.speaker.startswith("Unknown-") for s in result)
-        # Same voice → same label
-        assert result[0].speaker == result[1].speaker
-        # Different voice → different label
-        assert result[0].speaker != result[2].speaker
-
-    def test_short_segments_inherit_from_neighbor(self):
-        ident = self._make_identifier({"Alice": ALICE_EMB})
-        segments_with_emb = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 1500), None),  # too short, no embedding
-        ]
-        result = ident.identify_segments(segments_with_emb)
-        assert result[0].speaker == "Alice"
-        assert result[1].speaker == "Alice"  # inherited
-
-    def test_mixed_known_and_unknown(self):
-        ident = self._make_identifier({"Alice": ALICE_EMB})
-        segments_with_emb = [
-            (SpeechSegment(0, 1000), ALICE_EMB),
-            (SpeechSegment(1000, 2000), BOB_EMB),  # unknown
-        ]
-        result = ident.identify_segments(segments_with_emb)
-        assert result[0].speaker == "Alice"
-        assert result[1].speaker.startswith("Unknown-")
 
 
 class TestEnrollSamples:

@@ -140,14 +140,12 @@ class ServerInfo(ValidatedConfig):
 
 
 @dataclass
-class VadConfig(ValidatedConfig):
-    """VAD endpoint configuration."""
+class DiarizationConfig(ValidatedConfig):
+    """Server-side diarization configuration."""
 
     server: str = ""
-    timeout: float = 120.0
-    min_silence_duration_ms: int = 1200
-    speech_pad_ms: int = 30
-    threshold: float = 0.5
+    model: str = "fedirz/segmentation_community_1"
+    timeout: float = 600.0
 
 
 @dataclass
@@ -159,7 +157,6 @@ class EmbeddingsConfig(ValidatedConfig):
     timeout: float = 60.0
     threshold: float = 0.6
     min_duration_ms: int = 1500
-    unknown_cluster_threshold: float = 0.25
     confident_gap: float = 0.2
     min_threshold: float = 0.45
     max_workers: int = 4
@@ -196,7 +193,7 @@ class AppConfig:
     """Full application configuration loaded from YAML."""
 
     servers: list[ServerInfo] = field(default_factory=list)
-    vad: VadConfig = field(default_factory=VadConfig)
+    diarization: DiarizationConfig = field(default_factory=DiarizationConfig)
     embeddings: EmbeddingsConfig = field(default_factory=EmbeddingsConfig)
     transcription: TranscriptionConfig = field(default_factory=TranscriptionConfig)
     web: WebConfig = field(default_factory=WebConfig)
@@ -209,9 +206,9 @@ class AppConfig:
                 return s.url
         raise ConfigurationError(f"Server '{name}' not found in configuration")
 
-    def get_vad_url(self) -> str:
-        """Get the VAD server URL."""
-        return self.get_server_url(self.vad.server)
+    def get_diarization_url(self) -> str:
+        """Get the diarization server URL."""
+        return self.get_server_url(self.diarization.server)
 
     def get_embeddings_url(self) -> str:
         """Get the embeddings server URL."""
@@ -226,10 +223,12 @@ class AppConfig:
         if not self.servers:
             raise ConfigurationError("No servers configured. See config.example.yaml")
         server_names = {s.name for s in self.servers}
-        if not self.vad.server:
-            raise ConfigurationError("vad.server not configured. See config.example.yaml")
-        if self.vad.server not in server_names:
-            raise ConfigurationError(f"VAD server '{self.vad.server}' not found in servers list")
+        if not self.diarization.server:
+            raise ConfigurationError("diarization.server not configured. See config.example.yaml")
+        if self.diarization.server not in server_names:
+            raise ConfigurationError(
+                f"Diarization server '{self.diarization.server}' not found in servers list"
+            )
         if not self.embeddings.server:
             raise ConfigurationError("embeddings.server not configured. See config.example.yaml")
         if self.embeddings.server not in server_names:
@@ -285,7 +284,7 @@ def load_config(config_path: Path) -> AppConfig:
     if not isinstance(data, dict):
         raise ConfigurationError(f"Config root must be a mapping, got {type(data).__name__}")
 
-    for section in ("vad", "embeddings", "transcription", "web"):
+    for section in ("diarization", "embeddings", "transcription", "web"):
         if section in data and not isinstance(data[section], dict):
             raise ConfigurationError(
                 f"Config section '{section}' must be a mapping, got {type(data[section]).__name__}"
@@ -300,7 +299,7 @@ def load_config(config_path: Path) -> AppConfig:
             raise ConfigurationError(f"servers[{i}]: each entry must have 'url' and 'name'")
         servers.append(ServerInfo(url=s["url"], name=s["name"]))
 
-    vad = _build_section(VadConfig, data.get("vad"))
+    diarization = _build_section(DiarizationConfig, data.get("diarization"))
     embeddings = _build_section(EmbeddingsConfig, data.get("embeddings"))
     transcription = _build_section(TranscriptionConfig, data.get("transcription"))
     web = _build_section(WebConfig, data.get("web"))
@@ -314,7 +313,7 @@ def load_config(config_path: Path) -> AppConfig:
 
     cfg = AppConfig(
         servers=servers,
-        vad=vad,
+        diarization=diarization,
         embeddings=embeddings,
         transcription=transcription,
         web=web,

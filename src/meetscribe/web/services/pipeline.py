@@ -52,21 +52,17 @@ class PipelineRunner:
         """Create a diarization pipeline with current voiceprints."""
         voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
         return DiarizationPipeline(
-            vad_url=self.cfg.get_vad_url(),
+            diarization_url=self.cfg.get_diarization_url(),
             embedding_url=self.cfg.get_embeddings_url(),
             voiceprints=voiceprints,
             threshold=self.cfg.embeddings.threshold,
-            vad_timeout=self.cfg.vad.timeout,
-            embedding_timeout=self.cfg.embeddings.timeout,
-            min_duration_ms=self.cfg.embeddings.min_duration_ms,
-            unknown_cluster_threshold=self.cfg.embeddings.unknown_cluster_threshold,
             confident_gap=self.cfg.embeddings.confident_gap,
             min_threshold=self.cfg.embeddings.min_threshold,
-            max_workers=self.cfg.embeddings.max_workers,
+            diarization_timeout=self.cfg.diarization.timeout,
+            embedding_timeout=self.cfg.embeddings.timeout,
+            min_duration_ms=self.cfg.embeddings.min_duration_ms,
             embedding_model=self.cfg.embeddings.model,
-            vad_min_silence_duration_ms=self.cfg.vad.min_silence_duration_ms,
-            vad_speech_pad_ms=self.cfg.vad.speech_pad_ms,
-            vad_threshold=self.cfg.vad.threshold,
+            diarization_model=self.cfg.diarization.model,
         )
 
     def _create_transcriber(self, language: str) -> Transcriber:
@@ -98,7 +94,7 @@ class PipelineRunner:
             yield {"step": 1, "total": 1, "message": "No tracks need diarization", "samples": []}
             return
 
-        total_steps = len(tracks_to_process) * 3 + 1  # connect + (vad + embed + id) per track
+        total_steps = len(tracks_to_process) + 2  # connect + diarize per track + done
 
         # Step 1: Create pipeline
         if progress_callback:
@@ -110,17 +106,16 @@ class PipelineRunner:
             step = 1
             all_samples = []
             for track_num, track_path in tracks_to_process:
-                # VAD
                 step += 1
                 if progress_callback:
                     yield {
                         "step": step,
                         "total": total_steps,
-                        "message": f"Track {track_num}: Running VAD...",
+                        "message": f"Track {track_num}: Diarizing...",
                     }
 
-                segments = diarization.vad.detect(track_path)
-                if not segments:
+                labeled_segments = diarization.diarize(track_path)
+                if not labeled_segments:
                     yield {
                         "step": step,
                         "total": total_steps,
@@ -128,27 +123,6 @@ class PipelineRunner:
                     }
                     continue
 
-                # Embeddings
-                step += 1
-                if progress_callback:
-                    seg_count = len(segments)
-                    msg = f"Track {track_num}: Extracting embeddings ({seg_count} segments)..."
-                    yield {"step": step, "total": total_steps, "message": msg}
-
-                segments_with_emb = diarization.embeddings.extract_segments(
-                    track_path, segments, diarization.max_workers
-                )
-
-                # Identification
-                step += 1
-                if progress_callback:
-                    yield {
-                        "step": step,
-                        "total": total_steps,
-                        "message": f"Track {track_num}: Identifying speakers...",
-                    }
-
-                labeled_segments = diarization.identifier.identify_segments(segments_with_emb)
                 speakers = {s.speaker for s in labeled_segments if s.speaker}
 
                 # Extract audio samples
@@ -287,33 +261,23 @@ class PipelineRunner:
                     "message": f"Track {track_num}: Processing...",
                 }
 
-                # Always run VAD first — sending large files to the server fails
-                segments = diarization.vad.detect(track_path)
-                if not segments:
-                    yield {
-                        "step": step,
-                        "total": total_steps,
-                        "message": f"Track {track_num}: No speech found",
-                    }
-                    continue
-
                 if speaker_name:
-                    # Named track: assign speaker to all VAD segments, then transcribe
-                    for seg in segments:
-                        seg.speaker = speaker_name
-                    segs = transcriber.transcribe_segments(track_path, segments)
-                    for ts in segs:
-                        ts.track_num = track_num
+                    # Named track: transcribe whole file with speaker
+                    segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
                     all_segments.extend(segs)
                 else:
-                    # Diarize: embeddings -> identification (VAD already done above)
-                    segments_with_emb = diarization.embeddings.extract_segments(
-                        track_path, segments, diarization.max_workers
-                    )
-                    labeled = diarization.identifier.identify_segments(segments_with_emb)
+                    # Diarize track
+                    segments = diarization.diarize(track_path)
+                    if not segments:
+                        yield {
+                            "step": step,
+                            "total": total_steps,
+                            "message": f"Track {track_num}: No speech found",
+                        }
+                        continue
 
                     step += 1
-                    seg_count = len(labeled)
+                    seg_count = len(segments)
                     yield {
                         "step": step,
                         "total": total_steps,
@@ -321,9 +285,7 @@ class PipelineRunner:
                         "progress": 0,
                     }
 
-                    segs = transcriber.transcribe_segments(track_path, labeled)
-                    for ts in segs:
-                        ts.track_num = track_num
+                    segs = transcriber.transcribe_segments(track_path, segments)
                     all_segments.extend(segs)
 
             # Merge
