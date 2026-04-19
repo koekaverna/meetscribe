@@ -302,8 +302,8 @@ class PipelineRunner:
                     for seg in segments:
                         seg.speaker = speaker_name
                     segs = transcriber.transcribe_segments(track_path, segments)
-                    for seg in segs:
-                        seg.track_num = track_num
+                    for ts in segs:
+                        ts.track_num = track_num
                     all_segments.extend(segs)
                 else:
                     # Diarize: embeddings -> identification (VAD already done above)
@@ -322,8 +322,8 @@ class PipelineRunner:
                     }
 
                     segs = transcriber.transcribe_segments(track_path, labeled)
-                    for seg in segs:
-                        seg.track_num = track_num
+                    for ts in segs:
+                        ts.track_num = track_num
                     all_segments.extend(segs)
 
             # Merge
