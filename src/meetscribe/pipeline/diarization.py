@@ -64,14 +64,21 @@ class DiarizationPipeline:
             return []
 
         # 2. Convert to SpeechSegments (seconds -> ms)
-        segments = [
-            SpeechSegment(
-                start_ms=int(s["start"] * 1000),
-                end_ms=int(s["end"] * 1000),
-                speaker=s["speaker"],
-            )
-            for s in raw_segments
-        ]
+        endpoint = f"{self.diarization_url}/v1/audio/diarization"
+        try:
+            segments = [
+                SpeechSegment(
+                    start_ms=int(s["start"] * 1000),
+                    end_ms=int(s["end"] * 1000),
+                    speaker=s["speaker"],
+                )
+                for s in raw_segments
+            ]
+        except (KeyError, TypeError, ValueError) as e:
+            raise SpeachesAPIError(
+                f"Unexpected diarization segment format: {e}",
+                endpoint=endpoint,
+            ) from e
 
         # 3. Build cluster -> known speaker mapping
         speaker_map = self._map_clusters_to_speakers(audio_path, segments)
@@ -125,8 +132,16 @@ class DiarizationPipeline:
                 endpoint=endpoint,
             ) from e
 
-        result: dict[str, list[dict]] = response.json()
-        return result.get("segments", [])
+        try:
+            result = response.json()
+            segments: list[dict] = result["segments"]
+        except Exception as e:
+            raise SpeachesAPIError(
+                f"Unexpected diarization response format: {e}",
+                endpoint=endpoint,
+                detail=str(response.text)[:200],
+            ) from e
+        return segments
 
     def _map_clusters_to_speakers(
         self,

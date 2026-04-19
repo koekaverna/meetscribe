@@ -239,7 +239,9 @@ class PipelineRunner:
     ) -> Generator[dict, None, None]:
         """Transcribe tracks. Yields progress and results."""
         effective_language = language or self.cfg.transcription.language
-        total_steps = len(track_paths) * 2 + 2
+        named_count = sum(1 for i in range(len(track_paths)) if track_speakers.get(i + 1))
+        diarized_count = len(track_paths) - named_count
+        total_steps = named_count + diarized_count * 2 + 2
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to servers..."}
         team_ctx = self._resolve()

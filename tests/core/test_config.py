@@ -74,6 +74,7 @@ class TestValidate:
             cfg.validate()
 
     def test_diarization_server_not_in_list_raises(self, tmp_path: Path):
+        """Unknown diarization server name raises ConfigurationError."""
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
             "diarization": {"server": "nonexistent"},
@@ -184,6 +185,7 @@ class TestAppConfigMethods:
             cfg.get_server_url("nonexistent")
 
     def test_get_diarization_url(self):
+        """Returns correct URL for diarization server."""
         cfg = self._make_config()
         assert cfg.get_diarization_url() == "http://a:8000"
 
@@ -204,6 +206,7 @@ class TestAppConfigMethods:
         assert cfg.get_transcription_urls() == []
 
     def test_validate_empty_diarization_server_raises(self):
+        """Empty diarization.server fails validation."""
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
             diarization=DiarizationConfig(server=""),
@@ -341,6 +344,7 @@ class TestDefaultsMatchConfigYaml:
             return yaml.safe_load(f)
 
     def test_diarization_defaults(self, config_yaml: dict):
+        """Dataclass defaults match config.example.yaml values."""
         d = config_yaml["diarization"]
         defaults = DiarizationConfig()
         assert defaults.model == d["model"]

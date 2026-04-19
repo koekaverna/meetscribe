@@ -138,6 +138,7 @@ class TestDiarizationPipelineEndToEnd:
         assert result[1].end_ms == 3000
 
     def test_no_segments_returns_empty(self, tmp_path: Path):
+        """Empty segments from diarization API produces empty result."""
         audio = _make_wav(tmp_path / "test.wav", duration_s=1.0)
 
         def mock_post(url, **kwargs):
@@ -166,6 +167,7 @@ class TestDiarizationPipelineEndToEnd:
         assert result == []
 
     def test_unknown_speakers_when_no_voiceprints(self, tmp_path: Path):
+        """Without voiceprints, all speakers get Unknown-N labels."""
         audio = _make_wav(tmp_path / "test.wav", duration_s=3.0)
 
         def mock_post(url, **kwargs):
