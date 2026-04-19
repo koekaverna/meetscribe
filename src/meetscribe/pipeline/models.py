@@ -24,6 +24,7 @@ class TranscriptSegment:
     end_ms: int
     text: str
     speaker: str | None = None
+    track_num: int | None = None
 
 
 def merge_close_segments(

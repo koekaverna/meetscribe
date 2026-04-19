@@ -248,3 +248,90 @@ class TestTranscript:
         svc, _ = session_env
         with pytest.raises(ValueError, match="Session not found"):
             svc.set_transcript("no-such-id", "text")
+
+
+class TestSegments:
+    def test_save_and_load_segments(self, session_env):
+        svc, _ = session_env
+        state = svc.create("default")
+
+        segments = [
+            {"track_num": 1, "start_ms": 0, "end_ms": 5000, "speaker": "Alice", "text": "Hello"},
+            {"track_num": 1, "start_ms": 5000, "end_ms": 10000, "speaker": "Bob", "text": "Hi"},
+            {"track_num": 2, "start_ms": 3000, "end_ms": 7000, "speaker": None, "text": "..."},
+        ]
+        svc.save_segments(state.id, segments)
+
+        fetched = svc.get(state.id)
+        assert len(fetched.segments) == 3
+        assert fetched.segments[0].track_num == 1
+        assert fetched.segments[0].start_ms == 0
+        assert fetched.segments[0].end_ms == 5000
+        assert fetched.segments[0].speaker == "Alice"
+        assert fetched.segments[0].text == "Hello"
+        assert fetched.segments[1].speaker == "Bob"
+        assert fetched.segments[2].track_num == 2
+        assert fetched.segments[2].speaker is None
+
+    def test_save_segments_replaces_old(self, session_env):
+        svc, _ = session_env
+        state = svc.create("default")
+
+        svc.save_segments(
+            state.id,
+            [
+                {"track_num": 1, "start_ms": 0, "end_ms": 1000, "speaker": "A", "text": "old"},
+            ],
+        )
+        assert len(svc.get(state.id).segments) == 1
+
+        svc.save_segments(
+            state.id,
+            [
+                {"track_num": 1, "start_ms": 0, "end_ms": 2000, "speaker": "B", "text": "new1"},
+                {"track_num": 1, "start_ms": 2000, "end_ms": 4000, "speaker": "C", "text": "new2"},
+            ],
+        )
+        fetched = svc.get(state.id)
+        assert len(fetched.segments) == 2
+        assert fetched.segments[0].text == "new1"
+        assert fetched.segments[1].text == "new2"
+
+    def test_segments_preserve_sort_order(self, session_env):
+        svc, _ = session_env
+        state = svc.create("default")
+
+        # Segments intentionally out of start_ms order — sort_order should win
+        segments = [
+            {"track_num": 2, "start_ms": 5000, "end_ms": 10000, "speaker": "B", "text": "second"},
+            {"track_num": 1, "start_ms": 0, "end_ms": 5000, "speaker": "A", "text": "first"},
+        ]
+        svc.save_segments(state.id, segments)
+
+        fetched = svc.get(state.id)
+        assert fetched.segments[0].text == "second"
+        assert fetched.segments[1].text == "first"
+
+    def test_segments_empty_after_create(self, session_env):
+        svc, _ = session_env
+        state = svc.create("default")
+        fetched = svc.get(state.id)
+        assert fetched.segments == []
+
+    def test_segments_cascade_delete(self, session_env):
+        svc, _ = session_env
+        state = svc.create("default")
+        svc.save_segments(
+            state.id,
+            [
+                {"track_num": 1, "start_ms": 0, "end_ms": 1000, "speaker": "A", "text": "hello"},
+            ],
+        )
+        svc.delete(state.id)
+
+        # Verify segments are gone (no orphan rows)
+        count = svc.conn.execute(
+            "SELECT COUNT(*) as cnt FROM session_segments WHERE session_id = ?",
+            (state.id,),
+        ).fetchone()["cnt"]
+        assert count == 0

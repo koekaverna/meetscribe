@@ -47,6 +47,7 @@ class TestMigrations:
         assert tables1 == tables2
         assert "teams" in tables1
         assert "voiceprints" in tables1
+        assert "session_segments" in tables1
         conn1.close()
         conn2.close()
 

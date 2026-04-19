@@ -9,7 +9,14 @@ from meetscribe import config
 from meetscribe.config import get_config
 from meetscribe.database import get_team
 
-from ..models import Sample, SessionState, SessionStatus, SpeakerBin, TrackConfig
+from ..models import (
+    Sample,
+    SessionState,
+    SessionStatus,
+    SpeakerBin,
+    TrackConfig,
+    TranscriptSegmentModel,
+)
 
 # Session TTL in seconds (2 hours)
 SESSION_TTL = 2 * 60 * 60
@@ -106,6 +113,20 @@ class SessionService:
             ).fetchall()
         ]
 
+        segments = [
+            TranscriptSegmentModel(
+                track_num=seg["track_num"],
+                start_ms=seg["start_ms"],
+                end_ms=seg["end_ms"],
+                speaker=seg["speaker"],
+                text=seg["text"],
+            )
+            for seg in self.conn.execute(
+                "SELECT * FROM session_segments WHERE session_id = ? ORDER BY sort_order",
+                (session_id,),
+            ).fetchall()
+        ]
+
         return SessionState(
             id=row["id"],
             status=SessionStatus(row["status"]),
@@ -114,6 +135,7 @@ class SessionService:
             speakers=speakers,
             samples=samples,
             transcript=row["transcript"],
+            segments=segments,
             language=row["language"],
         )
 
@@ -397,6 +419,26 @@ class SessionService:
         )
         if cursor.rowcount == 0:
             raise ValueError(f"Session not found: {session_id}")
+        self.conn.commit()
+
+    def save_segments(self, session_id: str, segments: list[dict]) -> None:
+        """Save structured transcript segments."""
+        self.conn.execute("DELETE FROM session_segments WHERE session_id = ?", (session_id,))
+        for i, seg in enumerate(segments):
+            self.conn.execute(
+                "INSERT INTO session_segments "
+                "(session_id, track_num, start_ms, end_ms, speaker, text, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    seg["track_num"],
+                    seg["start_ms"],
+                    seg["end_ms"],
+                    seg.get("speaker"),
+                    seg["text"],
+                    i,
+                ),
+            )
         self.conn.commit()
 
     # --- Cleanup ---

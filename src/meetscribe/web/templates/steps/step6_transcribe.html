@@ -122,8 +122,77 @@
             <span class="text-xl font-semibold">Transcription Complete!</span>
         </div>
 
-        <!-- Transcript Viewer -->
-        <div class="bg-gray-50 rounded-xl p-6 max-h-96 overflow-y-auto prose prose-sm max-w-none text-gray-800" x-html="marked.parse(session?.transcript || '')"></div>
+        <!-- Audio Player -->
+        <div x-show="session?.segments?.length > 0" x-init="$watch('transcriptionComplete', v => v && $nextTick(() => initPlayer()))" class="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <!-- Play/Pause + Progress Bar + Time -->
+            <div class="flex items-center gap-3">
+                <button @click="togglePlay()" class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-primary-600 text-white hover:bg-primary-700 transition-colors">
+                    <svg x-show="!playerPlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <svg x-show="playerPlaying" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+                </button>
+                <div class="flex-1 cursor-pointer group" @click="seekToPercent($event)">
+                    <div class="w-full bg-gray-200 rounded-full h-2 group-hover:h-3 transition-all">
+                        <div class="bg-primary-600 h-full rounded-full transition-all duration-100" :style="'width:' + (playerDuration ? (playerCurrentTime / playerDuration * 100) : 0) + '%'"></div>
+                    </div>
+                </div>
+                <span class="shrink-0 text-sm text-gray-500 font-mono tabular-nums" x-text="formatPlayerTime(playerCurrentTime) + ' / ' + formatPlayerTime(playerDuration)"></span>
+            </div>
+            <!-- Track Mute Controls -->
+            <div x-show="(session?.tracks || []).length > 0" class="flex flex-wrap gap-2">
+                <template x-for="track in (session?.tracks || [])" :key="track.track_num">
+                    <button
+                        @click="toggleTrackMute(track.track_num)"
+                        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border"
+                        :class="activeTrackNum === track.track_num
+                            ? (trackMuted[track.track_num] ? 'bg-red-50 border-primary-300 text-red-400 ring-2 ring-primary-200' : 'bg-primary-50 border-primary-300 text-primary-700 ring-2 ring-primary-200')
+                            : (trackMuted[track.track_num] ? 'bg-gray-50 border-gray-200 text-gray-400' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100')"
+                    >
+                        <!-- Speaker icon / muted icon -->
+                        <svg x-show="!trackMuted[track.track_num]" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9M6.5 8.788v6.424a.5.5 0 00.757.429l4.743-3.212a.5.5 0 000-.858L7.257 8.36a.5.5 0 00-.757.429z"/></svg>
+                        <svg x-show="trackMuted[track.track_num]" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707A1 1 0 0112 5v14a1 1 0 01-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"/></svg>
+                        <span x-text="(track.speaker_name || track.filename)"></span>
+                    </button>
+                </template>
+            </div>
+        </div>
+
+        <!-- Structured Transcript with Play Buttons -->
+        <div x-show="session?.segments?.length > 0" x-ref="segmentList" class="bg-gray-50 rounded-xl p-2 sm:p-4 max-h-[32rem] overflow-y-auto space-y-0.5">
+            <template x-for="(seg, idx) in (session?.segments || [])" :key="idx">
+                <div
+                    :id="'seg-' + idx"
+                    class="flex items-start gap-2 py-1.5 px-2 rounded-lg transition-colors cursor-pointer"
+                    :class="activeSegmentIdx === idx ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-gray-100'"
+                    @click="playFromSegment(idx)"
+                >
+                    <!-- Play icon -->
+                    <div class="shrink-0 mt-0.5 w-6 h-6 flex items-center justify-center rounded-full transition-colors"
+                         :class="activeSegmentIdx === idx && playerPlaying ? 'bg-primary-600 text-white' : 'bg-gray-200 text-gray-500'">
+                        <svg x-show="!(activeSegmentIdx === idx && playerPlaying)" class="w-3 h-3 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                        <svg x-show="activeSegmentIdx === idx && playerPlaying" class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+                    </div>
+                    <!-- Segment content -->
+                    <div class="min-w-0 text-sm leading-relaxed">
+                        <span class="text-gray-400 text-xs font-mono" x-text="'[' + formatPlayerTime(seg.start_ms / 1000) + ']'"></span>
+                        <span class="font-semibold text-gray-700" x-text="(seg.speaker || 'Unknown') + ':'"></span>
+                        <span class="text-gray-800" x-text="seg.text"></span>
+                    </div>
+                </div>
+            </template>
+        </div>
+
+        <!-- Fallback: markdown for sessions without segments -->
+        <div x-show="!(session?.segments?.length > 0) && session?.transcript" class="bg-gray-50 rounded-xl p-6 max-h-96 overflow-y-auto prose prose-sm max-w-none text-gray-800" x-html="marked.parse(session?.transcript || '')"></div>
+
+        <!-- Hidden audio elements (one per track) -->
+        <template x-for="track in (session?.tracks || [])" :key="'audio-' + track.track_num">
+            <audio
+                :data-track="track.track_num"
+                :src="session?.id ? '/api/session/' + session.id + '/tracks/' + track.track_num + '/audio' : ''"
+                preload="auto"
+                class="hidden"
+            ></audio>
+        </template>
 
         <!-- Actions -->
         <div class="flex flex-col sm:flex-row justify-center gap-3 sm:gap-4">

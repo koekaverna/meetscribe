@@ -303,7 +303,7 @@ async def stream_transcription(
 
     runner = get_pipeline_runner(state.team_name)
     result_queue: queue.Queue = queue.Queue()
-    transcript_data = {"transcript": None}
+    transcript_data: dict = {"transcript": None, "segments": None}
 
     def transcription_wrapper() -> None:
         """Run transcription."""
@@ -317,6 +317,8 @@ async def stream_transcription(
             ):
                 if "transcript" in item:
                     transcript_data["transcript"] = item["transcript"]
+                if "segments" in item:
+                    transcript_data["segments"] = item["segments"]
                 result_queue.put(("item", item))
             result_queue.put(("done", None))
         except Exception as e:
@@ -333,6 +335,8 @@ async def stream_transcription(
         """Save transcript when done."""
         if transcript_data["transcript"]:
             service.set_transcript(session_id, transcript_data["transcript"])
+        if transcript_data["segments"]:
+            service.save_segments(session_id, transcript_data["segments"])
 
     async def on_error(error_msg: str) -> None:
         """Log transcription failure."""
