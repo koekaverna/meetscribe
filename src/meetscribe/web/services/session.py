@@ -424,9 +424,7 @@ class SessionService:
     def save_segments(self, session_id: str, segments: list[dict]) -> None:
         """Save structured transcript segments."""
         try:
-            self.conn.execute(
-                "DELETE FROM session_segments WHERE session_id = ?", (session_id,)
-            )
+            self.conn.execute("DELETE FROM session_segments WHERE session_id = ?", (session_id,))
             rows = [
                 (
                     session_id,
