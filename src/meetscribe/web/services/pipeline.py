@@ -302,6 +302,8 @@ class PipelineRunner:
                     for seg in segments:
                         seg.speaker = speaker_name
                     segs = transcriber.transcribe_segments(track_path, segments)
+                    for ts in segs:
+                        ts.track_num = track_num
                     all_segments.extend(segs)
                 else:
                     # Diarize: embeddings -> identification (VAD already done above)
@@ -320,6 +322,8 @@ class PipelineRunner:
                     }
 
                     segs = transcriber.transcribe_segments(track_path, labeled)
+                    for ts in segs:
+                        ts.track_num = track_num
                     all_segments.extend(segs)
 
             # Merge
@@ -342,6 +346,16 @@ class PipelineRunner:
                 "message": "Done",
                 "transcript": dialogue,
                 "segment_count": len(all_segments),
+                "segments": [
+                    {
+                        "track_num": s.track_num or 1,
+                        "start_ms": s.start_ms,
+                        "end_ms": s.end_ms,
+                        "speaker": s.speaker,
+                        "text": s.text,
+                    }
+                    for s in all_segments
+                ],
             }
         finally:
             team_ctx.conn.close()

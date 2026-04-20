@@ -60,12 +60,22 @@ function app() {
         // UI feedback
         copied: false,
 
-        // Audio player state
+        // Audio player state (samples)
         playbackRate: 1,
         sampleProgress: 0,
         sampleDuration: 0,
         sampleCurrentTime: 0,
         currentSampleInfo: null,
+
+        // Transcript player state
+        playerPlaying: false,
+        playerCurrentTime: 0,
+        playerDuration: 0,
+        activeSegmentIdx: -1,
+        activeTrackNum: null,
+        trackMuted: {},
+        _trackAudios: [],
+        _playerInited: false,
 
         steps: [
             { name: 'Upload' },
@@ -198,6 +208,8 @@ function app() {
             this.sampleProgress = 0;
             this.sampleCurrentTime = 0;
             this.sampleDuration = 0;
+            // Stop transcript player
+            this.stopPlayer();
         },
 
         goToStep(step) {
@@ -777,6 +789,142 @@ function app() {
             }
         },
 
+        // --- Transcript Player Methods ---
+
+        initPlayer() {
+            if (this._playerInited) return;
+            this._trackAudios = Array.from(document.querySelectorAll('audio[data-track]'));
+            if (!this._trackAudios.length) return;
+
+            const primary = this._trackAudios[0];
+            primary.addEventListener('timeupdate', () => this.updatePlayerTime());
+            primary.addEventListener('ended', () => {
+                this.playerPlaying = false;
+                this.activeSegmentIdx = -1;
+                this.activeTrackNum = null;
+            });
+            primary.addEventListener('loadedmetadata', () => {
+                this.playerDuration = primary.duration;
+            });
+            // If metadata already loaded
+            if (primary.duration) {
+                this.playerDuration = primary.duration;
+            }
+            this._playerInited = true;
+        },
+
+        togglePlay() {
+            if (!this._trackAudios.length) this.initPlayer();
+            if (!this._trackAudios.length) return;
+
+            if (this.playerPlaying) {
+                this._trackAudios.forEach(a => a.pause());
+                this.playerPlaying = false;
+            } else {
+                this._trackAudios.forEach(a => {
+                    a.currentTime = this.playerCurrentTime;
+                    a.play();
+                });
+                this.playerPlaying = true;
+            }
+        },
+
+        seekTo(timeSec) {
+            this._trackAudios.forEach(a => { a.currentTime = timeSec; });
+            this.playerCurrentTime = timeSec;
+            this._updateActiveSegment(timeSec * 1000);
+        },
+
+        seekPlayerToPercent(event) {
+            if (!this.playerDuration) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+            this.seekTo(this.playerDuration * pct);
+        },
+
+        updatePlayerTime() {
+            const primary = this._trackAudios[0];
+            if (!primary) return;
+            this.playerCurrentTime = primary.currentTime;
+            if (primary.duration) this.playerDuration = primary.duration;
+            this._updateActiveSegment(primary.currentTime * 1000);
+        },
+
+        _updateActiveSegment(timeMs) {
+            const segs = this.session?.segments;
+            if (!segs || !segs.length) return;
+
+            // Find segment containing timeMs
+            let idx = -1;
+            for (let i = 0; i < segs.length; i++) {
+                if (timeMs >= segs[i].start_ms && timeMs < segs[i].end_ms) {
+                    idx = i;
+                    break;
+                }
+                // Between segments: use the one whose start is closest ahead
+                if (i < segs.length - 1 && timeMs >= segs[i].end_ms && timeMs < segs[i + 1].start_ms) {
+                    idx = i;
+                    break;
+                }
+            }
+            // After last segment
+            if (idx === -1 && segs.length > 0 && timeMs >= segs[segs.length - 1].start_ms) {
+                idx = segs.length - 1;
+            }
+
+            if (idx !== this.activeSegmentIdx) {
+                this.activeSegmentIdx = idx;
+                this.activeTrackNum = idx >= 0 ? segs[idx].track_num : null;
+                // Auto-scroll
+                if (idx >= 0) {
+                    const el = document.getElementById('seg-' + idx);
+                    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            }
+        },
+
+        toggleTrackMute(trackNum) {
+            this.trackMuted[trackNum] = !this.trackMuted[trackNum];
+            const audio = this._trackAudios.find(a => parseInt(a.dataset.track) === trackNum);
+            if (audio) audio.muted = !!this.trackMuted[trackNum];
+        },
+
+        playFromSegment(idx) {
+            const segs = this.session?.segments;
+            if (!segs || !segs[idx]) return;
+            if (!this._trackAudios.length) this.initPlayer();
+
+            // Click on the playing segment → pause
+            if (this.activeSegmentIdx === idx && this.playerPlaying) {
+                this._trackAudios.forEach(a => a.pause());
+                this.playerPlaying = false;
+                return;
+            }
+
+            const startSec = segs[idx].start_ms / 1000;
+            this.seekTo(startSec);
+            this._trackAudios.forEach(a => a.play());
+            this.playerPlaying = true;
+        },
+
+        stopPlayer() {
+            this._trackAudios.forEach(a => {
+                a.pause();
+                a.currentTime = 0;
+            });
+            this.playerPlaying = false;
+            this.playerCurrentTime = 0;
+            this.activeSegmentIdx = -1;
+            this.activeTrackNum = null;
+        },
+
+        formatPlayerTime(sec) {
+            if (!sec || isNaN(sec)) return '00:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+        },
+
         formatMarkdown(text) {
             if (!text) return '';
             // Simple markdown to HTML conversion
@@ -806,6 +954,9 @@ function app() {
         },
 
         async startNewSession() {
+            this.stopPlayer();
+            this._trackAudios = [];
+            this._playerInited = false;
             this.session = null;
             this.currentStep = 1;
             this.extractionComplete = false;

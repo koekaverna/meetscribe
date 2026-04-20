@@ -45,6 +45,16 @@ class Sample(BaseModel):
     known_speaker_name: str | None = None
 
 
+class TranscriptSegmentModel(BaseModel):
+    """Structured transcript segment for playback."""
+
+    track_num: int
+    start_ms: int
+    end_ms: int
+    speaker: str | None = None
+    text: str
+
+
 class SessionState(BaseModel):
     """Complete session state."""
 
@@ -55,6 +65,7 @@ class SessionState(BaseModel):
     speakers: list[SpeakerBin] = []
     samples: list[Sample] = []
     transcript: str | None = None
+    segments: list[TranscriptSegmentModel] = []
     language: str = "ru"
 
 

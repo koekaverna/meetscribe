@@ -1,6 +1,6 @@
 # MeetScribe — Roadmap
 
-> v0.3.2 → v1.0 | 6 phases | CLI + Web
+> v0.3.2 → v1.0 | 7 phases | CLI + Web
 
 ## Current State
 
@@ -176,7 +176,44 @@ MeetScribe — CLI + Web tool for meeting transcription with speaker diarization
 
 ---
 
-## Phase 2: Transcript Intelligence (v0.5)
+## Phase 2: Transcript Playback & Editing (v0.5)
+
+> Interactive transcript
+
+**Goal:** Audio playback tied to transcript segments, inline editing. Foundation for all future transcript features.
+
+### Transcript storage
+
+- [x] Table `session_segments`: session_id, track_num, start_ms, end_ms, speaker, text, sort_order
+- [ ] CLI: `meetscribe list` — transcription list with metadata
+- [ ] CLI: `meetscribe show <id>` — view
+
+### Transcript playback (web)
+
+- [x] Structured segments stored in DB alongside markdown
+- [x] Global audio player: play/pause, seekable progress bar, time display
+- [x] Synchronized multi-track playback, per-track mute
+- [x] Active segment highlighting during playback
+- [x] Active track highlighting (which track the current segment belongs to)
+- [x] Click segment to play from that point
+
+### Transcript editing (web)
+
+- [ ] Inline text editing per segment
+- [ ] Speaker reassignment per segment
+- [ ] Delete segment
+- [ ] Merge adjacent segments
+- [ ] Split segment
+- [ ] Regenerate markdown after edits
+
+### Files
+
+- New: `migrations/002_transcript_segments.sql`
+- Modified: `pipeline/models.py`, `web/models.py`, `web/services/pipeline.py`, `web/services/session.py`, `web/routes/tasks.py`, `web/static/js/app.js`, `web/templates/steps/step6_transcribe.html`
+
+---
+
+## Phase 3: Transcript Intelligence (v0.6)
 
 > More than text
 
@@ -231,12 +268,6 @@ llm:
 - [ ] CLI: `meetscribe export <session-id> --format srt|vtt|json|txt|md`
 - [ ] Web: download buttons on the result page
 
-### Transcript storage
-
-- [ ] Table `transcript_segments`: session_id, start_ms, end_ms, speaker, text
-- [ ] CLI: `meetscribe list` — transcription list with metadata
-- [ ] CLI: `meetscribe show <id>` — view
-
 ### Files
 
 - New: `pipeline/llm.py`, `pipeline/export.py`
@@ -244,7 +275,7 @@ llm:
 
 ---
 
-## Phase 3: Search & Analytics (v0.6)
+## Phase 4: Search & Analytics (v0.7)
 
 > Organizational memory
 
@@ -252,7 +283,7 @@ llm:
 
 ### Full-text search
 
-- [ ] SQLite FTS5 on `transcript_segments`
+- [ ] SQLite FTS5 on `session_segments`
 - [ ] CLI: `meetscribe search "quarterly revenue"` — segments with context, date, speaker
 - [ ] Web: search bar with result highlighting
 - [ ] Filters: date, speaker, team
@@ -293,19 +324,15 @@ llm:
 
 ---
 
-## Phase 4: Web UI Maturity (v0.7)
+## Phase 5: Web UI Maturity (v0.8)
 
 > From workflow to application
 
 **Goal:** Full-featured web interface for non-technical users.
 
-### Transcript viewer & editor
+### Transcript viewer
 
 - [ ] Speaker color coding
-- [ ] Timestamps and copy-to-clipboard
-- [ ] Hover on segment → play back the audio clip
-- [ ] Inline editing: click on segment → fix text or reassign speaker
-- [ ] Re-export after editing
 
 ### Frontend improvements
 
@@ -340,7 +367,7 @@ llm:
 
 ---
 
-## Phase 5: Real-Time & Integrations (v0.8)
+## Phase 6: Real-Time & Integrations (v0.9)
 
 > Live meetings
 
@@ -383,7 +410,7 @@ llm:
 
 ---
 
-## Phase 6: Enterprise (v1.0)
+## Phase 7: Enterprise (v1.0)
 
 > Production Grade
 
@@ -429,11 +456,12 @@ llm:
 | Phase | Version | Theme | Key Outcome |
 |-------|---------|-------|-------------|
 | 1 | v0.4 | Hardening | Tests, CI, reliability |
-| 2 | v0.5 | Intelligence | LLM summaries, action items, export |
-| 3 | v0.6 | Search | Full-text search, analytics, dashboard |
-| 4 | v0.7 | Web UI | HTMX, transcript editor, admin panel |
-| 5 | v0.8 | Real-time | WebSocket streaming, webhooks, API |
-| 6 | v1.0 | Enterprise | RBAC, metrics, plugins, Helm |
+| 2 | v0.5 | Playback & Editing | Segment playback, multi-track sync, transcript editing |
+| 3 | v0.6 | Intelligence | LLM summaries, action items, export |
+| 4 | v0.7 | Search | Full-text search, analytics, dashboard |
+| 5 | v0.8 | Web UI | Speaker color coding, admin panel, session management |
+| 6 | v0.9 | Real-time | WebSocket streaming, webhooks, API |
+| 7 | v1.0 | Enterprise | RBAC, metrics, plugins, Helm |
 
 ## Intentionally NOT doing
 

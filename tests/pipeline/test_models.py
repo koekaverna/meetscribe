@@ -220,3 +220,11 @@ class TestDataclassDefaults:
     def test_speech_segment_duration(self):
         seg = SpeechSegment(500, 1500)
         assert seg.duration_ms == 1000
+
+    def test_transcript_segment_default_track_num_is_none(self):
+        seg = TranscriptSegment(0, 1000, "Hello")
+        assert seg.track_num is None
+
+    def test_transcript_segment_track_num_assigned(self):
+        seg = TranscriptSegment(0, 1000, "Hello", speaker="Alice", track_num=2)
+        assert seg.track_num == 2

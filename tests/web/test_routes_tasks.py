@@ -72,3 +72,37 @@ class TestTranscript:
         resp = auth_client.get(f"/api/session/{session_id}/transcript")
         assert resp.status_code == 200
         assert resp.json()["transcript"] == "Hello world"
+
+
+class TestSegments:
+    def test_session_includes_segments(self, auth_client: TestClient, session_id: str) -> None:
+        svc = get_session_service()
+        svc.save_segments(
+            session_id,
+            [
+                {"track_num": 1, "start_ms": 0, "end_ms": 5000, "speaker": "Alice", "text": "Hi"},
+                {
+                    "track_num": 2,
+                    "start_ms": 5000,
+                    "end_ms": 10000,
+                    "speaker": "Bob",
+                    "text": "Hey",
+                },
+            ],
+        )
+
+        resp = auth_client.get(f"/api/session/{session_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["segments"]) == 2
+        assert data["segments"][0]["track_num"] == 1
+        assert data["segments"][0]["speaker"] == "Alice"
+        assert data["segments"][0]["text"] == "Hi"
+        assert data["segments"][1]["track_num"] == 2
+
+    def test_session_without_segments_returns_empty(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
+        resp = auth_client.get(f"/api/session/{session_id}")
+        assert resp.status_code == 200
+        assert resp.json()["segments"] == []
