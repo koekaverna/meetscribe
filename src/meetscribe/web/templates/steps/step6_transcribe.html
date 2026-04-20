@@ -123,14 +123,14 @@
         </div>
 
         <!-- Audio Player -->
-        <div x-show="session?.segments?.length > 0" x-init="$watch('transcriptionComplete', v => v && $nextTick(() => initPlayer()))" class="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+        <div x-show="session?.segments?.length > 0" x-init="if (transcriptionComplete) $nextTick(() => initPlayer()); $watch('transcriptionComplete', v => v && $nextTick(() => initPlayer()))" class="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
             <!-- Play/Pause + Progress Bar + Time -->
             <div class="flex items-center gap-3">
                 <button @click="togglePlay()" class="shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-primary-600 text-white hover:bg-primary-700 transition-colors">
                     <svg x-show="!playerPlaying" class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                     <svg x-show="playerPlaying" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
                 </button>
-                <div class="flex-1 cursor-pointer group" @click="seekToPercent($event)">
+                <div class="flex-1 cursor-pointer group" @click="seekPlayerToPercent($event)">
                     <div class="w-full bg-gray-200 rounded-full h-2 group-hover:h-3 transition-all">
                         <div class="bg-primary-600 h-full rounded-full transition-all duration-100" :style="'width:' + (playerDuration ? (playerCurrentTime / playerDuration * 100) : 0) + '%'"></div>
                     </div>

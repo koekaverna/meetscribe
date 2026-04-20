@@ -835,7 +835,7 @@ function app() {
             this._updateActiveSegment(timeSec * 1000);
         },
 
-        seekToPercent(event) {
+        seekPlayerToPercent(event) {
             if (!this.playerDuration) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));

@@ -423,12 +423,11 @@ class SessionService:
 
     def save_segments(self, session_id: str, segments: list[dict]) -> None:
         """Save structured transcript segments."""
-        self.conn.execute("DELETE FROM session_segments WHERE session_id = ?", (session_id,))
-        for i, seg in enumerate(segments):
+        try:
             self.conn.execute(
-                "INSERT INTO session_segments "
-                "(session_id, track_num, start_ms, end_ms, speaker, text, sort_order) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "DELETE FROM session_segments WHERE session_id = ?", (session_id,)
+            )
+            rows = [
                 (
                     session_id,
                     seg["track_num"],
@@ -437,9 +436,19 @@ class SessionService:
                     seg.get("speaker"),
                     seg["text"],
                     i,
-                ),
+                )
+                for i, seg in enumerate(segments)
+            ]
+            self.conn.executemany(
+                "INSERT INTO session_segments "
+                "(session_id, track_num, start_ms, end_ms, speaker, text, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rows,
             )
-        self.conn.commit()
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     # --- Cleanup ---
 
