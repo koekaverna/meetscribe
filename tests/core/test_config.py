@@ -8,10 +8,10 @@ import yaml
 
 from meetscribe.config import (
     AppConfig,
+    DiarizationConfig,
     EmbeddingsConfig,
     ServerInfo,
     TranscriptionConfig,
-    VadConfig,
     ValidatedConfig,
     WebConfig,
     load_config,
@@ -26,7 +26,7 @@ def _write_yaml(path: Path, data: dict) -> Path:
 
 MINIMAL_CONFIG = {
     "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-    "vad": {"server": "gpu1"},
+    "diarization": {"server": "gpu1"},
     "embeddings": {"server": "gpu1"},
     "transcription": {"servers": ["gpu1"]},
 }
@@ -48,24 +48,16 @@ class TestLoadConfig:
         cfg = load_config(p)
         assert cfg.servers[0].name == "gpu1"
         assert cfg.servers[0].url == "http://localhost:8000"
-        assert cfg.vad.server == "gpu1"
+        assert cfg.diarization.server == "gpu1"
         assert cfg.embeddings.server == "gpu1"
         assert cfg.transcription.servers == ["gpu1"]
 
     def test_defaults_applied_when_sections_missing(self, tmp_path: Path):
-        data = {
-            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
-            "embeddings": {"server": "gpu1"},
-            "transcription": {"servers": ["gpu1"]},
-        }
-        p = _write_yaml(tmp_path / "config.yaml", data)
+        p = _write_yaml(tmp_path / "config.yaml", MINIMAL_CONFIG)
         cfg = load_config(p)
         # Defaults from dataclass
-        assert cfg.vad.timeout == 120.0
-        assert cfg.vad.min_silence_duration_ms == 1200
-        assert cfg.vad.speech_pad_ms == 30
-        assert cfg.vad.threshold == 0.5
+        assert cfg.diarization.timeout == 600.0
+        assert cfg.diarization.model == "fedirz/segmentation_community_1"
         assert cfg.embeddings.model == "Wespeaker/wespeaker-voxceleb-resnet34-LM"
         assert cfg.embeddings.timeout == 60.0
         assert cfg.embeddings.threshold == 0.6
@@ -81,21 +73,22 @@ class TestValidate:
         with pytest.raises(ConfigurationError, match="No servers configured"):
             cfg.validate()
 
-    def test_vad_server_not_in_list_raises(self, tmp_path: Path):
+    def test_diarization_server_not_in_list_raises(self, tmp_path: Path):
+        """Unknown diarization server name raises ConfigurationError."""
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "nonexistent"},
+            "diarization": {"server": "nonexistent"},
             "embeddings": {"server": "gpu1"},
             "transcription": {"servers": ["gpu1"]},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
-        with pytest.raises(ConfigurationError, match="VAD server 'nonexistent' not found"):
+        with pytest.raises(ConfigurationError, match="Diarization server 'nonexistent' not found"):
             load_config(p)
 
     def test_embeddings_server_not_in_list_raises(self, tmp_path: Path):
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
+            "diarization": {"server": "gpu1"},
             "embeddings": {"server": "nonexistent"},
             "transcription": {"servers": ["gpu1"]},
         }
@@ -106,7 +99,7 @@ class TestValidate:
     def test_transcription_server_not_in_list_raises(self, tmp_path: Path):
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
+            "diarization": {"server": "gpu1"},
             "embeddings": {"server": "gpu1"},
             "transcription": {"servers": ["nonexistent"]},
         }
@@ -120,28 +113,18 @@ class TestPartialConfig:
 
     def test_all_defaults_with_only_servers(self, tmp_path: Path):
         """Minimal config with only server refs → all other fields get defaults."""
-        data = {
-            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
-            "embeddings": {"server": "gpu1"},
-            "transcription": {"servers": ["gpu1"]},
-        }
-        p = _write_yaml(tmp_path / "config.yaml", data)
+        p = _write_yaml(tmp_path / "config.yaml", MINIMAL_CONFIG)
         cfg = load_config(p)
 
-        assert cfg.vad.timeout == 120.0
-        assert cfg.vad.min_silence_duration_ms == 1200
-        assert cfg.vad.speech_pad_ms == 30
-        assert cfg.vad.threshold == 0.5
+        assert cfg.diarization.timeout == 600.0
+        assert cfg.diarization.model == "fedirz/segmentation_community_1"
 
         assert cfg.embeddings.model == "Wespeaker/wespeaker-voxceleb-resnet34-LM"
         assert cfg.embeddings.timeout == 60.0
         assert cfg.embeddings.threshold == 0.6
         assert cfg.embeddings.min_duration_ms == 1500
-        assert cfg.embeddings.unknown_cluster_threshold == 0.25
         assert cfg.embeddings.confident_gap == 0.2
         assert cfg.embeddings.min_threshold == 0.45
-        assert cfg.embeddings.max_workers == 4
 
         assert cfg.transcription.model == "Systran/faster-whisper-medium"
         assert cfg.transcription.language == "ru"
@@ -150,13 +133,7 @@ class TestPartialConfig:
         assert cfg.transcription.max_chunk_ms == 30000
 
     def test_web_with_partial_keys(self, tmp_path: Path):
-        data = {
-            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
-            "embeddings": {"server": "gpu1"},
-            "transcription": {"servers": ["gpu1"]},
-            "web": {"port": 9090},
-        }
+        data = {**MINIMAL_CONFIG, "web": {"port": 9090}}
         p = _write_yaml(tmp_path / "config.yaml", data)
         cfg = load_config(p)
         assert cfg.web.port == 9090
@@ -165,13 +142,7 @@ class TestPartialConfig:
         assert cfg.web.secure_cookies is False
 
     def test_no_web_section(self, tmp_path: Path):
-        data = {
-            "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1"},
-            "embeddings": {"server": "gpu1"},
-            "transcription": {"servers": ["gpu1"]},
-        }
-        p = _write_yaml(tmp_path / "config.yaml", data)
+        p = _write_yaml(tmp_path / "config.yaml", MINIMAL_CONFIG)
         cfg = load_config(p)
         assert cfg.web.host == "127.0.0.1"
         assert cfg.web.port == 8080
@@ -179,16 +150,14 @@ class TestPartialConfig:
     def test_custom_values_override_defaults(self, tmp_path: Path):
         data = {
             "servers": [{"url": "http://localhost:8000", "name": "gpu1"}],
-            "vad": {"server": "gpu1", "timeout": 60.0, "threshold": 0.8},
-            "embeddings": {"server": "gpu1", "timeout": 30.0, "max_workers": 8},
+            "diarization": {"server": "gpu1", "timeout": 300.0},
+            "embeddings": {"server": "gpu1", "timeout": 30.0},
             "transcription": {"servers": ["gpu1"], "language": "en", "max_gap_ms": 1000},
         }
         p = _write_yaml(tmp_path / "config.yaml", data)
         cfg = load_config(p)
-        assert cfg.vad.timeout == 60.0
-        assert cfg.vad.threshold == 0.8
+        assert cfg.diarization.timeout == 300.0
         assert cfg.embeddings.timeout == 30.0
-        assert cfg.embeddings.max_workers == 8
         assert cfg.transcription.language == "en"
         assert cfg.transcription.max_gap_ms == 1000
 
@@ -200,7 +169,7 @@ class TestAppConfigMethods:
                 ServerInfo(url="http://a:8000", name="gpu1"),
                 ServerInfo(url="http://b:8000", name="gpu2"),
             ],
-            vad=VadConfig(server="gpu1"),
+            diarization=DiarizationConfig(server="gpu1"),
             embeddings=EmbeddingsConfig(server="gpu2"),
             transcription=TranscriptionConfig(servers=["gpu1", "gpu2"]),
         )
@@ -215,9 +184,10 @@ class TestAppConfigMethods:
         with pytest.raises(ConfigurationError, match="not found"):
             cfg.get_server_url("nonexistent")
 
-    def test_get_vad_url(self):
+    def test_get_diarization_url(self):
+        """Returns correct URL for diarization server."""
         cfg = self._make_config()
-        assert cfg.get_vad_url() == "http://a:8000"
+        assert cfg.get_diarization_url() == "http://a:8000"
 
     def test_get_embeddings_url(self):
         cfg = self._make_config()
@@ -235,22 +205,21 @@ class TestAppConfigMethods:
         )
         assert cfg.get_transcription_urls() == []
 
-    def test_validate_empty_vad_server_raises(self):
-        """Empty vad.server should fail validation."""
+    def test_validate_empty_diarization_server_raises(self):
+        """Empty diarization.server fails validation."""
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
-            vad=VadConfig(server=""),
+            diarization=DiarizationConfig(server=""),
             embeddings=EmbeddingsConfig(server="gpu1"),
             transcription=TranscriptionConfig(servers=["gpu1"]),
         )
-        with pytest.raises(ConfigurationError, match="vad.server not configured"):
+        with pytest.raises(ConfigurationError, match="diarization.server not configured"):
             cfg.validate()
 
     def test_validate_empty_embeddings_server_raises(self):
-        """Empty embeddings.server should fail validation."""
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
-            vad=VadConfig(server="gpu1"),
+            diarization=DiarizationConfig(server="gpu1"),
             embeddings=EmbeddingsConfig(server=""),
             transcription=TranscriptionConfig(servers=["gpu1"]),
         )
@@ -258,10 +227,9 @@ class TestAppConfigMethods:
             cfg.validate()
 
     def test_validate_empty_transcription_servers_raises(self):
-        """Empty transcription.servers should fail validation."""
         cfg = AppConfig(
             servers=[ServerInfo(url="http://a:8000", name="gpu1")],
-            vad=VadConfig(server="gpu1"),
+            diarization=DiarizationConfig(server="gpu1"),
             embeddings=EmbeddingsConfig(server="gpu1"),
             transcription=TranscriptionConfig(servers=[]),
         )
@@ -350,13 +318,13 @@ class TestValidatedConfig:
 
     # -- integration: wrong type in YAML bubbles up through load_config --
     def test_yaml_with_wrong_type_raises(self, tmp_path: Path):
-        data = {**MINIMAL_CONFIG, "vad": {"server": "gpu1", "timeout": "slow"}}
+        data = {**MINIMAL_CONFIG, "diarization": {"server": "gpu1", "timeout": "slow"}}
         p = _write_yaml(tmp_path / "config.yaml", data)
         with pytest.raises(ConfigurationError, match="expected number"):
             load_config(p)
 
     def test_section_as_list_raises(self, tmp_path: Path):
-        data = {**MINIMAL_CONFIG, "vad": ["server", "gpu1"]}
+        data = {**MINIMAL_CONFIG, "diarization": ["server", "gpu1"]}
         p = _write_yaml(tmp_path / "config.yaml", data)
         with pytest.raises(ConfigurationError, match="must be a mapping"):
             load_config(p)
@@ -375,13 +343,12 @@ class TestDefaultsMatchConfigYaml:
         with open(config_path, encoding="utf-8") as f:
             return yaml.safe_load(f)
 
-    def test_vad_defaults(self, config_yaml: dict):
-        d = config_yaml["vad"]
-        defaults = VadConfig()
+    def test_diarization_defaults(self, config_yaml: dict):
+        """Dataclass defaults match config.example.yaml values."""
+        d = config_yaml["diarization"]
+        defaults = DiarizationConfig()
+        assert defaults.model == d["model"]
         assert defaults.timeout == d["timeout"]
-        assert defaults.min_silence_duration_ms == d["min_silence_duration_ms"]
-        assert defaults.speech_pad_ms == d["speech_pad_ms"]
-        assert defaults.threshold == d["threshold"]
 
     def test_embeddings_defaults(self, config_yaml: dict):
         d = config_yaml["embeddings"]
@@ -390,7 +357,6 @@ class TestDefaultsMatchConfigYaml:
         assert defaults.timeout == d["timeout"]
         assert defaults.threshold == d["threshold"]
         assert defaults.min_duration_ms == d["min_duration_ms"]
-        assert defaults.unknown_cluster_threshold == d["unknown_cluster_threshold"]
         assert defaults.confident_gap == d["confident_gap"]
         assert defaults.min_threshold == d["min_threshold"]
 

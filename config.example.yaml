@@ -11,7 +11,7 @@
 # -----------------------------------------------------------------------------
 # Processing servers (speaches API)
 # -----------------------------------------------------------------------------
-# List of remote GPU servers for VAD, embeddings and transcription.
+# List of remote GPU servers for diarization, embeddings and transcription.
 # Each server has a unique name referenced in sections below.
 # Multiple servers can be used for parallel transcription.
 servers:
@@ -21,31 +21,20 @@ servers:
   #   name: "GPU-2"
 
 # -----------------------------------------------------------------------------
-# Voice Activity Detection (VAD)
+# Speaker Diarization
 # -----------------------------------------------------------------------------
-# Detects speech segments, filters silence and noise before processing.
-# Reduces transcription hallucinations by only sending speech segments.
-vad:
+# Server-side speaker diarization via pyannote segmentation + VBx clustering.
+# Detects speech segments and assigns speaker labels in one call.
+diarization:
   # Server name from the servers section.
   server: "GPU-1"
 
+  # Diarization model (HuggingFace ID).
+  model: "fedirz/segmentation_community_1"
+
   # HTTP request timeout in seconds.
-  # Increase for long audio files (> 1 hour).
-  timeout: 120
-
-  # Minimum silence duration (ms) to split speech segments.
-  # Lower values produce shorter, phrase-level segments (better for diarization).
-  # Higher values merge close phrases into longer chunks.
-  min_silence_duration_ms: 1200
-
-  # Padding (ms) added to each side of speech segments.
-  # Prevents cutting the beginning/end of words.
-  speech_pad_ms: 30
-
-  # Speech probability threshold (0.0 — 1.0).
-  # Higher = stricter (fewer false positives, may miss quiet speech).
-  # Lower = more sensitive (catches quiet speech, more false positives).
-  threshold: 0.5
+  # Diarization processes the full file at once — increase for long recordings.
+  timeout: 600
 
 # -----------------------------------------------------------------------------
 # Speaker Embeddings
@@ -69,14 +58,7 @@ embeddings:
 
   # Minimum segment duration (ms) for embedding extraction.
   # Shorter segments produce unreliable embeddings.
-  # Such segments inherit the speaker from the nearest neighbor.
   min_duration_ms: 1500
-
-  # Cosine similarity threshold for clustering unknown speakers (AHC).
-  # Segments with similarity >= threshold are grouped as same speaker.
-  # Lower = fewer clusters (more aggressive merging).
-  # Recommended: 0.15 — 0.35 for wespeaker-voxceleb-resnet34-LM.
-  unknown_cluster_threshold: 0.25
 
   # "Confident gap": if the best candidate is below threshold,
   # but the gap to the second candidate >= confident_gap — accept the match.
@@ -86,10 +68,6 @@ embeddings:
   # Absolute minimum similarity even with a confident gap.
   # Below this value, the match is never accepted.
   min_threshold: 0.45
-
-  # Number of threads for parallel embedding extraction.
-  # Increase if the server supports concurrent requests.
-  max_workers: 4
 
   # --- Sample extraction (for speaker enrollment) ---
 

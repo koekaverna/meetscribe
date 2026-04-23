@@ -23,7 +23,7 @@ def session_env(tmp_path: Path):
         "servers:\n"
         "  - url: http://localhost:8000\n"
         "    name: gpu1\n"
-        "vad:\n"
+        "diarization:\n"
         "  server: gpu1\n"
         "embeddings:\n"
         "  server: gpu1\n"

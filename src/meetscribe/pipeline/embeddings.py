@@ -4,14 +4,11 @@ import io
 import logging
 import math
 import shutil
-import time
 import wave
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
 import httpx
-from tqdm import tqdm
 
 from meetscribe.errors import SpeachesAPIError, speaches_retry
 
@@ -77,120 +74,21 @@ class EmbeddingExtractor:
         """Extract speaker embedding from an audio file."""
         return self.extract(audio_path.read_bytes(), audio_path.name)
 
-    @staticmethod
-    def _slice_wav(
-        raw_frames: bytes, sample_rate: int, sample_width: int, seg: SpeechSegment
-    ) -> bytes:
-        """Slice raw PCM frames and wrap into WAV bytes in memory."""
-        start_sample = seg.start_ms * sample_rate // 1000
-        end_sample = seg.end_ms * sample_rate // 1000
-        frame_size = sample_width  # mono
-        chunk = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(sample_width)
-            wf.setframerate(sample_rate)
-            wf.writeframes(chunk)
-        return buf.getvalue()
+def slice_wav(raw_frames: bytes, sample_rate: int, sample_width: int, seg: SpeechSegment) -> bytes:
+    """Slice raw PCM frames and wrap into WAV bytes in memory."""
+    start_sample = seg.start_ms * sample_rate // 1000
+    end_sample = seg.end_ms * sample_rate // 1000
+    frame_size = sample_width  # mono
+    chunk = raw_frames[start_sample * frame_size : end_sample * frame_size]
 
-    def _extract_one_mem(
-        self,
-        raw_frames: bytes,
-        sample_rate: int,
-        sample_width: int,
-        seg: SpeechSegment,
-    ) -> tuple[SpeechSegment, list[float] | None]:
-        """Extract embedding for a single segment from pre-loaded audio."""
-        try:
-            wav_bytes = self._slice_wav(raw_frames, sample_rate, sample_width, seg)
-            filename = f"seg_{seg.start_ms}_{seg.end_ms}.wav"
-            embedding = self.extract(wav_bytes, filename)
-            return seg, embedding
-        except Exception:
-            logger.warning(
-                "Embedding extraction failed",
-                extra={
-                    "segment_start_ms": seg.start_ms,
-                    "segment_end_ms": seg.end_ms,
-                },
-                exc_info=True,
-            )
-            return seg, None
-
-    def extract_segments(
-        self,
-        audio_path: Path,
-        segments: list[SpeechSegment],
-        max_workers: int,
-    ) -> list[tuple[SpeechSegment, list[float] | None]]:
-        """Extract embeddings for each speech segment in parallel.
-
-        Loads audio into memory once, slices segments as WAV bytes,
-        then sends to the embedding API. No FFmpeg subprocess per segment.
-
-        Returns:
-            List of (segment, embedding_or_None) tuples in original order.
-        """
-        t0 = time.perf_counter()
-
-        # Load full audio into memory once
-        with wave.open(str(audio_path), "rb") as wf:
-            sample_rate = wf.getframerate()
-            sample_width = wf.getsampwidth()
-            raw_frames = wf.readframes(wf.getnframes())
-
-        # Separate short segments (skip) from ones needing extraction
-        ordered: dict[int, tuple[SpeechSegment, list[float] | None]] = {}
-        to_extract: list[tuple[int, SpeechSegment]] = []
-
-        for i, seg in enumerate(segments):
-            if seg.duration_ms < self.min_duration_ms:
-                logger.debug(
-                    "Skipping short segment",
-                    extra={
-                        "segment_start_ms": seg.start_ms,
-                        "segment_end_ms": seg.end_ms,
-                        "duration_ms": seg.duration_ms,
-                    },
-                )
-                ordered[i] = (seg, None)
-            else:
-                to_extract.append((i, seg))
-
-        pbar = tqdm(total=len(segments), desc="  Embeddings", unit="seg", leave=False)
-        pbar.update(len(ordered))  # short segments already done
-
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(self._extract_one_mem, raw_frames, sample_rate, sample_width, seg): idx
-                for idx, seg in to_extract
-            }
-            for future in as_completed(futures):
-                idx = futures[future]
-                ordered[idx] = future.result()
-                pbar.update(1)
-
-        pbar.close()
-
-        result = [ordered[i] for i in range(len(segments))]
-        extracted = sum(1 for _, emb in result if emb is not None)
-        skipped_short = len(segments) - len(to_extract)
-        failed = len(to_extract) - extracted
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(
-            "Embedding extraction completed",
-            extra={
-                "file": audio_path.name,
-                "segments_in": len(segments),
-                "segments_out": extracted,
-                "skipped_short": skipped_short,
-                "failed": failed,
-                "elapsed_ms": round(elapsed_ms),
-            },
-        )
-        return result
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(sample_rate)
+        wf.writeframes(chunk)
+    return buf.getvalue()
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -245,13 +143,11 @@ class SpeakerIdentifier:
         threshold: float,
         confident_gap: float,
         min_threshold: float,
-        unknown_cluster_threshold: float,
     ):
         self.voiceprints = voiceprints
         self.threshold = threshold
         self.confident_gap = confident_gap
         self.min_threshold = min_threshold
-        self.unknown_cluster_threshold = unknown_cluster_threshold
         logger.info(
             "Speaker identifier initialized",
             extra={
@@ -296,111 +192,3 @@ class SpeakerIdentifier:
             return best_name, best_sim
 
         return None, best_sim
-
-    def identify_segments(
-        self,
-        segments_with_embeddings: list[tuple[SpeechSegment, list[float] | None]],
-    ) -> list[SpeechSegment]:
-        """Assign speaker labels to segments.
-
-        Known speakers are matched by voiceprint similarity.
-        Unknown speakers are clustered using Agglomerative Hierarchical Clustering
-        so the same voice gets a consistent label.
-        Segments with no embedding (too short) inherit speaker from the nearest
-        identified neighbor by time proximity.
-        """
-        from .clustering import cluster_embeddings
-
-        t0 = time.perf_counter()
-
-        result: list[SpeechSegment] = []
-        deferred: list[int] = []  # indices with None embedding
-        unknown_indices: list[int] = []
-        unknown_embeddings: list[list[float]] = []
-
-        # Phase 1: known speaker identification
-        for seg, embedding in segments_with_embeddings:
-            idx = len(result)
-            result.append(seg)
-
-            if embedding is None:
-                seg.speaker = None
-                deferred.append(idx)
-                continue
-
-            name, sim = self.identify(embedding)
-            if name is not None:
-                seg.speaker = name
-                logger.debug(
-                    "Segment identified",
-                    extra={
-                        "segment_start_ms": seg.start_ms,
-                        "segment_end_ms": seg.end_ms,
-                        "speaker": name,
-                        "similarity": round(sim, 3),
-                    },
-                )
-            else:
-                seg.speaker = None  # resolved in phase 2
-                unknown_indices.append(idx)
-                unknown_embeddings.append(embedding)
-
-        # Phase 2: cluster unknown speakers via AHC
-        if unknown_embeddings:
-            labels = cluster_embeddings(unknown_embeddings, self.unknown_cluster_threshold)
-            for i, idx in enumerate(unknown_indices):
-                result[idx].speaker = f"Unknown-{labels[i] + 1}"
-                logger.debug(
-                    "Segment clustered",
-                    extra={
-                        "segment_start_ms": result[idx].start_ms,
-                        "segment_end_ms": result[idx].end_ms,
-                        "speaker": f"Unknown-{labels[i] + 1}",
-                    },
-                )
-
-        # Phase 3: assign deferred (short) segments to nearest neighbor
-        for idx in deferred:
-            seg = result[idx]
-            neighbor = self._find_nearest_labeled(idx, result)
-            seg.speaker = neighbor or "Unknown"
-            logger.debug(
-                "Segment inherited from neighbor",
-                extra={
-                    "segment_start_ms": seg.start_ms,
-                    "segment_end_ms": seg.end_ms,
-                    "speaker": seg.speaker,
-                },
-            )
-
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        speakers = {s.speaker for s in result if s.speaker}
-        known = sum(1 for s in speakers if not s.startswith("Unknown"))
-        unknown = len(speakers) - known
-        logger.info(
-            "Speaker identification completed",
-            extra={
-                "segments": len(result),
-                "speakers": len(speakers),
-                "known": known,
-                "unknown": unknown,
-                "deferred": len(deferred),
-                "elapsed_ms": round(elapsed_ms),
-            },
-        )
-
-        return result
-
-    @staticmethod
-    def _find_nearest_labeled(idx: int, segments: list[SpeechSegment]) -> str | None:
-        """Find speaker of the nearest segment that has a label."""
-        # Search outward from idx
-        left, right = idx - 1, idx + 1
-        while left >= 0 or right < len(segments):
-            if left >= 0 and segments[left].speaker:
-                return segments[left].speaker
-            if right < len(segments) and segments[right].speaker:
-                return segments[right].speaker
-            left -= 1
-            right += 1
-        return None
