@@ -471,6 +471,8 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
         model=cfg.transcription.model,
         max_gap_ms=cfg.transcription.max_gap_ms,
         max_chunk_ms=cfg.transcription.max_chunk_ms,
+        no_speech_prob_threshold=cfg.transcription.no_speech_prob_threshold,
+        avg_logprob_threshold=cfg.transcription.avg_logprob_threshold,
     )
 
     with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:

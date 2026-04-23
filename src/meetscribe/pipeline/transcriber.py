@@ -19,10 +19,19 @@ logger = logging.getLogger(__name__)
 class RemoteTranscriber:
     """Single-server transcription client using OpenAI-compatible /v1/audio/transcriptions."""
 
-    def __init__(self, server_url: str, timeout: float, model: str):
+    def __init__(
+        self,
+        server_url: str,
+        timeout: float,
+        model: str,
+        no_speech_prob_threshold: float,
+        avg_logprob_threshold: float,
+    ):
         self.server_url = server_url.rstrip("/")
         self.timeout = timeout
         self.model = model
+        self.no_speech_prob_threshold = no_speech_prob_threshold
+        self.avg_logprob_threshold = avg_logprob_threshold
 
     def transcribe(
         self,
@@ -81,14 +90,43 @@ class RemoteTranscriber:
         segments = []
         for seg in result.get("segments", []):
             text = seg.get("text", "").strip()
-            if text:
-                segments.append(
-                    TranscriptSegment(
-                        start_ms=int(seg["start"] * 1000),
-                        end_ms=int(seg["end"] * 1000),
-                        text=text,
-                    )
+            if not text:
+                continue
+
+            no_speech_prob = seg.get("no_speech_prob", 0.0)
+            avg_logprob = seg.get("avg_logprob", 0.0)
+
+            logger.debug(
+                "Segment: '%s' (no_speech_prob=%.3f, avg_logprob=%.3f, start=%.1f, end=%.1f)",
+                text[:80],
+                no_speech_prob,
+                avg_logprob,
+                seg.get("start", 0),
+                seg.get("end", 0),
+            )
+
+            if (
+                no_speech_prob >= self.no_speech_prob_threshold
+                and avg_logprob <= self.avg_logprob_threshold
+            ):
+                logger.debug(
+                    "Filtered hallucinated segment: '%s' "
+                    "(no_speech_prob=%.3f, avg_logprob=%.3f, start=%.1f, end=%.1f)",
+                    text[:80],
+                    no_speech_prob,
+                    avg_logprob,
+                    seg.get("start", 0),
+                    seg.get("end", 0),
                 )
+                continue
+
+            segments.append(
+                TranscriptSegment(
+                    start_ms=int(seg["start"] * 1000),
+                    end_ms=int(seg["end"] * 1000),
+                    text=text,
+                )
+            )
         return segments
 
 
@@ -107,10 +145,15 @@ class Transcriber:
         model: str,
         max_gap_ms: int,
         max_chunk_ms: int,
+        no_speech_prob_threshold: float,
+        avg_logprob_threshold: float,
     ):
         if not server_urls:
             raise ConfigurationError("At least one transcription server URL is required")
-        self.clients = [RemoteTranscriber(url, timeout, model) for url in server_urls]
+        self.clients = [
+            RemoteTranscriber(url, timeout, model, no_speech_prob_threshold, avg_logprob_threshold)
+            for url in server_urls
+        ]
         self.language = language
         self.max_gap_ms = max_gap_ms
         self.max_chunk_ms = max_chunk_ms

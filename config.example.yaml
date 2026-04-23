@@ -115,6 +115,12 @@ transcription:
   # 30000 ms = 30 seconds.
   max_chunk_ms: 30000
 
+  # Hallucination filtering: segments are dropped when BOTH conditions are met:
+  #   no_speech_prob >= threshold AND avg_logprob <= threshold.
+  # Set no_speech_prob_threshold to 1.0 to disable filtering.
+  no_speech_prob_threshold: 0.5
+  avg_logprob_threshold: -0.25
+
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------

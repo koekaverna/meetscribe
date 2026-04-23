@@ -15,18 +15,36 @@ from tests.conftest import make_wav_file
 
 class TestRemoteTranscriberInit:
     def test_strips_trailing_slash(self):
-        rt = RemoteTranscriber("http://host:8000/", timeout=10.0, model="m")
+        rt = RemoteTranscriber(
+            "http://host:8000/",
+            timeout=10.0,
+            model="m",
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
         assert rt.server_url == "http://host:8000"
 
     def test_stores_params(self):
-        rt = RemoteTranscriber("http://h", timeout=30.0, model="test-model")
+        rt = RemoteTranscriber(
+            "http://h",
+            timeout=30.0,
+            model="test-model",
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
         assert rt.timeout == 30.0
         assert rt.model == "test-model"
 
 
 class TestRemoteTranscriberRequest:
     def test_request_params(self):
-        rt = RemoteTranscriber("http://host:8000", timeout=10.0, model="whisper-large")
+        rt = RemoteTranscriber(
+            "http://host:8000",
+            timeout=10.0,
+            model="whisper-large",
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -53,7 +71,13 @@ class TestRemoteTranscriberRequest:
         assert call_kwargs[1]["timeout"] == 10.0
 
     def test_parses_timestamps_to_ms(self):
-        rt = RemoteTranscriber("http://host:8000", timeout=10.0, model="m")
+        rt = RemoteTranscriber(
+            "http://host:8000",
+            timeout=10.0,
+            model="m",
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "segments": [
@@ -74,7 +98,13 @@ class TestRemoteTranscriberRequest:
         assert result[1].end_ms == 5000
 
     def test_skips_empty_text(self):
-        rt = RemoteTranscriber("http://host:8000", timeout=10.0, model="m")
+        rt = RemoteTranscriber(
+            "http://host:8000",
+            timeout=10.0,
+            model="m",
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
         mock_resp = MagicMock()
         mock_resp.json.return_value = {
             "segments": [
@@ -91,6 +121,91 @@ class TestRemoteTranscriberRequest:
         assert result[0].text == "Real text"
 
 
+class TestHallucinationFiltering:
+    def _make_rt(self, no_speech_thresh=0.5, logprob_thresh=-0.25):
+        return RemoteTranscriber(
+            "http://host:8000",
+            timeout=10.0,
+            model="m",
+            no_speech_prob_threshold=no_speech_thresh,
+            avg_logprob_threshold=logprob_thresh,
+        )
+
+    def _mock_response(self, segments):
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"segments": segments}
+        mock_resp.raise_for_status = MagicMock()
+        return mock_resp
+
+    def test_filters_high_no_speech_prob(self):
+        rt = self._make_rt()
+        mock_resp = self._mock_response(
+            [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "Real speech",
+                    "no_speech_prob": 0.1,
+                    "avg_logprob": -0.15,
+                },
+                {
+                    "start": 1.0,
+                    "end": 2.0,
+                    "text": "Редактор субтитров",
+                    "no_speech_prob": 0.75,
+                    "avg_logprob": -0.3,
+                },
+            ]
+        )
+
+        with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
+            result = rt.transcribe_bytes(b"data", "ru")
+
+        assert len(result) == 1
+        assert result[0].text == "Real speech"
+
+    def test_keeps_segment_below_threshold(self):
+        rt = self._make_rt()
+        mock_resp = self._mock_response(
+            [
+                {"start": 0.0, "end": 1.0, "text": "Да", "no_speech_prob": 0.3},
+            ]
+        )
+
+        with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
+            result = rt.transcribe_bytes(b"data", "ru")
+
+        assert len(result) == 1
+
+    def test_no_filtering_when_field_missing(self):
+        """If API doesn't return no_speech_prob, default (0.0) never triggers filter."""
+        rt = self._make_rt()
+        mock_resp = self._mock_response(
+            [
+                {"start": 0.0, "end": 1.0, "text": "No metrics"},
+            ]
+        )
+
+        with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
+            result = rt.transcribe_bytes(b"data", "en")
+
+        assert len(result) == 1
+
+    def test_disabled_with_threshold_1(self):
+        """Setting no_speech_prob_threshold=1.0 disables filtering."""
+        rt = self._make_rt(no_speech_thresh=1.0)
+        mock_resp = self._mock_response(
+            [
+                {"start": 0.0, "end": 1.0, "text": "Garbage", "no_speech_prob": 0.99},
+            ]
+        )
+
+        with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
+            result = rt.transcribe_bytes(b"data", "en")
+
+        assert len(result) == 1
+
+
 class TestTranscriberInit:
     def test_no_urls_raises(self):
         with pytest.raises(ConfigurationError, match="At least one transcription server URL"):
@@ -101,6 +216,8 @@ class TestTranscriberInit:
                 model="m",
                 max_gap_ms=500,
                 max_chunk_ms=30000,
+                no_speech_prob_threshold=0.5,
+                avg_logprob_threshold=-0.25,
             )
 
     def test_creates_clients(self):
@@ -111,6 +228,8 @@ class TestTranscriberInit:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         assert len(t.clients) == 2
         assert t.language == "en"
@@ -128,6 +247,8 @@ class TestTranscribeFile:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         t.clients[0] = MagicMock()
         t.clients[0].transcribe.return_value = [
@@ -150,6 +271,8 @@ class TestTranscribeFile:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         t.clients[0] = MagicMock()
         t.clients[0].timeout = 10.0
@@ -180,6 +303,8 @@ class TestTranscribeSegments:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         t.clients = [mock_client]
 
@@ -199,6 +324,8 @@ class TestTranscribeSegments:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         assert t.transcribe_segments(audio, []) == []
 
@@ -224,6 +351,8 @@ class TestTranscribeSegments:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         t.clients = [mock_client]
 
@@ -262,6 +391,8 @@ class TestTranscribeSegments:
             model="m",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         t.clients = [client1, client2]
 

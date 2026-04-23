@@ -68,6 +68,8 @@ class TestTranscriberTranscribeSegments:
             model="test",
             max_gap_ms=500,
             max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
         )
         transcriber.clients = [mock_client]
 

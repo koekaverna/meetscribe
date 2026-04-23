@@ -74,6 +74,8 @@ class PipelineRunner:
             model=self.cfg.transcription.model,
             max_gap_ms=self.cfg.transcription.max_gap_ms,
             max_chunk_ms=self.cfg.transcription.max_chunk_ms,
+            no_speech_prob_threshold=self.cfg.transcription.no_speech_prob_threshold,
+            avg_logprob_threshold=self.cfg.transcription.avg_logprob_threshold,
         )
 
     def extract_samples(
@@ -266,7 +268,6 @@ class PipelineRunner:
                 if speaker_name:
                     # Named track: transcribe whole file with speaker
                     segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
-                    all_segments.extend(segs)
                 else:
                     # Diarize track
                     segments = diarization.diarize(track_path)
@@ -288,7 +289,10 @@ class PipelineRunner:
                     }
 
                     segs = transcriber.transcribe_segments(track_path, segments)
-                    all_segments.extend(segs)
+
+                for seg in segs:
+                    seg.track_num = track_num
+                all_segments.extend(segs)
 
             # Merge
             step += 1

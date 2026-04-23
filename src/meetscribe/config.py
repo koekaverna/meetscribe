@@ -175,6 +175,8 @@ class TranscriptionConfig(ValidatedConfig):
     timeout: float = 120.0
     max_gap_ms: int = 500
     max_chunk_ms: int = 30000
+    no_speech_prob_threshold: float = 0.5
+    avg_logprob_threshold: float = -0.25
 
 
 @dataclass
