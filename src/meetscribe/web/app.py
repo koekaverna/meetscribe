@@ -126,7 +126,7 @@ def create_app() -> FastAPI:
             return await call_next(request)
 
         # Page routes: redirect to login if no valid session
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
 
@@ -170,18 +170,18 @@ def create_app() -> FastAPI:
     # Page routes
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request) -> Response:
+    def login_page(request: Request) -> Response:
         """Render login page."""
         # Redirect if already authenticated
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if user:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "login.html")
 
     @app.get("/register", response_class=HTMLResponse)
-    async def register_page(request: Request) -> Response:
+    def register_page(request: Request) -> Response:
         """Render registration page. Only admins can access."""
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
         if not user.is_admin:

@@ -80,28 +80,28 @@ class TestVerifyCSRF:
 
 
 class TestGetCurrentUser:
-    async def test_no_cookie_raises_401(self) -> None:
+    def test_no_cookie_raises_401(self) -> None:
         from fastapi import HTTPException
 
         request = _make_request({})
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(request)
+            get_current_user(request)
         assert exc_info.value.status_code == 401
 
-    async def test_invalid_token_raises_401(self, auth_service: AuthService) -> None:
+    def test_invalid_token_raises_401(self, auth_service: AuthService) -> None:
         from fastapi import HTTPException
 
         request = _make_request({"meetscribe_session": "bad_token"})
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_user(request)
+            get_current_user(request)
         assert exc_info.value.status_code == 401
 
-    async def test_valid_token_returns_user(
+    def test_valid_token_returns_user(
         self, auth_service: AuthService, user_and_token: tuple[AuthUser, str]
     ) -> None:
         _, token = user_and_token
         request = _make_request({"meetscribe_session": token})
-        user = await get_current_user(request)
+        user = get_current_user(request)
         assert user.username == "testuser"
 
 
@@ -109,20 +109,20 @@ class TestGetCurrentUser:
 
 
 class TestGetCurrentUserOrNone:
-    async def test_no_cookie_returns_none(self, auth_service: AuthService) -> None:
+    def test_no_cookie_returns_none(self, auth_service: AuthService) -> None:
         request = _make_request({})
-        assert await get_current_user_or_none(request) is None
+        assert get_current_user_or_none(request) is None
 
-    async def test_invalid_token_returns_none(self, auth_service: AuthService) -> None:
+    def test_invalid_token_returns_none(self, auth_service: AuthService) -> None:
         request = _make_request({"meetscribe_session": "expired"})
-        assert await get_current_user_or_none(request) is None
+        assert get_current_user_or_none(request) is None
 
-    async def test_valid_token_returns_user(
+    def test_valid_token_returns_user(
         self, auth_service: AuthService, user_and_token: tuple[AuthUser, str]
     ) -> None:
         _, token = user_and_token
         request = _make_request({"meetscribe_session": token})
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         assert user is not None
         assert user.username == "testuser"
 

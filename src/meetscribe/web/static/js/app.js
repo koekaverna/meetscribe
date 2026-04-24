@@ -76,6 +76,9 @@ function app() {
         trackMuted: {},
         _trackAudios: [],
         _playerInited: false,
+        _extractionES: null,
+        _enrollmentES: null,
+        _transcriptionES: null,
 
         steps: [
             { name: 'Upload' },
@@ -109,10 +112,13 @@ function app() {
                     if (status === 'transcribed' && this.session?.transcript) {
                         this.transcriptionComplete = true;
                     }
+
+                    // Reconnect to running tasks
+                    await this._checkRunningTasks();
+
                     // Restore step (with validation)
                     if (step >= 1 && step <= 6) {
                         this.currentStep = step;
-                        // Initialize sortables if on samples step
                         if (step === 4) {
                             this.$nextTick(() => this.initSortables());
                         }
@@ -125,6 +131,28 @@ function app() {
                 await this.createSession();
             }
             await this.loadGlobalSpeakers();
+        },
+
+        async _checkRunningTasks() {
+            if (!this.session?.id) return;
+            try {
+                const response = await authFetch(`/api/session/${this.session.id}/tasks/status`);
+                const tasks = await response.json();
+                if (tasks.extract?.running) {
+                    this.extracting = true;
+                    this._subscribeExtraction();
+                }
+                if (tasks.enroll?.running) {
+                    this.enrolling = true;
+                    this._subscribeEnrollment();
+                }
+                if (tasks.transcribe?.running) {
+                    this.transcribing = true;
+                    this._subscribeTranscription();
+                }
+            } catch (error) {
+                console.error('Failed to check running tasks:', error);
+            }
         },
 
         updateUrl() {
@@ -372,55 +400,145 @@ function app() {
             }
         },
 
-        // Extraction Methods
-        async startExtraction() {
-            if (!this.session?.id) return;
+        // ---- SSE Subscribe Helpers ----
 
-            this.extracting = true;
-            this.extractionComplete = false;
+        _subscribeExtraction() {
+            if (this._extractionES) this._extractionES.close();
             this.extractionLogs = [];
             this.extractionStep = 0;
             this.extractionTotal = 1;
+            const eventSource = new EventSource(`/api/session/${this.session.id}/extract/stream`);
+            this._extractionES = eventSource;
 
-            try {
-                // Start extraction
-                await fetch(`/api/session/${this.session.id}/extract`, { method: 'POST' });
-
-                // Connect to SSE stream
-                const eventSource = new EventSource(`/api/session/${this.session.id}/extract/stream`);
-
-                eventSource.onmessage = async (event) => {
-                    const data = JSON.parse(event.data);
-
-                    if (data.done) {
-                        eventSource.close();
-                        this.extracting = false;
-                        this.extractionComplete = true;
-                        await this.loadSession();
-                        return;
-                    }
-
-                    if (data.error) {
-                        eventSource.close();
-                        this.extracting = false;
-                        this.extractionLogs.push(`Error: ${data.error}`);
-                        return;
-                    }
-
-                    if (data.step) {
-                        this.extractionStep = data.step;
-                        this.extractionTotal = data.total;
-                    }
-                    if (data.message) {
-                        this.extractionStatus = data.message;
-                        this.extractionLogs.push(data.message);
-                    }
-                };
-
-                eventSource.onerror = () => {
+            eventSource.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                if (data.done) {
                     eventSource.close();
+                    this._extractionES = null;
                     this.extracting = false;
-                };
+                    this.extractionComplete = true;
+                    await this.loadSession();
+                    return;
+                }
+                if (data.error) {
+                    eventSource.close();
+                    this._extractionES = null;
+                    this.extracting = false;
+                    this.extractionLogs.push(`Error: ${data.error}`);
+                    return;
+                }
+                if (data.step) {
+                    this.extractionStep = data.step;
+                    this.extractionTotal = data.total;
+                }
+                if (data.message) {
+                    this.extractionStatus = data.message;
+                    this.extractionLogs.push(data.message);
+                }
+            };
+            eventSource.onerror = () => {
+                eventSource.close();
+                this._extractionES = null;
+                this.extracting = false;
+            };
+        },
+
+        _subscribeEnrollment() {
+            if (this._enrollmentES) this._enrollmentES.close();
+            this.enrollmentLogs = [];
+            const eventSource = new EventSource(`/api/session/${this.session.id}/enroll/stream`);
+            this._enrollmentES = eventSource;
+
+            eventSource.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                if (data.done) {
+                    eventSource.close();
+                    this._enrollmentES = null;
+                    this.enrolling = false;
+                    this.enrollmentComplete = true;
+                    this.transcriptionComplete = false;
+                    await this.loadGlobalSpeakers();
+                    return;
+                }
+                if (data.error) {
+                    eventSource.close();
+                    this._enrollmentES = null;
+                    this.enrolling = false;
+                    this.enrollmentLogs.push(`Error: ${data.error}`);
+                    return;
+                }
+                if (data.message) {
+                    this.enrollmentStatus = data.message;
+                    this.enrollmentLogs.push(data.message);
+                }
+            };
+            eventSource.onerror = () => {
+                eventSource.close();
+                this._enrollmentES = null;
+                this.enrolling = false;
+            };
+        },
+
+        _subscribeTranscription() {
+            if (this._transcriptionES) this._transcriptionES.close();
+            this.transcriptionLogs = [];
+            this.transcriptionStep = 0;
+            this.transcriptionTotal = 1;
+            this.transcriptionProgress = 0;
+            const eventSource = new EventSource(`/api/session/${this.session.id}/transcribe/stream`);
+            this._transcriptionES = eventSource;
+            let lastStep = 0;
+
+            eventSource.onmessage = async (event) => {
+                const data = JSON.parse(event.data);
+                if (data.done) {
+                    eventSource.close();
+                    this._transcriptionES = null;
+                    this.transcribing = false;
+                    this.transcriptionComplete = true;
+                    await this.loadSession();
+                    return;
+                }
+                if (data.error) {
+                    eventSource.close();
+                    this._transcriptionES = null;
+                    this.transcribing = false;
+                    this.transcriptionLogs.push(`Error: ${data.error}`);
+                    return;
+                }
+                if (data.step) {
+                    if (data.step !== lastStep) {
+                        this.transcriptionProgress = 0;
+                        lastStep = data.step;
+                    }
+                    this.transcriptionStep = data.step;
+                    this.transcriptionTotal = data.total;
+                }
+                if (data.progress !== undefined) {
+                    this.transcriptionProgress = data.progress;
+                }
+                if (data.message) {
+                    this.transcriptionStatus = data.message;
+                    if (data.progress === undefined || data.progress === 0 || data.progress === 100) {
+                        this.transcriptionLogs.push(data.message);
+                    }
+                }
+            };
+            eventSource.onerror = () => {
+                eventSource.close();
+                this._transcriptionES = null;
+                this.transcribing = false;
+            };
+        },
+
+        // Extraction Methods
+        async startExtraction() {
+            if (!this.session?.id) return;
+            this.extracting = true;
+            this.extractionComplete = false;
+            try {
+                await fetch(`/api/session/${this.session.id}/extract`, { method: 'POST' });
+                this._subscribeExtraction();
             } catch (error) {
                 console.error('Extraction failed:', error);
                 this.extracting = false;
@@ -670,45 +788,11 @@ function app() {
 
         async startEnrollment() {
             if (!this.session?.id) return;
-
             this.enrolling = true;
             this.enrollmentComplete = false;
-            this.enrollmentLogs = [];
-
             try {
                 await fetch(`/api/session/${this.session.id}/enroll`, { method: 'POST' });
-
-                const eventSource = new EventSource(`/api/session/${this.session.id}/enroll/stream`);
-
-                eventSource.onmessage = async (event) => {
-                    const data = JSON.parse(event.data);
-
-                    if (data.done) {
-                        eventSource.close();
-                        this.enrolling = false;
-                        this.enrollmentComplete = true;
-                        this.transcriptionComplete = false;
-                        await this.loadGlobalSpeakers();
-                        return;
-                    }
-
-                    if (data.error) {
-                        eventSource.close();
-                        this.enrolling = false;
-                        this.enrollmentLogs.push(`Error: ${data.error}`);
-                        return;
-                    }
-
-                    if (data.message) {
-                        this.enrollmentStatus = data.message;
-                        this.enrollmentLogs.push(data.message);
-                    }
-                };
-
-                eventSource.onerror = () => {
-                    eventSource.close();
-                    this.enrolling = false;
-                };
+                this._subscribeEnrollment();
             } catch (error) {
                 console.error('Enrollment failed:', error);
                 this.enrolling = false;
@@ -718,14 +802,8 @@ function app() {
         // Transcription Methods
         async startTranscription() {
             if (!this.session?.id) return;
-
             this.transcribing = true;
             this.transcriptionComplete = false;
-            this.transcriptionLogs = [];
-            this.transcriptionStep = 0;
-            this.transcriptionTotal = 1;
-            this.transcriptionProgress = 0;
-
             try {
                 await fetch(`/api/session/${this.session.id}/transcribe`, {
                     method: 'POST',
@@ -735,54 +813,7 @@ function app() {
                         language: this.language
                     })
                 });
-
-                const eventSource = new EventSource(`/api/session/${this.session.id}/transcribe/stream`);
-                let lastStep = 0;
-
-                eventSource.onmessage = async (event) => {
-                    const data = JSON.parse(event.data);
-
-                    if (data.done) {
-                        eventSource.close();
-                        this.transcribing = false;
-                        this.transcriptionComplete = true;
-                        await this.loadSession();
-                        return;
-                    }
-
-                    if (data.error) {
-                        eventSource.close();
-                        this.transcribing = false;
-                        this.transcriptionLogs.push(`Error: ${data.error}`);
-                        return;
-                    }
-
-                    if (data.step) {
-                        // Reset progress when step changes
-                        if (data.step !== lastStep) {
-                            this.transcriptionProgress = 0;
-                            lastStep = data.step;
-                        }
-                        this.transcriptionStep = data.step;
-                        this.transcriptionTotal = data.total;
-                    }
-                    // Update sub-step progress (0-100 within current step)
-                    if (data.progress !== undefined) {
-                        this.transcriptionProgress = data.progress;
-                    }
-                    if (data.message) {
-                        this.transcriptionStatus = data.message;
-                        // Only log non-progress messages (avoid flooding logs)
-                        if (data.progress === undefined || data.progress === 0 || data.progress === 100) {
-                            this.transcriptionLogs.push(data.message);
-                        }
-                    }
-                };
-
-                eventSource.onerror = () => {
-                    eventSource.close();
-                    this.transcribing = false;
-                };
+                this._subscribeTranscription();
             } catch (error) {
                 console.error('Transcription failed:', error);
                 this.transcribing = false;
