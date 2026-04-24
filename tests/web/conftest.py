@@ -70,13 +70,14 @@ def regular_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
 
 
 @pytest.fixture
-def app(web_auth_service: AuthService, web_session_service: SessionService):
+def app(web_auth_service: AuthService, web_session_service: SessionService, tmp_path):
     """Create a FastAPI app with test services already initialized."""
     from meetscribe.web.app import create_app
 
     with (
         patch("meetscribe.web.app.init_db"),
         patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
+        patch("meetscribe.web.app.config.LOGS_DIR", tmp_path / "logs"),
     ):
         return create_app()
 
