@@ -101,11 +101,11 @@ class AuthService:
                 raise ValueError("Username already taken")
 
             pw_hash = hash_password(password)
-            user_id = create_user(conn, username, pw_hash, team["id"])
+            user_id = create_user(conn, username, pw_hash, team["id"], commit=False)
 
             token = secrets.token_hex(32)
             expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-            create_auth_session(conn, user_id, token, expires.isoformat())
+            create_auth_session(conn, user_id, token, expires.isoformat(), commit=False)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -133,11 +133,11 @@ class AuthService:
                 logger.warning("Failed login attempt")
                 raise ValueError("Invalid username or password")
 
-            delete_expired_sessions(conn)
+            delete_expired_sessions(conn, commit=False)
 
             token = secrets.token_hex(32)
             expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-            create_auth_session(conn, row["id"], token, expires.isoformat())
+            create_auth_session(conn, row["id"], token, expires.isoformat(), commit=False)
             conn.commit()
         except Exception:
             conn.rollback()

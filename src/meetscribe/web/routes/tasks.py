@@ -118,16 +118,21 @@ def _clean_event(item: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _broadcast(task: RunningTask, msg: tuple[str, Any]) -> None:
-    with task.lock:
-        subs = list(task.subscribers)
-    for sub in subs:
+def _deliver(subscribers: list[_Subscriber], msg: tuple[str, Any]) -> None:
+    """Send a message to a pre-captured list of subscribers (no lock needed)."""
+    for sub in subscribers:
         loop = sub.loop
         if loop is not None and loop.is_running():
             try:
                 loop.call_soon_threadsafe(sub.queue.put_nowait, msg)
             except RuntimeError:
                 pass
+
+
+def _broadcast(task: RunningTask, msg: tuple[str, Any]) -> None:
+    with task.lock:
+        subs = list(task.subscribers)
+    _deliver(subs, msg)
 
 
 def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> None:
@@ -139,12 +144,14 @@ def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> 
                 cleaned = _clean_event(item)
                 with task.lock:
                     task.event_log.append(cleaned)
-                _broadcast(task, ("item", cleaned))
+                    subs = list(task.subscribers)
+                _deliver(subs, ("item", cleaned))
 
             with task.lock:
                 task.done = True
                 task.done_at = time.monotonic()
-            _broadcast(task, ("done", None))
+                subs = list(task.subscribers)
+            _deliver(subs, ("done", None))
 
         except Exception as e:
             logger.exception("Task %s failed for session %s", task.task_type, task.session_id)
@@ -152,7 +159,8 @@ def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> 
                 task.done = True
                 task.done_at = time.monotonic()
                 task.error = str(e)
-            _broadcast(task, ("error", str(e)))
+                subs = list(task.subscribers)
+            _deliver(subs, ("error", str(e)))
 
         # Run callbacks from background thread — no subscriber needed
         with task.lock:
@@ -240,11 +248,12 @@ _STATUS_ORDER = list(SessionStatus)
 
 
 def _stream_or_404(session_id: str, task_type: str, user: AuthUser) -> StreamingResponse:
+    state = get_session_for_user(session_id, user)
+
     task = _get_task(session_id, task_type)
     if task:
         return StreamingResponse(_subscribe_to_task(task), media_type="text/event-stream")
 
-    state = get_session_for_user(session_id, user)
     threshold = _STATUS_THRESHOLDS[task_type]
     if _STATUS_ORDER.index(state.status) >= _STATUS_ORDER.index(threshold):
 

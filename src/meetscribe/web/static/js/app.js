@@ -436,11 +436,7 @@ function app() {
                     this.extractionLogs.push(data.message);
                 }
             };
-            eventSource.onerror = () => {
-                eventSource.close();
-                this._extractionES = null;
-                this.extracting = false;
-            };
+            eventSource.onerror = () => {};
         },
 
         _subscribeEnrollment() {
@@ -472,11 +468,7 @@ function app() {
                     this.enrollmentLogs.push(data.message);
                 }
             };
-            eventSource.onerror = () => {
-                eventSource.close();
-                this._enrollmentES = null;
-                this.enrolling = false;
-            };
+            eventSource.onerror = () => {};
         },
 
         _subscribeTranscription() {
@@ -524,11 +516,7 @@ function app() {
                     }
                 }
             };
-            eventSource.onerror = () => {
-                eventSource.close();
-                this._transcriptionES = null;
-                this.transcribing = false;
-            };
+            eventSource.onerror = () => {};
         },
 
         // Extraction Methods

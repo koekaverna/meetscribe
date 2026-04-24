@@ -249,13 +249,16 @@ def create_user(
     password_hash: str,
     team_id: int,
     is_admin: bool = False,
+    *,
+    commit: bool = True,
 ) -> int:
     """Create a user. Returns its id."""
     cursor = conn.execute(
         "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
         (username, password_hash, team_id, int(is_admin)),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return cursor.lastrowid  # type: ignore[return-value]
 
 
@@ -296,14 +299,20 @@ def delete_user(conn: sqlite3.Connection, username: str) -> bool:
 
 
 def create_auth_session(
-    conn: sqlite3.Connection, user_id: int, token: str, expires_at: str
+    conn: sqlite3.Connection,
+    user_id: int,
+    token: str,
+    expires_at: str,
+    *,
+    commit: bool = True,
 ) -> None:
     """Create an auth session."""
     conn.execute(
         "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
         (token, user_id, expires_at),
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
@@ -326,8 +335,9 @@ def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
     return cursor.rowcount > 0
 
 
-def delete_expired_sessions(conn: sqlite3.Connection) -> int:
+def delete_expired_sessions(conn: sqlite3.Connection, *, commit: bool = True) -> int:
     """Delete expired auth sessions. Returns count deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
-    conn.commit()
+    if commit:
+        conn.commit()
     return cursor.rowcount
