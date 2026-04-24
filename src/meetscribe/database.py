@@ -61,7 +61,7 @@ def get_db() -> sqlite3.Connection:
     """Return a per-thread SQLite connection (created lazily)."""
     if _db_path is None:
         raise RuntimeError("Database not initialized — call init_db() first")
-    conn = getattr(_local, "conn", None)
+    conn: sqlite3.Connection | None = getattr(_local, "conn", None)
     if conn is not None:
         return conn
     conn = _open_connection(_db_path)
