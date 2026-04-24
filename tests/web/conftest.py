@@ -1,6 +1,8 @@
 """Shared fixtures for web/route tests using FastAPI TestClient."""
 
 import io
+import logging
+import os
 import wave
 from collections.abc import Generator
 from pathlib import Path
@@ -70,16 +72,21 @@ def regular_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
 
 
 @pytest.fixture
-def app(web_auth_service: AuthService, web_session_service: SessionService, tmp_path):
+def app(web_auth_service: AuthService, web_session_service: SessionService):
     """Create a FastAPI app with test services already initialized."""
     from meetscribe.web.app import create_app
 
-    with (
-        patch("meetscribe.web.app.init_db"),
-        patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
-        patch("meetscribe.web.app.config.LOGS_DIR", tmp_path / "logs"),
-    ):
-        return create_app()
+    # Stub out file logging — a NullHandler makes the guard think a FileHandler exists
+    null = logging.FileHandler(os.devnull)
+    logging.getLogger().addHandler(null)
+    try:
+        with (
+            patch("meetscribe.web.app.init_db"),
+            patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
+        ):
+            return create_app()
+    finally:
+        logging.getLogger().removeHandler(null)
 
 
 @pytest.fixture
