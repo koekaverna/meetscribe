@@ -131,44 +131,49 @@ def _broadcast(task: RunningTask, msg: tuple[str, Any]) -> None:
 
 
 def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> None:
+    from meetscribe.database import close_db
+
     try:
-        for item in gen:
-            cleaned = _clean_event(item)
+        try:
+            for item in gen:
+                cleaned = _clean_event(item)
+                with task.lock:
+                    task.event_log.append(cleaned)
+                _broadcast(task, ("item", cleaned))
+
             with task.lock:
-                task.event_log.append(cleaned)
-            _broadcast(task, ("item", cleaned))
+                task.done = True
+                task.done_at = time.monotonic()
+            _broadcast(task, ("done", None))
 
+        except Exception as e:
+            logger.exception("Task %s failed for session %s", task.task_type, task.session_id)
+            with task.lock:
+                task.done = True
+                task.done_at = time.monotonic()
+                task.error = str(e)
+            _broadcast(task, ("error", str(e)))
+
+        # Run callbacks from background thread — no subscriber needed
         with task.lock:
-            task.done = True
-            task.done_at = time.monotonic()
-        _broadcast(task, ("done", None))
+            if task.on_complete_ran:
+                return
+            task.on_complete_ran = True
 
-    except Exception as e:
-        logger.exception("Task %s failed for session %s", task.task_type, task.session_id)
-        with task.lock:
-            task.done = True
-            task.done_at = time.monotonic()
-            task.error = str(e)
-        _broadcast(task, ("error", str(e)))
-
-    # Run callbacks from background thread — no subscriber needed
-    with task.lock:
-        if task.on_complete_ran:
-            return
-        task.on_complete_ran = True
-
-    if task.error:
-        if task.on_error:
-            try:
-                task.on_error(task.error)
-            except Exception:
-                logger.exception("on_error callback failed for %s", task.task_type)
-    else:
-        if task.on_complete:
-            try:
-                task.on_complete()
-            except Exception:
-                logger.exception("on_complete callback failed for %s", task.task_type)
+        if task.error:
+            if task.on_error:
+                try:
+                    task.on_error(task.error)
+                except Exception:
+                    logger.exception("on_error callback failed for %s", task.task_type)
+        else:
+            if task.on_complete:
+                try:
+                    task.on_complete()
+                except Exception:
+                    logger.exception("on_complete callback failed for %s", task.task_type)
+    finally:
+        close_db()
 
 
 # ---------------------------------------------------------------------------
