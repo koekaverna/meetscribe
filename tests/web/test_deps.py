@@ -47,32 +47,32 @@ def user_and_token(auth_service: AuthService) -> tuple[AuthUser, str]:
 
 
 class TestVerifyCSRF:
-    async def test_valid_csrf(self) -> None:
+    def test_valid_csrf(self) -> None:
         request = _make_request({"meetscribe_csrf": "tok123"})
-        await verify_csrf(request, csrf_token="tok123")  # should not raise
+        verify_csrf(request, csrf_token="tok123")  # should not raise
 
-    async def test_mismatched_csrf_raises_403(self) -> None:
+    def test_mismatched_csrf_raises_403(self) -> None:
         from fastapi import HTTPException
 
         request = _make_request({"meetscribe_csrf": "good"})
         with pytest.raises(HTTPException) as exc_info:
-            await verify_csrf(request, csrf_token="bad")
+            verify_csrf(request, csrf_token="bad")
         assert exc_info.value.status_code == 403
 
-    async def test_missing_cookie_raises_403(self) -> None:
+    def test_missing_cookie_raises_403(self) -> None:
         from fastapi import HTTPException
 
         request = _make_request({})
         with pytest.raises(HTTPException) as exc_info:
-            await verify_csrf(request, csrf_token="anything")
+            verify_csrf(request, csrf_token="anything")
         assert exc_info.value.status_code == 403
 
-    async def test_empty_token_raises_403(self) -> None:
+    def test_empty_token_raises_403(self) -> None:
         from fastapi import HTTPException
 
         request = _make_request({"meetscribe_csrf": "tok"})
         with pytest.raises(HTTPException) as exc_info:
-            await verify_csrf(request, csrf_token="")
+            verify_csrf(request, csrf_token="")
         assert exc_info.value.status_code == 403
 
 
