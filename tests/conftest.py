@@ -9,15 +9,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from meetscribe.database import get_db
+from meetscribe.database import close_db, get_db, init_db
 
 
 @pytest.fixture
 def db(tmp_path: Path) -> Generator[sqlite3.Connection, None, None]:
     """In-memory-like SQLite with all migrations applied."""
-    conn = get_db(tmp_path / "test.db")
-    yield conn
-    conn.close()
+    init_db(tmp_path / "test.db")
+    yield get_db()
+    close_db()
 
 
 @pytest.fixture

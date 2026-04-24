@@ -1,7 +1,8 @@
 """Shared fixtures for web/route tests using FastAPI TestClient."""
 
 import io
-import sqlite3
+import logging
+import os
 import wave
 from collections.abc import Generator
 from pathlib import Path
@@ -14,52 +15,41 @@ import meetscribe.config as config_mod
 import meetscribe.web.services.auth as auth_mod
 import meetscribe.web.services.session as session_mod
 from meetscribe.config import AppConfig, WebConfig
-from meetscribe.database import get_db
-from meetscribe.web.services.auth import AuthService, AuthUser, init_auth_service
+from meetscribe.database import close_db, get_db, init_db
+from meetscribe.web.services.auth import AuthService, AuthUser
 from meetscribe.web.services.session import SessionService
 
 
 @pytest.fixture
-def web_db(tmp_path: Path) -> Generator[sqlite3.Connection, None, None]:
-    """Database connection for web tests with config patching and singleton cleanup."""
-    # Save old singletons
+def web_db(tmp_path: Path) -> Generator[None, None, None]:
+    """Initialize DB for web tests with config patching and singleton cleanup."""
     old_web_cfg = auth_mod._web_cfg
     old_app_cfg = config_mod._app_config
-    old_auth_svc = auth_mod._auth_service
     old_session_svc = session_mod._session_service
 
-    # Set default configs so tests don't need config.yaml
     auth_mod._web_cfg = WebConfig()
     config_mod._app_config = AppConfig()
 
-    # Use get_db for migrations, then reopen with check_same_thread=False
-    # because TestClient runs requests in a different thread
     db_path = tmp_path / "web_test.db"
-    init_conn = get_db(db_path)
-    init_conn.close()
-    conn = sqlite3.connect(str(db_path), check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys=ON")
+    init_db(db_path)
 
-    yield conn
+    yield
 
-    conn.close()
+    close_db()
 
-    # Restore all singletons
     auth_mod._web_cfg = old_web_cfg
     config_mod._app_config = old_app_cfg
-    auth_mod._auth_service = old_auth_svc
     session_mod._session_service = old_session_svc
 
 
 @pytest.fixture
-def web_auth_service(web_db: sqlite3.Connection) -> AuthService:
-    return init_auth_service(web_db)
+def web_auth_service(web_db) -> AuthService:
+    return AuthService()
 
 
 @pytest.fixture
-def web_session_service(web_db: sqlite3.Connection, tmp_path: Path) -> SessionService:
-    svc = SessionService(web_db, sessions_dir=tmp_path / "sessions")
+def web_session_service(web_db, tmp_path: Path) -> SessionService:
+    svc = SessionService(sessions_dir=tmp_path / "sessions")
     session_mod._session_service = svc
     return svc
 
@@ -68,8 +58,9 @@ def web_session_service(web_db: sqlite3.Connection, tmp_path: Path) -> SessionSe
 def admin_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
     """Create an admin user. Returns (AuthUser, session_token)."""
     user, token = web_auth_service.register("admin", "test-pass-000", "default")
-    web_auth_service.conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user.id,))
-    web_auth_service.conn.commit()
+    conn = get_db()
+    conn.execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user.id,))
+    conn.commit()
     user.is_admin = True
     return user, token
 
@@ -85,11 +76,17 @@ def app(web_auth_service: AuthService, web_session_service: SessionService):
     """Create a FastAPI app with test services already initialized."""
     from meetscribe.web.app import create_app
 
-    with (
-        patch("meetscribe.web.app.get_db", return_value=web_auth_service.conn),
-        patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
-    ):
-        return create_app()
+    # Stub out file logging — a NullHandler makes the guard think a FileHandler exists
+    null = logging.FileHandler(os.devnull)
+    logging.getLogger().addHandler(null)
+    try:
+        with (
+            patch("meetscribe.web.app.init_db"),
+            patch("meetscribe.web.app.init_session_service", return_value=web_session_service),
+        ):
+            return create_app()
+    finally:
+        logging.getLogger().removeHandler(null)
 
 
 @pytest.fixture

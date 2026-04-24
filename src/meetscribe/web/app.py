@@ -15,13 +15,13 @@ from starlette.middleware.base import RequestResponseEndpoint
 
 from meetscribe import config
 from meetscribe.config import get_config
-from meetscribe.database import get_db
+from meetscribe.database import close_all_db, init_db
 from meetscribe.log import StructuredFormatter, apply_log_level
 
 from .deps import CSRF_COOKIE_NAME, get_current_user, get_current_user_or_none
 from .routes import auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
-from .services.auth import get_secure_cookies, init_auth_service
+from .services.auth import get_secure_cookies
 from .services.session import init_session_service
 
 CSRF_FORM_FIELD = "csrf_token"
@@ -37,28 +37,30 @@ PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    # File logging (same as CLI)
-    config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = config.LOGS_DIR / f"web_{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(
-        StructuredFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    )
-    logging.getLogger().addHandler(file_handler)
+    # File logging (same as CLI) — guard against duplicate handlers on re-create
+    root = logging.getLogger()
+    has_file_handler = any(isinstance(h, logging.FileHandler) for h in root.handlers)
+    if not has_file_handler:
+        config.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        log_file = config.LOGS_DIR / f"web_{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(
+            StructuredFormatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        )
+        root.addHandler(file_handler)
 
     apply_log_level(get_config().log_level)
 
-    # Single DB connection for the app lifetime
-    conn = get_db(config.DB_PATH)
-    init_auth_service(conn)
-    init_session_service(conn)
+    # Initialize DB and services
+    init_db(config.DB_PATH)
+    init_session_service()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
         shutdown_threads()
-        conn.close()
+        close_all_db()
 
     app = FastAPI(
         title="MeetScribe",
@@ -126,7 +128,7 @@ def create_app() -> FastAPI:
             return await call_next(request)
 
         # Page routes: redirect to login if no valid session
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
 
@@ -170,18 +172,18 @@ def create_app() -> FastAPI:
     # Page routes
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request) -> Response:
+    def login_page(request: Request) -> Response:
         """Render login page."""
         # Redirect if already authenticated
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if user:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "login.html")
 
     @app.get("/register", response_class=HTMLResponse)
-    async def register_page(request: Request) -> Response:
+    def register_page(request: Request) -> Response:
         """Render registration page. Only admins can access."""
-        user = await get_current_user_or_none(request)
+        user = get_current_user_or_none(request)
         if not user:
             return RedirectResponse("/login", status_code=303)
         if not user.is_admin:

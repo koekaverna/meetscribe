@@ -1,9 +1,10 @@
-"""SQLite database for team and voiceprint management."""
+"""SQLite database: teams, voiceprints, users, auth sessions."""
 
 import json
 import logging
 import re
 import sqlite3
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -21,16 +22,75 @@ def _validate_team_name(name: str) -> None:
         )
 
 
-def get_db(db_path: Path) -> sqlite3.Connection:
-    """Open (and create if needed) the database, run migrations."""
+# ---------------------------------------------------------------------------
+# Connection-per-thread via threading.local
+# ---------------------------------------------------------------------------
+
+_local = threading.local()
+_db_path: Path | None = None
+_all_connections: list[sqlite3.Connection] = []
+_connections_lock = threading.Lock()
+
+_BUSY_TIMEOUT_MS = 5000
+
+
+def _open_connection(db_path: Path) -> sqlite3.Connection:
+    """Open a new SQLite connection with standard PRAGMAs."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+    with _connections_lock:
+        _all_connections.append(conn)
+    return conn
+
+
+def init_db(db_path: Path) -> None:
+    """Initialize DB path and run migrations (call once at startup)."""
+    global _db_path
+    _db_path = db_path
+    conn = _open_connection(db_path)
     _run_migrations(conn)
     ensure_default_team(conn)
+    _local.conn = conn
+
+
+def get_db() -> sqlite3.Connection:
+    """Return a per-thread SQLite connection (created lazily)."""
+    if _db_path is None:
+        raise RuntimeError("Database not initialized — call init_db() first")
+    conn: sqlite3.Connection | None = getattr(_local, "conn", None)
+    if conn is not None:
+        return conn
+    conn = _open_connection(_db_path)
+    _local.conn = conn
     return conn
+
+
+def close_db() -> None:
+    """Close the current thread's connection (if any) and clear thread-local."""
+    conn = getattr(_local, "conn", None)
+    if conn is not None:
+        conn.close()
+        del _local.conn
+        with _connections_lock:
+            try:
+                _all_connections.remove(conn)
+            except ValueError:
+                pass
+
+
+def close_all_db() -> None:
+    """Close all tracked connections. Call on app shutdown."""
+    with _connections_lock:
+        for conn in _all_connections:
+            try:
+                conn.close()
+            except Exception:
+                logger.debug("Failed to close connection during shutdown", exc_info=True)
+        _all_connections.clear()
 
 
 def _get_schema_version(conn: sqlite3.Connection) -> int:
@@ -185,7 +245,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
     return row["cnt"]  # type: ignore[no-any-return]
 
 
-# --- User CRUD ---
+# --- User/auth CRUD (caller controls commit) ---
 
 
 def create_user(
@@ -200,7 +260,6 @@ def create_user(
         "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
         (username, password_hash, team_id, int(is_admin)),
     )
-    conn.commit()
     return cursor.lastrowid  # type: ignore[return-value]
 
 
@@ -233,11 +292,7 @@ def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:
     """Delete a user by username. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
-    conn.commit()
     return cursor.rowcount > 0
-
-
-# --- Auth session CRUD ---
 
 
 def create_auth_session(
@@ -248,7 +303,6 @@ def create_auth_session(
         "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
         (token, user_id, expires_at),
     )
-    conn.commit()
 
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
@@ -267,12 +321,10 @@ def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None
 def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
     """Delete an auth session. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
-    conn.commit()
     return cursor.rowcount > 0
 
 
 def delete_expired_sessions(conn: sqlite3.Connection) -> int:
     """Delete expired auth sessions. Returns count deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
-    conn.commit()
     return cursor.rowcount

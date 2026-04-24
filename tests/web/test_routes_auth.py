@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from meetscribe.database import get_db
 from meetscribe.web.services.auth import get_auth_service
 
 
@@ -61,9 +62,11 @@ class TestRegister:
         )
         assert resp.status_code == 200
 
-        row = web_db.execute(
-            "SELECT username FROM users WHERE username = ?", ("newuser",)
-        ).fetchone()
+        row = (
+            get_db()
+            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
+            .fetchone()
+        )
         assert row is not None
 
     def test_password_mismatch_returns_400_and_no_user_created(
@@ -81,9 +84,11 @@ class TestRegister:
         )
         assert resp.status_code == 400
 
-        row = web_db.execute(
-            "SELECT username FROM users WHERE username = ?", ("newuser",)
-        ).fetchone()
+        row = (
+            get_db()
+            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
+            .fetchone()
+        )
         assert row is None
 
     def test_short_password_returns_400(self, admin_client: TestClient) -> None:
@@ -112,9 +117,11 @@ class TestRegister:
         )
         assert resp.status_code == 400
 
-        row = web_db.execute(
-            "SELECT username FROM users WHERE username = ?", ("newuser",)
-        ).fetchone()
+        row = (
+            get_db()
+            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
+            .fetchone()
+        )
         assert row is None
 
 

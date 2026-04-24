@@ -46,6 +46,7 @@ from .database import (
     delete_voiceprint,
     get_db,
     get_team,
+    init_db,
     list_teams,
     list_users,
     load_voiceprints,
@@ -56,9 +57,6 @@ from .team import TeamContext, resolve_team
 
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
-
-# Ensure directories exist
-config.ensure_dirs()
 
 # === Logging setup (before heavy imports to capture their warnings) ===
 _log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
@@ -151,7 +149,7 @@ def _print_team_header(team_ctx: TeamContext) -> None:
 
 def _create_diarization(cfg: AppConfig, team_ctx: TeamContext) -> DiarizationPipeline:
     """Create a DiarizationPipeline from config and team context."""
-    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+    voiceprints = load_voiceprints(get_db(), team_ctx.id)
     return DiarizationPipeline(
         diarization_url=cfg.get_diarization_url(),
         embedding_url=cfg.get_embeddings_url(),
@@ -305,9 +303,7 @@ def cmd_enroll(args: argparse.Namespace, team_ctx: TeamContext) -> None:
                 extractor, wav_paths, enrolled_dir
             )
             ok(f"{total_count} sample(s) in {enrolled_dir} ({new_count} new)")
-            save_voiceprint(
-                team_ctx.conn, team_ctx.id, args.name, avg_embedding, cfg.embeddings.model
-            )
+            save_voiceprint(get_db(), team_ctx.id, args.name, avg_embedding, cfg.embeddings.model)
     finally:
         for tmp in tmp_converted:
             tmp.unlink(missing_ok=True)
@@ -329,7 +325,7 @@ def cmd_list(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     _print_team_header(team_ctx)
     print()
 
-    voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+    voiceprints = load_voiceprints(get_db(), team_ctx.id)
 
     if not voiceprints:
         warn("No speakers enrolled.")
@@ -346,7 +342,7 @@ def cmd_list(args: argparse.Namespace, team_ctx: TeamContext) -> None:
 def cmd_delete_speaker(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     """Delete an enrolled speaker's voiceprint and samples."""
     name = args.name
-    deleted = delete_voiceprint(team_ctx.conn, team_ctx.id, name)
+    deleted = delete_voiceprint(get_db(), team_ctx.id, name)
     if not deleted:
         warn(f"Speaker '{name}' not found.")
         return
@@ -633,7 +629,7 @@ def cmd_info(args: argparse.Namespace, team_ctx: TeamContext) -> None:
     print(f"  \U0001f5c3\ufe0f  Database:   {C_DIM}{config.DB_PATH}{C_RESET}")
     print(f"  \U0001f3a4 Enrolled:   {C_DIM}{team_ctx.enrolled_samples_dir}{C_RESET}")
     print(f"  \U0001f50a Unknown:    {C_DIM}{team_ctx.unknown_samples_dir}{C_RESET}")
-    vp_count = count_voiceprints(team_ctx.conn, team_ctx.id)
+    vp_count = count_voiceprints(get_db(), team_ctx.id)
     print(f"  \U0001f511 Voiceprints:{C_DIM} {vp_count} in DB (team: {team_ctx.name}){C_RESET}")
     print(f"  \U0001f5d1\ufe0f  Temp:       {C_DIM}{config.TMP_DIR}{C_RESET}")
     print(f"  \U0001f4cb Logs:       {C_DIM}{config.LOGS_DIR}{C_RESET}")
@@ -666,7 +662,7 @@ def cmd_user_create(args: argparse.Namespace) -> None:
 
     from .web.services.auth import hash_password
 
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     team = get_team(conn, args.team)
     if not team:
         print(f"\n  {C_RED}\u274c Error:{C_RESET} Team '{args.team}' not found.\n")
@@ -685,6 +681,7 @@ def cmd_user_create(args: argparse.Namespace) -> None:
         pw_hash = hash_password(password)
         is_admin = getattr(args, "admin", False)
         create_user(conn, args.username, pw_hash, team["id"], is_admin=is_admin)
+        conn.commit()
         role = " (admin)" if is_admin else ""
         print(
             f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}'"
@@ -693,15 +690,12 @@ def cmd_user_create(args: argparse.Namespace) -> None:
     except Exception as e:
         print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}\n")
         raise SystemExit(1)
-    finally:
-        conn.close()
 
 
 def cmd_user_list(args: argparse.Namespace) -> None:
     """List all users."""
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     users = list_users(conn)
-    conn.close()
 
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
     print(f"  \U0001f464 {C_BOLD}Users{C_RESET}")
@@ -726,9 +720,9 @@ def cmd_user_delete(args: argparse.Namespace) -> None:
             print("Cancelled.")
             return
 
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     deleted = delete_user(conn, args.username)
-    conn.close()
+    conn.commit()
 
     if deleted:
         print(f"\n  {C_GREEN}\u2714{C_RESET}  User '{args.username}' deleted.\n")
@@ -741,10 +735,9 @@ def cmd_user_delete(args: argparse.Namespace) -> None:
 
 def cmd_team_create(args: argparse.Namespace) -> None:
     """Create a new team."""
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     team_id = create_team(conn, args.name, args.description)
     config.ensure_team_dirs(args.name)
-    conn.close()
     name = args.name
     print(f"\n  {C_GREEN}\u2714{C_RESET}  Team '{C_BOLD}{name}{C_RESET}' created (id={team_id})")
     print(f"  Use: meetscribe -t {name} enroll ...\n")
@@ -752,7 +745,7 @@ def cmd_team_create(args: argparse.Namespace) -> None:
 
 def cmd_team_list(args: argparse.Namespace) -> None:
     """List all teams."""
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     teams = list_teams(conn)
 
     print(f"\n{C_MAGENTA}{'=' * 60}{C_RESET}")
@@ -765,7 +758,6 @@ def cmd_team_list(args: argparse.Namespace) -> None:
         name = team["name"]
         print(f"  {C_GREEN}\u2714{C_RESET} {name}{C_DIM}{desc}{C_RESET} ({vp_count} speakers)")
     print()
-    conn.close()
 
 
 def cmd_team_delete(args: argparse.Namespace) -> None:
@@ -776,9 +768,8 @@ def cmd_team_delete(args: argparse.Namespace) -> None:
             print("Cancelled.")
             return
 
-    conn = get_db(config.DB_PATH)
+    conn = get_db()
     deleted = delete_team(conn, args.name)
-    conn.close()
 
     if deleted:
         # Remove team directories
@@ -792,6 +783,8 @@ def cmd_team_delete(args: argparse.Namespace) -> None:
 
 def main() -> None:
     colorama.just_fix_windows_console()
+    config.ensure_dirs()
+    init_db(config.DB_PATH)
 
     try:
         audio.check_ffmpeg()

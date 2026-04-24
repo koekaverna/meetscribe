@@ -4,15 +4,17 @@ import json
 
 from fastapi.testclient import TestClient
 
+from meetscribe.database import get_db
+
 
 def _insert_voiceprint(web_db, name: str) -> int:
     """Helper: insert a voiceprint and return team_id."""
-    team = web_db.execute("SELECT id FROM teams WHERE name = 'default'").fetchone()
-    web_db.execute(
+    team = get_db().execute("SELECT id FROM teams WHERE name = 'default'").fetchone()
+    get_db().execute(
         "INSERT INTO voiceprints (team_id, name, embedding, model) VALUES (?, ?, ?, ?)",
         (team["id"], name, json.dumps([0.1] * 256), "test"),
     )
-    web_db.commit()
+    get_db().commit()
     return team["id"]
 
 
@@ -36,10 +38,14 @@ class TestDeleteSpeaker:
         resp = auth_client.delete("/api/speakers/Bob")
         assert resp.status_code == 200
 
-        row = web_db.execute(
-            "SELECT name FROM voiceprints WHERE team_id = ? AND name = ?",
-            (team_id, "Bob"),
-        ).fetchone()
+        row = (
+            get_db()
+            .execute(
+                "SELECT name FROM voiceprints WHERE team_id = ? AND name = ?",
+                (team_id, "Bob"),
+            )
+            .fetchone()
+        )
         assert row is None
 
     def test_nonexistent_speaker_returns_404(self, auth_client: TestClient) -> None:
