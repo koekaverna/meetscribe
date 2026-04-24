@@ -11,6 +11,7 @@ from meetscribe.database import (
     _get_schema_version,
     _run_migrations,
     _validate_team_name,
+    close_db,
     count_voiceprints,
     create_auth_session,
     create_team,
@@ -24,6 +25,7 @@ from meetscribe.database import (
     get_db,
     get_schema_version_expected,
     get_team,
+    init_db,
     load_voiceprints,
     save_voiceprint,
 )
@@ -32,48 +34,50 @@ from meetscribe.database import (
 class TestMigrations:
     def test_idempotent(self, tmp_path: Path):
         db_path = tmp_path / "test.db"
-        conn1 = get_db(db_path)
-        # Calling again should not fail
-        conn2 = get_db(db_path)
-        # Both connections should see the same tables
-        tables1 = {
+        init_db(db_path)
+        conn = get_db()
+        tables = {
             r[0]
-            for r in conn1.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
+        assert "teams" in tables
+        assert "voiceprints" in tables
+        assert "session_segments" in tables
+        close_db()
+        # Re-init should be idempotent
+        init_db(db_path)
+        conn2 = get_db()
         tables2 = {
             r[0]
             for r in conn2.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
-        assert tables1 == tables2
-        assert "teams" in tables1
-        assert "voiceprints" in tables1
-        assert "session_segments" in tables1
-        conn1.close()
-        conn2.close()
+        assert tables == tables2
+        close_db()
 
     def test_schema_version_set(self, tmp_path: Path):
-        conn = get_db(tmp_path / "test.db")
-        assert _get_schema_version(conn) == get_schema_version_expected()
-        conn.close()
+        init_db(tmp_path / "test.db")
+        assert _get_schema_version(get_db()) == get_schema_version_expected()
+        close_db()
 
     def test_schema_version_table_exists(self, tmp_path: Path):
-        conn = get_db(tmp_path / "test.db")
+        init_db(tmp_path / "test.db")
+        conn = get_db()
         tables = {
             r[0]
             for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
         }
         assert "schema_version" in tables
-        conn.close()
+        close_db()
 
     def test_no_rerun_on_current_version(self, tmp_path: Path):
         db_path = tmp_path / "test.db"
-        conn = get_db(db_path)
-        version_before = _get_schema_version(conn)
-        conn.close()
+        init_db(db_path)
+        version_before = _get_schema_version(get_db())
+        close_db()
         # Re-open — migrations should not re-run
-        conn = get_db(db_path)
-        assert _get_schema_version(conn) == version_before
-        conn.close()
+        init_db(db_path)
+        assert _get_schema_version(get_db()) == version_before
+        close_db()
 
     def test_pre_versioning_db_upgraded(self, tmp_path: Path):
         """A database created before versioning gets upgraded correctly."""
@@ -93,13 +97,14 @@ class TestMigrations:
         conn.commit()
         assert _get_schema_version(conn) == 0
         conn.close()
-        # Now open with versioned get_db
-        conn = get_db(db_path)
-        assert _get_schema_version(conn) == get_schema_version_expected()
+        # Now open with versioned init_db
+        init_db(db_path)
+        conn2 = get_db()
+        assert _get_schema_version(conn2) == get_schema_version_expected()
         # Old data preserved
-        team = conn.execute("SELECT * FROM teams WHERE name = 'default'").fetchone()
+        team = conn2.execute("SELECT * FROM teams WHERE name = 'default'").fetchone()
         assert team is not None
-        conn.close()
+        close_db()
 
     def test_failed_migration_does_not_bump_version(self, tmp_path: Path):
         """If a migration SQL fails, schema_version must not be updated."""

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from meetscribe.database import get_db
+from meetscribe.database import close_db, get_db, init_db
 from meetscribe.web.models import SessionStatus
 from meetscribe.web.services.session import SessionService
 from tests.conftest import make_wav_file
@@ -32,12 +32,12 @@ def session_env(tmp_path: Path):
         encoding="utf-8",
     )
 
-    conn = get_db(db_path)
+    init_db(db_path)
 
     with patch("meetscribe.web.services.session.config.CONFIG_FILE", config_file):
-        svc = SessionService(conn, sessions_dir=sessions_dir)
+        svc = SessionService(sessions_dir=sessions_dir)
         yield svc, tmp_path
-        conn.close()
+        close_db()
 
 
 class TestLifecycle:
@@ -330,7 +330,8 @@ class TestSegments:
         svc.delete(state.id)
 
         # Verify segments are gone (no orphan rows)
-        count = svc.conn.execute(
+        conn = get_db()
+        count = conn.execute(
             "SELECT COUNT(*) as cnt FROM session_segments WHERE session_id = ?",
             (state.id,),
         ).fetchone()["cnt"]

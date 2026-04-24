@@ -1,6 +1,5 @@
 """Tests for FastAPI dependencies: CSRF validation and auth extraction."""
 
-import sqlite3
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +13,7 @@ from meetscribe.web.deps import (
     verify_csrf,
 )
 from meetscribe.web.models import SessionState
-from meetscribe.web.services.auth import AuthService, AuthUser, init_auth_service
+from meetscribe.web.services.auth import AuthService, AuthUser
 
 
 def _make_request(cookies: dict[str, str] | None = None) -> MagicMock:
@@ -33,9 +32,8 @@ def _patch_web_config():
 
 
 @pytest.fixture
-def auth_service(db: sqlite3.Connection) -> AuthService:
-    svc = init_auth_service(db)
-    return svc
+def auth_service(db) -> AuthService:
+    return AuthService()
 
 
 @pytest.fixture

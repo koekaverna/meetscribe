@@ -5,7 +5,6 @@ import hmac
 import logging
 import os
 import secrets
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -16,6 +15,7 @@ from meetscribe.database import (
     delete_auth_session,
     delete_expired_sessions,
     get_auth_session,
+    get_db,
     get_team,
     get_user_by_username,
 )
@@ -84,28 +84,32 @@ def verify_password(password: str, password_hash: str) -> bool:
 class AuthService:
     """Handles user registration, login, and session verification."""
 
-    def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
-
     def register(self, username: str, password: str, team_name: str) -> tuple[AuthUser, str]:
         """Register a new user. Returns (AuthUser, session_token).
 
         Raises ValueError if username taken or team not found.
         """
-        team = get_team(self.conn, team_name)
-        if not team:
-            raise ValueError(f"Team '{team_name}' not found")
+        conn = get_db()
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+            team = get_team(conn, team_name)
+            if not team:
+                raise ValueError(f"Team '{team_name}' not found")
 
-        existing = get_user_by_username(self.conn, username)
-        if existing:
-            raise ValueError("Username already taken")
+            existing = get_user_by_username(conn, username)
+            if existing:
+                raise ValueError("Username already taken")
 
-        pw_hash = hash_password(password)
-        user_id = create_user(self.conn, username, pw_hash, team["id"])
+            pw_hash = hash_password(password)
+            user_id = create_user(conn, username, pw_hash, team["id"])
 
-        token = secrets.token_hex(32)
-        expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-        create_auth_session(self.conn, user_id, token, expires.isoformat())
+            token = secrets.token_hex(32)
+            expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
+            create_auth_session(conn, user_id, token, expires.isoformat())
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
         user = AuthUser(
             id=user_id,
@@ -121,17 +125,23 @@ class AuthService:
 
         Raises ValueError if credentials are invalid.
         """
-        row = get_user_by_username(self.conn, username)
-        if not row or not verify_password(password, row["password_hash"]):
-            logger.warning("Failed login attempt")
-            raise ValueError("Invalid username or password")
+        conn = get_db()
+        try:
+            conn.execute("BEGIN EXCLUSIVE")
+            row = get_user_by_username(conn, username)
+            if not row or not verify_password(password, row["password_hash"]):
+                logger.warning("Failed login attempt")
+                raise ValueError("Invalid username or password")
 
-        # Clean up expired sessions
-        delete_expired_sessions(self.conn)
+            delete_expired_sessions(conn)
 
-        token = secrets.token_hex(32)
-        expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-        create_auth_session(self.conn, row["id"], token, expires.isoformat())
+            token = secrets.token_hex(32)
+            expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
+            create_auth_session(conn, row["id"], token, expires.isoformat())
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
         user = AuthUser(
             id=row["id"],
@@ -144,7 +154,7 @@ class AuthService:
 
     def verify_session(self, token: str) -> AuthUser | None:
         """Verify a session token. Returns AuthUser or None."""
-        row = get_auth_session(self.conn, token)
+        row = get_auth_session(get_db(), token)
         if not row:
             return None
         return AuthUser(
@@ -157,22 +167,13 @@ class AuthService:
 
     def logout(self, token: str) -> None:
         """Delete auth session."""
-        delete_auth_session(self.conn, token)
+        delete_auth_session(get_db(), token)
 
 
-# Singleton
-_auth_service: AuthService | None = None
-
-
-def init_auth_service(conn: sqlite3.Connection) -> AuthService:
-    """Initialize the auth service singleton with a shared connection."""
-    global _auth_service
-    _auth_service = AuthService(conn)
-    return _auth_service
+# Singleton (no state — just a namespace)
+_auth_service = AuthService()
 
 
 def get_auth_service() -> AuthService:
     """Get the auth service singleton."""
-    if _auth_service is None:
-        raise RuntimeError("AuthService not initialized — call init_auth_service(conn) first")
     return _auth_service
