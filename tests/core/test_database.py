@@ -230,12 +230,15 @@ class TestEnsureDefaultTeam:
 
 class TestAuthSessions:
     def _make_user(self, db: sqlite3.Connection, team_id: int) -> int:
-        return create_user(db, "testuser", "hash123", team_id)
+        uid = create_user(db, "testuser", "hash123", team_id)
+        db.commit()
+        return uid
 
     def test_create_and_get(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
         expires = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "tok123", expires)
+        db.commit()
         session = get_auth_session(db, "tok123")
         assert session is not None
         assert session["username"] == "testuser"
@@ -243,16 +246,18 @@ class TestAuthSessions:
 
     def test_expired_session_returns_none(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
-        # Already expired
         expires = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "expired_tok", expires)
+        db.commit()
         assert get_auth_session(db, "expired_tok") is None
 
     def test_delete_session(self, db: sqlite3.Connection, team_id: int):
         uid = self._make_user(db, team_id)
         expires = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "tok_del", expires)
+        db.commit()
         assert delete_auth_session(db, "tok_del") is True
+        db.commit()
         assert get_auth_session(db, "tok_del") is None
 
     def test_delete_expired(self, db: sqlite3.Connection, team_id: int):
@@ -261,6 +266,8 @@ class TestAuthSessions:
         future = (datetime.now(UTC) + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         create_auth_session(db, uid, "old", past)
         create_auth_session(db, uid, "new", future)
+        db.commit()
         deleted = delete_expired_sessions(db)
+        db.commit()
         assert deleted == 1
         assert get_auth_session(db, "new") is not None

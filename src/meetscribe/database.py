@@ -75,6 +75,11 @@ def close_db() -> None:
     if conn is not None:
         conn.close()
         del _local.conn
+        with _connections_lock:
+            try:
+                _all_connections.remove(conn)
+            except ValueError:
+                pass
 
 
 def close_all_db() -> None:
@@ -249,16 +254,12 @@ def create_user(
     password_hash: str,
     team_id: int,
     is_admin: bool = False,
-    *,
-    commit: bool = True,
 ) -> int:
-    """Create a user. Returns its id."""
+    """Create a user. Returns its id. Caller must commit."""
     cursor = conn.execute(
         "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
         (username, password_hash, team_id, int(is_admin)),
     )
-    if commit:
-        conn.commit()
     return cursor.lastrowid  # type: ignore[return-value]
 
 
@@ -289,9 +290,8 @@ def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:
-    """Delete a user by username. Returns True if deleted."""
+    """Delete a user by username. Returns True if deleted. Caller must commit."""
     cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
-    conn.commit()
     return cursor.rowcount > 0
 
 
@@ -299,20 +299,13 @@ def delete_user(conn: sqlite3.Connection, username: str) -> bool:
 
 
 def create_auth_session(
-    conn: sqlite3.Connection,
-    user_id: int,
-    token: str,
-    expires_at: str,
-    *,
-    commit: bool = True,
+    conn: sqlite3.Connection, user_id: int, token: str, expires_at: str
 ) -> None:
-    """Create an auth session."""
+    """Create an auth session. Caller must commit."""
     conn.execute(
         "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
         (token, user_id, expires_at),
     )
-    if commit:
-        conn.commit()
 
 
 def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
@@ -329,15 +322,12 @@ def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None
 
 
 def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
-    """Delete an auth session. Returns True if deleted."""
+    """Delete an auth session. Returns True if deleted. Caller must commit."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
-    conn.commit()
     return cursor.rowcount > 0
 
 
-def delete_expired_sessions(conn: sqlite3.Connection, *, commit: bool = True) -> int:
-    """Delete expired auth sessions. Returns count deleted."""
+def delete_expired_sessions(conn: sqlite3.Connection) -> int:
+    """Delete expired auth sessions. Returns count deleted. Caller must commit."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
-    if commit:
-        conn.commit()
     return cursor.rowcount

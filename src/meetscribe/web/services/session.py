@@ -167,7 +167,7 @@ class SessionService:
         conn = get_db()
         track_path = None
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
                 "SELECT COALESCE(MAX(track_num), 0) + 1 as next_num "
                 "FROM session_tracks WHERE session_id = ?",
@@ -200,7 +200,7 @@ class SessionService:
         """Remove a track from the session."""
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 "DELETE FROM session_tracks WHERE session_id = ? AND track_num = ?",
                 (session_id, track_num),
@@ -259,7 +259,7 @@ class SessionService:
         """Update track configuration."""
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 "UPDATE session_tracks SET speaker_name = ?, diarize = ? "
                 "WHERE session_id = ? AND track_num = ?",
@@ -305,7 +305,7 @@ class SessionService:
         """Delete a speaker bin and unassign its samples."""
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
                 "DELETE FROM session_speakers WHERE session_id = ? AND id = ?",
                 (session_id, speaker_id),
@@ -433,7 +433,7 @@ class SessionService:
         """Save structured transcript segments."""
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute("DELETE FROM session_segments WHERE session_id = ?", (session_id,))
             rows = [
                 (
@@ -466,7 +466,7 @@ class SessionService:
         ttl_minutes = SESSION_TTL // 60
         threshold = f"-{ttl_minutes} minutes"
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             expired = conn.execute(
                 "SELECT id FROM sessions WHERE updated_at < datetime('now', ?)",
                 (threshold,),
@@ -477,10 +477,8 @@ class SessionService:
                 return 0
 
             ids = [r["id"] for r in expired]
-            conn.execute(
-                "DELETE FROM sessions WHERE updated_at < datetime('now', ?)",
-                (threshold,),
-            )
+            for session_id in ids:
+                conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
             conn.commit()
         except Exception:
             conn.rollback()

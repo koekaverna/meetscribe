@@ -58,10 +58,6 @@ from .team import TeamContext, resolve_team
 # Enable ANSI colors on Windows
 colorama.just_fix_windows_console()
 
-# Ensure directories exist and initialize DB
-config.ensure_dirs()
-init_db(config.DB_PATH)
-
 # === Logging setup (before heavy imports to capture their warnings) ===
 _log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
 
@@ -685,6 +681,7 @@ def cmd_user_create(args: argparse.Namespace) -> None:
         pw_hash = hash_password(password)
         is_admin = getattr(args, "admin", False)
         create_user(conn, args.username, pw_hash, team["id"], is_admin=is_admin)
+        conn.commit()
         role = " (admin)" if is_admin else ""
         print(
             f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}'"
@@ -725,6 +722,7 @@ def cmd_user_delete(args: argparse.Namespace) -> None:
 
     conn = get_db()
     deleted = delete_user(conn, args.username)
+    conn.commit()
 
     if deleted:
         print(f"\n  {C_GREEN}\u2714{C_RESET}  User '{args.username}' deleted.\n")
@@ -785,6 +783,8 @@ def cmd_team_delete(args: argparse.Namespace) -> None:
 
 def main() -> None:
     colorama.just_fix_windows_console()
+    config.ensure_dirs()
+    init_db(config.DB_PATH)
 
     try:
         audio.check_ffmpeg()

@@ -91,7 +91,7 @@ class AuthService:
         """
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             team = get_team(conn, team_name)
             if not team:
                 raise ValueError(f"Team '{team_name}' not found")
@@ -101,11 +101,11 @@ class AuthService:
                 raise ValueError("Username already taken")
 
             pw_hash = hash_password(password)
-            user_id = create_user(conn, username, pw_hash, team["id"], commit=False)
+            user_id = create_user(conn, username, pw_hash, team["id"])
 
             token = secrets.token_hex(32)
             expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-            create_auth_session(conn, user_id, token, expires.isoformat(), commit=False)
+            create_auth_session(conn, user_id, token, expires.isoformat())
             conn.commit()
         except Exception:
             conn.rollback()
@@ -127,17 +127,17 @@ class AuthService:
         """
         conn = get_db()
         try:
-            conn.execute("BEGIN EXCLUSIVE")
+            conn.execute("BEGIN IMMEDIATE")
             row = get_user_by_username(conn, username)
             if not row or not verify_password(password, row["password_hash"]):
                 logger.warning("Failed login attempt")
                 raise ValueError("Invalid username or password")
 
-            delete_expired_sessions(conn, commit=False)
+            delete_expired_sessions(conn)
 
             token = secrets.token_hex(32)
             expires = datetime.now(UTC) + timedelta(days=get_session_ttl_days())
-            create_auth_session(conn, row["id"], token, expires.isoformat(), commit=False)
+            create_auth_session(conn, row["id"], token, expires.isoformat())
             conn.commit()
         except Exception:
             conn.rollback()
@@ -167,7 +167,9 @@ class AuthService:
 
     def logout(self, token: str) -> None:
         """Delete auth session."""
-        delete_auth_session(get_db(), token)
+        conn = get_db()
+        delete_auth_session(conn, token)
+        conn.commit()
 
 
 # Singleton (no state — just a namespace)
