@@ -1,4 +1,4 @@
-"""Long-running task routes with SSE progress and multi-subscriber support."""
+"""Long-running task routes with SSE progress."""
 
 import asyncio
 import collections
@@ -119,7 +119,7 @@ def _clean_event(item: dict) -> dict:
 
 
 def _deliver(subscribers: list[_Subscriber], msg: tuple[str, Any]) -> None:
-    """Send a message to a pre-captured list of subscribers (no lock needed)."""
+    """Send a message to a pre-captured list of subscribers."""
     for sub in subscribers:
         loop = sub.loop
         if loop is not None and loop.is_running():
@@ -162,7 +162,7 @@ def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> 
                 subs = list(task.subscribers)
             _deliver(subs, ("error", str(e)))
 
-        # Run callbacks from background thread — no subscriber needed
+        # Run callbacks
         with task.lock:
             if task.on_complete_ran:
                 return
@@ -272,7 +272,7 @@ def _start_task(
     on_complete: Callable[[], None] | None = None,
     on_error: Callable[[str], None] | None = None,
 ) -> dict[str, str]:
-    """Register and start a background task. Returns status dict."""
+    """Register and start a background task."""
     task = RunningTask(
         task_type=task_type,
         session_id=session_id,

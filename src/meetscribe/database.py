@@ -1,4 +1,4 @@
-"""SQLite database for team and voiceprint management."""
+"""SQLite database: teams, voiceprints, users, auth sessions."""
 
 import json
 import logging
@@ -83,7 +83,7 @@ def close_db() -> None:
 
 
 def close_all_db() -> None:
-    """Close all thread-local connections. Call on app shutdown."""
+    """Close all tracked connections. Call on app shutdown."""
     with _connections_lock:
         for conn in _all_connections:
             try:
@@ -245,7 +245,7 @@ def count_voiceprints(conn: sqlite3.Connection, team_id: int) -> int:
     return row["cnt"]  # type: ignore[no-any-return]
 
 
-# --- User CRUD ---
+# --- User/auth CRUD (caller controls commit) ---
 
 
 def create_user(
@@ -255,7 +255,7 @@ def create_user(
     team_id: int,
     is_admin: bool = False,
 ) -> int:
-    """Create a user. Returns its id. Caller must commit."""
+    """Create a user. Returns its id."""
     cursor = conn.execute(
         "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
         (username, password_hash, team_id, int(is_admin)),
@@ -290,18 +290,15 @@ def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:
-    """Delete a user by username. Returns True if deleted. Caller must commit."""
+    """Delete a user by username. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
     return cursor.rowcount > 0
-
-
-# --- Auth session CRUD ---
 
 
 def create_auth_session(
     conn: sqlite3.Connection, user_id: int, token: str, expires_at: str
 ) -> None:
-    """Create an auth session. Caller must commit."""
+    """Create an auth session."""
     conn.execute(
         "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
         (token, user_id, expires_at),
@@ -322,12 +319,12 @@ def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None
 
 
 def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
-    """Delete an auth session. Returns True if deleted. Caller must commit."""
+    """Delete an auth session. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
     return cursor.rowcount > 0
 
 
 def delete_expired_sessions(conn: sqlite3.Connection) -> int:
-    """Delete expired auth sessions. Returns count deleted. Caller must commit."""
+    """Delete expired auth sessions. Returns count deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE expires_at <= datetime('now')")
     return cursor.rowcount

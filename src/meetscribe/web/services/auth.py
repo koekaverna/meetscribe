@@ -172,7 +172,7 @@ class AuthService:
         conn.commit()
 
 
-# Singleton (no state — just a namespace)
+# Stateless singleton
 _auth_service = AuthService()
 
 

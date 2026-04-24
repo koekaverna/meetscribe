@@ -52,7 +52,7 @@ def create_app() -> FastAPI:
 
     apply_log_level(get_config().log_level)
 
-    # Initialize DB (runs migrations on first call) and services
+    # Initialize DB and services
     init_db(config.DB_PATH)
     init_session_service()
 
