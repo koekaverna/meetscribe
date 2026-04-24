@@ -464,11 +464,12 @@ class SessionService:
         """Remove sessions older than TTL. Returns count of removed sessions."""
         conn = get_db()
         ttl_minutes = SESSION_TTL // 60
+        threshold = f"-{ttl_minutes} minutes"
         try:
             conn.execute("BEGIN EXCLUSIVE")
             expired = conn.execute(
                 "SELECT id FROM sessions WHERE updated_at < datetime('now', ?)",
-                (f"-{ttl_minutes} minutes",),
+                (threshold,),
             ).fetchall()
 
             if not expired:
@@ -476,10 +477,9 @@ class SessionService:
                 return 0
 
             ids = [r["id"] for r in expired]
-            placeholders = ",".join("?" * len(ids))
             conn.execute(
-                f"DELETE FROM sessions WHERE id IN ({placeholders})",
-                ids,  # nosec B608
+                "DELETE FROM sessions WHERE updated_at < datetime('now', ?)",
+                (threshold,),
             )
             conn.commit()
         except Exception:

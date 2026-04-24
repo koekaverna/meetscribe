@@ -84,7 +84,7 @@ def close_all_db() -> None:
             try:
                 conn.close()
             except Exception:
-                pass
+                logger.debug("Failed to close connection during shutdown", exc_info=True)
         _all_connections.clear()
 
 
