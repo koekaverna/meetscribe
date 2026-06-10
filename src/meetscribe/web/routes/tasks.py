@@ -139,6 +139,7 @@ def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> 
     from meetscribe.database import close_db
 
     try:
+        error: str | None = None
         try:
             for item in gen:
                 cleaned = _clean_event(item)
@@ -146,40 +147,37 @@ def _run_with_broadcast(task: RunningTask, gen: Generator[dict, None, None]) -> 
                     task.event_log.append(cleaned)
                     subs = list(task.subscribers)
                 _deliver(subs, ("item", cleaned))
-
-            with task.lock:
-                task.done = True
-                task.done_at = time.monotonic()
-                subs = list(task.subscribers)
-            _deliver(subs, ("done", None))
-
         except Exception as e:
             logger.exception("Task %s failed for session %s", task.task_type, task.session_id)
-            with task.lock:
-                task.done = True
-                task.done_at = time.monotonic()
-                task.error = str(e)
-                subs = list(task.subscribers)
-            _deliver(subs, ("error", str(e)))
+            error = str(e)
 
-        # Run callbacks
+        # Run callbacks BEFORE signalling completion: clients reload the
+        # session as soon as they receive done/error, so results must be
+        # persisted by then.
         with task.lock:
-            if task.on_complete_ran:
-                return
+            task.error = error
+            run_callbacks = not task.on_complete_ran
             task.on_complete_ran = True
 
-        if task.error:
-            if task.on_error:
-                try:
-                    task.on_error(task.error)
-                except Exception:
-                    logger.exception("on_error callback failed for %s", task.task_type)
-        else:
-            if task.on_complete:
-                try:
-                    task.on_complete()
-                except Exception:
-                    logger.exception("on_complete callback failed for %s", task.task_type)
+        if run_callbacks:
+            if error:
+                if task.on_error:
+                    try:
+                        task.on_error(error)
+                    except Exception:
+                        logger.exception("on_error callback failed for %s", task.task_type)
+            else:
+                if task.on_complete:
+                    try:
+                        task.on_complete()
+                    except Exception:
+                        logger.exception("on_complete callback failed for %s", task.task_type)
+
+        with task.lock:
+            task.done = True
+            task.done_at = time.monotonic()
+            subs = list(task.subscribers)
+        _deliver(subs, ("error", error) if error else ("done", None))
     finally:
         close_db()
 
@@ -244,6 +242,8 @@ _STATUS_THRESHOLDS: dict[str, SessionStatus] = {
     "enroll": SessionStatus.ENROLLED,
     "transcribe": SessionStatus.TRANSCRIBED,
 }
+# Relies on SessionStatus members being declared in workflow order
+# (created → … → transcribed); guarded by a test in test_task_registry.py.
 _STATUS_ORDER = list(SessionStatus)
 
 
@@ -419,9 +419,6 @@ def start_transcription(
     if not state.tracks:
         raise HTTPException(status_code=400, detail="No tracks uploaded")
 
-    state.language = options.language
-    service.update(state)
-
     track_paths = []
     track_speakers = {}
     for track in state.tracks:
@@ -438,7 +435,7 @@ def start_transcription(
 
     def transcription_gen() -> Generator[dict, None, None]:
         for item in runner.transcribe(
-            track_paths, track_speakers, state.language, progress_callback=True
+            track_paths, track_speakers, options.language, progress_callback=True
         ):
             if "transcript" in item:
                 transcript_data["transcript"] = item["transcript"]
@@ -455,7 +452,13 @@ def start_transcription(
     def on_error(error_msg: str) -> None:
         logger.error("Transcription failed", extra={"session_id": session_id, "error": error_msg})
 
-    return _start_task(session_id, "transcribe", transcription_gen(), on_complete, on_error)
+    result = _start_task(session_id, "transcribe", transcription_gen(), on_complete, on_error)
+    # Persist the language only when this request actually started the task,
+    # so a duplicate POST can't change options under a running transcription.
+    if result["status"] == "started":
+        state.language = options.language
+        service.update(state)
+    return result
 
 
 @router.get("/{session_id}/transcribe/stream")

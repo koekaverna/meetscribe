@@ -51,6 +51,9 @@ def init_db(db_path: Path) -> None:
     """Initialize DB path and run migrations (call once at startup)."""
     global _db_path
     _db_path = db_path
+    # Re-init (tests, repeated calls): drop this thread's old connection
+    # so it doesn't linger untracked in _all_connections.
+    close_db()
     conn = _open_connection(db_path)
     _run_migrations(conn)
     ensure_default_team(conn)
@@ -83,8 +86,20 @@ def close_db() -> None:
 
 
 def close_all_db() -> None:
-    """Close all tracked connections. Call on app shutdown."""
+    """Close all tracked connections. Call on app shutdown.
+
+    Connections belonging to threads that are still running (e.g. a task
+    thread that exceeded the shutdown timeout) will raise in that thread
+    on next use — acceptable at shutdown, but worth a trace in the log.
+    """
+    other_threads = sum(1 for t in threading.enumerate() if t is not threading.current_thread())
     with _connections_lock:
+        if _all_connections and other_threads:
+            logger.debug(
+                "Closing %d DB connection(s) with %d other thread(s) still alive",
+                len(_all_connections),
+                other_threads,
+            )
         for conn in _all_connections:
             try:
                 conn.close()

@@ -121,3 +121,20 @@ class TestCloseAllDb:
         close_db()
         conn2 = get_db()
         assert conn1 is not conn2
+
+
+class TestReInit:
+    def test_reinit_does_not_leak_connections(self, db_path):
+        """Repeated init_db() must close the previous thread-local connection."""
+        import meetscribe.database as db_mod
+
+        old_conn = get_db()
+        tracked_before = len(db_mod._all_connections)
+
+        init_db(db_path)
+
+        assert len(db_mod._all_connections) == tracked_before
+        with pytest.raises(sqlite3.ProgrammingError):
+            old_conn.execute("SELECT 1")
+        # New connection works
+        assert get_db().execute("SELECT 1").fetchone() is not None

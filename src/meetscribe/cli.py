@@ -59,6 +59,8 @@ from .team import TeamContext, resolve_team
 colorama.just_fix_windows_console()
 
 # === Logging setup (before heavy imports to capture their warnings) ===
+# Directories must exist before the FileHandler opens the log file.
+config.ensure_dirs()
 _log_file = config.LOGS_DIR / f"{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
 
 _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
@@ -688,6 +690,7 @@ def cmd_user_create(args: argparse.Namespace) -> None:
             f" created (team: {args.team}){role}\n"
         )
     except Exception as e:
+        conn.rollback()
         print(f"\n  {C_RED}\u274c Error:{C_RESET} {e}\n")
         raise SystemExit(1)
 
@@ -783,7 +786,6 @@ def cmd_team_delete(args: argparse.Namespace) -> None:
 
 def main() -> None:
     colorama.just_fix_windows_console()
-    config.ensure_dirs()
     init_db(config.DB_PATH)
 
     try:

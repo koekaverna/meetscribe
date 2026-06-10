@@ -202,6 +202,55 @@ class TestRunWithBroadcast:
         _run_with_broadcast(task, iter([]))
         assert len(count) == 1
 
+    def test_on_complete_runs_before_done_is_signalled(self):
+        """Clients reload the session on `done`, so results must be persisted
+        (on_complete finished) before the task is marked done."""
+        done_during_callback = []
+
+        def gen():
+            yield {"step": 1}
+
+        task = RunningTask(task_type="test", session_id="s1")
+        task.on_complete = lambda: done_during_callback.append(task.done)
+        _run_with_broadcast(task, gen())
+
+        assert done_during_callback == [False]
+        assert task.done is True
+
+    def test_on_error_runs_before_done_is_signalled(self):
+        done_during_callback = []
+
+        def gen():
+            raise RuntimeError("fail")
+            yield
+
+        task = RunningTask(task_type="test", session_id="s1")
+        task.on_error = lambda msg: done_during_callback.append(task.done)
+        _run_with_broadcast(task, gen())
+
+        assert done_during_callback == [False]
+        assert task.done is True
+        assert task.error == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Status ordering (used by _stream_or_404 thresholds)
+# ---------------------------------------------------------------------------
+
+
+def test_session_status_declared_in_workflow_order():
+    """_STATUS_ORDER relies on SessionStatus declaration order."""
+    from meetscribe.web.models import SessionStatus
+
+    assert [s.value for s in SessionStatus] == [
+        "created",
+        "uploaded",
+        "configured",
+        "extracted",
+        "enrolled",
+        "transcribed",
+    ]
+
 
 # ---------------------------------------------------------------------------
 # _clean_event

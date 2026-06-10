@@ -102,16 +102,7 @@ function app() {
                     await this.loadSession();
                     if (this.sessionNotFound) return;
                     // Restore state based on session status
-                    const status = this.session?.status;
-                    if (status === 'extracted' || status === 'enrolled' || status === 'transcribed') {
-                        this.extractionComplete = true;
-                    }
-                    if (status === 'enrolled' || status === 'transcribed') {
-                        this.enrollmentComplete = true;
-                    }
-                    if (status === 'transcribed' && this.session?.transcript) {
-                        this.transcriptionComplete = true;
-                    }
+                    this._syncCompletionFlags();
 
                     // Reconnect to running tasks
                     await this._checkRunningTasks();
@@ -152,6 +143,52 @@ function app() {
                 }
             } catch (error) {
                 console.error('Failed to check running tasks:', error);
+            }
+        },
+
+        _syncCompletionFlags() {
+            const status = this.session?.status;
+            if (status === 'extracted' || status === 'enrolled' || status === 'transcribed') {
+                this.extractionComplete = true;
+            }
+            if (status === 'enrolled' || status === 'transcribed') {
+                this.enrollmentComplete = true;
+            }
+            if (status === 'transcribed' && this.session?.transcript) {
+                this.transcriptionComplete = true;
+            }
+        },
+
+        // Called when an SSE stream drops without a done/error message
+        // (network blip, server restart). Resubscribe if the task is still
+        // running; otherwise refresh state so the UI doesn't spin forever.
+        async _recoverTask(taskType) {
+            const handlers = {
+                extract: { flag: 'extracting', resubscribe: () => this._subscribeExtraction() },
+                enroll: { flag: 'enrolling', resubscribe: () => this._subscribeEnrollment() },
+                transcribe: { flag: 'transcribing', resubscribe: () => this._subscribeTranscription() },
+            }[taskType];
+
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            let running = false;
+            try {
+                const response = await authFetch(`/api/session/${this.session.id}/tasks/status`);
+                const tasks = await response.json();
+                running = !!tasks[taskType]?.running;
+            } catch (error) {
+                console.error('Failed to check task status:', error);
+            }
+
+            if (running) {
+                handlers.resubscribe();
+                return;
+            }
+            this[handlers.flag] = false;
+            try {
+                await this.loadSession();
+                this._syncCompletionFlags();
+            } catch (error) {
+                console.error('Failed to reload session:', error);
             }
         },
 
@@ -436,7 +473,12 @@ function app() {
                     this.extractionLogs.push(data.message);
                 }
             };
-            eventSource.onerror = () => {};
+            eventSource.onerror = () => {
+                if (this._extractionES !== eventSource) return;
+                eventSource.close();
+                this._extractionES = null;
+                this._recoverTask('extract');
+            };
         },
 
         _subscribeEnrollment() {
@@ -468,7 +510,12 @@ function app() {
                     this.enrollmentLogs.push(data.message);
                 }
             };
-            eventSource.onerror = () => {};
+            eventSource.onerror = () => {
+                if (this._enrollmentES !== eventSource) return;
+                eventSource.close();
+                this._enrollmentES = null;
+                this._recoverTask('enroll');
+            };
         },
 
         _subscribeTranscription() {
@@ -516,7 +563,12 @@ function app() {
                     }
                 }
             };
-            eventSource.onerror = () => {};
+            eventSource.onerror = () => {
+                if (this._transcriptionES !== eventSource) return;
+                eventSource.close();
+                this._transcriptionES = null;
+                this._recoverTask('transcribe');
+            };
         },
 
         // Extraction Methods
