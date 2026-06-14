@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from meetscribe.database import create_team
+from meetscribe.database import create_team, get_db
 from meetscribe.web.services.auth import AuthService
 
 
@@ -43,7 +43,7 @@ class TestDeleteSession:
         assert resp.status_code == 200
         assert resp.json()["status"] == "deleted"
 
-        row = web_db.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        row = get_db().execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
         assert row is None
 
         resp = auth_client.get(f"/api/session/{session_id}")
@@ -61,7 +61,7 @@ class TestTeamIsolation:
         self, client: TestClient, web_db, web_auth_service: AuthService
     ) -> str:
         """Helper: create a session belonging to 'other_team'."""
-        create_team(web_db, "other_team")
+        create_team(get_db(), "other_team")
         _, other_token = web_auth_service.register("other_user", "test-pass-000", "other_team")
         client.cookies.set("meetscribe_session", other_token)
         return client.post("/api/session").json()["session_id"]

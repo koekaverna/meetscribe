@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from meetscribe.database import create_team, get_db
+from meetscribe.database import close_db, create_team, get_db, init_db
 from meetscribe.team import resolve_team
 
 
@@ -15,9 +15,9 @@ class TestResolveTeam:
         self.db_path = tmp_path / "test.db"
         self.teams_dir = tmp_path / "teams"
         self.teams_dir.mkdir()
-        # Pre-create DB with default team
-        conn = get_db(self.db_path)
-        conn.close()
+        init_db(self.db_path)
+        yield
+        close_db()
 
     def _resolve(self, name=None):
         with (
@@ -45,9 +45,7 @@ class TestResolveTeam:
         assert ctx.id > 0
 
     def test_existing_team_resolved(self):
-        conn = get_db(self.db_path)
-        create_team(conn, "my-team")
-        conn.close()
+        create_team(get_db(), "my-team")
         ctx = self._resolve("my-team")
         assert ctx.name == "my-team"
 

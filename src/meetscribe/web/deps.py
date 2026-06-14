@@ -9,14 +9,14 @@ from .services.session import get_session_service
 CSRF_COOKIE_NAME = "meetscribe_csrf"
 
 
-async def verify_csrf(request: Request, csrf_token: str = Form(...)) -> None:
+def verify_csrf(request: Request, csrf_token: str = Form(...)) -> None:
     """Verify CSRF token from form matches cookie. Use as dependency on POST routes."""
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     if not cookie_token or not csrf_token or cookie_token != csrf_token:
         raise HTTPException(status_code=403, detail="CSRF validation failed")
 
 
-async def get_current_user(request: Request) -> AuthUser:
+def get_current_user(request: Request) -> AuthUser:
     """Extract authenticated user from session cookie. Raises 401 if invalid."""
     token = request.cookies.get(COOKIE_NAME)
     if not token:
@@ -27,7 +27,7 @@ async def get_current_user(request: Request) -> AuthUser:
     return user
 
 
-async def get_current_user_or_none(request: Request) -> AuthUser | None:
+def get_current_user_or_none(request: Request) -> AuthUser | None:
     """Extract authenticated user or return None (for page routes that redirect)."""
     token = request.cookies.get(COOKIE_NAME)
     if not token:

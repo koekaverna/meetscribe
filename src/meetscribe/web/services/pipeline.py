@@ -10,6 +10,7 @@ from meetscribe import config
 from meetscribe.config import AppConfig, get_config
 from meetscribe.database import (
     delete_voiceprint,
+    get_db,
     load_voiceprints,
     save_voiceprint,
 )
@@ -50,7 +51,7 @@ class PipelineRunner:
 
     def _create_diarization(self, team_ctx: TeamContext) -> DiarizationPipeline:
         """Create a diarization pipeline with current voiceprints."""
-        voiceprints = load_voiceprints(team_ctx.conn, team_ctx.id)
+        voiceprints = load_voiceprints(get_db(), team_ctx.id)
         return DiarizationPipeline(
             diarization_url=self.cfg.get_diarization_url(),
             embedding_url=self.cfg.get_embeddings_url(),
@@ -102,90 +103,87 @@ class PipelineRunner:
         if progress_callback:
             yield {"step": 1, "total": total_steps, "message": "Connecting to servers..."}
         team_ctx = self._resolve()
-        try:
-            diarization = self._create_diarization(team_ctx)
+        diarization = self._create_diarization(team_ctx)
 
-            step = 1
-            all_samples = []
-            for track_num, track_path in tracks_to_process:
-                step += 1
-                if progress_callback:
-                    yield {
-                        "step": step,
-                        "total": total_steps,
-                        "message": f"Track {track_num}: Diarizing...",
-                    }
-
-                labeled_segments = diarization.diarize(track_path)
-                if not labeled_segments:
-                    yield {
-                        "step": step,
-                        "total": total_steps,
-                        "message": f"Track {track_num}: No speech found",
-                    }
-                    continue
-
-                speakers = {s.speaker for s in labeled_segments if s.speaker}
-
-                # Extract audio samples
-                emb_cfg = self.cfg.embeddings
-                speaker_segments = collect_sample_segments(
-                    labeled_segments,
-                    min_duration_ms=emb_cfg.sample_min_duration_ms,
-                    max_duration_ms=emb_cfg.sample_max_duration_ms,
-                    ideal_ms=emb_cfg.sample_ideal_duration_ms,
-                )
-
-                for speaker_name, segs in speaker_segments.items():
-                    segs.sort(key=lambda s: abs(s.duration_ms - emb_cfg.sample_ideal_duration_ms))
-                    is_known = not speaker_name.startswith("Unknown")
-
-                    for i, seg in enumerate(segs[: emb_cfg.max_samples_per_speaker]):
-                        # Extract segment audio via FFmpeg
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".wav", delete=False, dir=config.TMP_DIR
-                        ) as tmp:
-                            chunk_path = Path(tmp.name)
-
-                        try:
-                            audio.extract_segment(track_path, chunk_path, seg.start_ms, seg.end_ms)
-                            audio_bytes = chunk_path.read_bytes()
-                        finally:
-                            chunk_path.unlink(missing_ok=True)
-
-                        sample_info = {
-                            "track_num": track_num,
-                            "cluster_id": hash(speaker_name) % 1000,
-                            "cluster_name": speaker_name,
-                            "duration_ms": int(seg.duration_ms),
-                            "audio_bytes": audio_bytes,
-                            "filename": f"track{track_num}_{speaker_name}_s{i}.wav",
-                            "is_known": is_known,
-                            "known_speaker_name": speaker_name if is_known else None,
-                        }
-                        all_samples.append(sample_info)
-
+        step = 1
+        all_samples = []
+        for track_num, track_path in tracks_to_process:
+            step += 1
+            if progress_callback:
                 yield {
                     "step": step,
                     "total": total_steps,
-                    "message": f"Track {track_num}: Found {len(speakers)} speakers",
-                    "speakers": [
-                        {
-                            "name": name,
-                            "is_known": not name.startswith("Unknown"),
-                        }
-                        for name in sorted(speakers)
-                    ],
+                    "message": f"Track {track_num}: Diarizing...",
                 }
 
+            labeled_segments = diarization.diarize(track_path)
+            if not labeled_segments:
+                yield {
+                    "step": step,
+                    "total": total_steps,
+                    "message": f"Track {track_num}: No speech found",
+                }
+                continue
+
+            speakers = {s.speaker for s in labeled_segments if s.speaker}
+
+            # Extract audio samples
+            emb_cfg = self.cfg.embeddings
+            speaker_segments = collect_sample_segments(
+                labeled_segments,
+                min_duration_ms=emb_cfg.sample_min_duration_ms,
+                max_duration_ms=emb_cfg.sample_max_duration_ms,
+                ideal_ms=emb_cfg.sample_ideal_duration_ms,
+            )
+
+            for speaker_name, segs in speaker_segments.items():
+                segs.sort(key=lambda s: abs(s.duration_ms - emb_cfg.sample_ideal_duration_ms))
+                is_known = not speaker_name.startswith("Unknown")
+
+                for i, seg in enumerate(segs[: emb_cfg.max_samples_per_speaker]):
+                    # Extract segment audio via FFmpeg
+                    with tempfile.NamedTemporaryFile(
+                        suffix=".wav", delete=False, dir=config.TMP_DIR
+                    ) as tmp:
+                        chunk_path = Path(tmp.name)
+
+                    try:
+                        audio.extract_segment(track_path, chunk_path, seg.start_ms, seg.end_ms)
+                        audio_bytes = chunk_path.read_bytes()
+                    finally:
+                        chunk_path.unlink(missing_ok=True)
+
+                    sample_info = {
+                        "track_num": track_num,
+                        "cluster_id": hash(speaker_name) % 1000,
+                        "cluster_name": speaker_name,
+                        "duration_ms": int(seg.duration_ms),
+                        "audio_bytes": audio_bytes,
+                        "filename": f"track{track_num}_{speaker_name}_s{i}.wav",
+                        "is_known": is_known,
+                        "known_speaker_name": speaker_name if is_known else None,
+                    }
+                    all_samples.append(sample_info)
+
             yield {
-                "step": total_steps,
+                "step": step,
                 "total": total_steps,
-                "message": "Done",
-                "samples": all_samples,
+                "message": f"Track {track_num}: Found {len(speakers)} speakers",
+                "speakers": [
+                    {
+                        "name": name,
+                        "is_known": not name.startswith("Unknown"),
+                    }
+                    for name in sorted(speakers)
+                ],
             }
-        finally:
-            team_ctx.conn.close()
+
+        yield {
+            "step": total_steps,
+            "total": total_steps,
+            "message": "Done",
+            "samples": all_samples,
+        }
 
     def enroll_speaker(
         self, name: str, sample_paths: list[Path], progress_callback: Any | None = None
@@ -202,34 +200,31 @@ class PipelineRunner:
         )
 
         team_ctx = self._resolve()
-        try:
-            enrolled_dir = team_ctx.enrolled_samples_dir / name
-            avg_embedding, total_count, new_count = enroll_samples(
-                extractor, sample_paths, enrolled_dir
-            )
+        enrolled_dir = team_ctx.enrolled_samples_dir / name
+        avg_embedding, total_count, new_count = enroll_samples(
+            extractor, sample_paths, enrolled_dir
+        )
 
-            yield {
-                "step": 2,
-                "total": total_steps,
-                "message": f"Enrolling {name} from {total_count} samples ({new_count} new)...",
-            }
+        yield {
+            "step": 2,
+            "total": total_steps,
+            "message": f"Enrolling {name} from {total_count} samples ({new_count} new)...",
+        }
 
-            save_voiceprint(
-                team_ctx.conn,
-                team_ctx.id,
-                name,
-                avg_embedding,
-                self.cfg.embeddings.model,
-            )
+        save_voiceprint(
+            get_db(),
+            team_ctx.id,
+            name,
+            avg_embedding,
+            self.cfg.embeddings.model,
+        )
 
-            yield {
-                "step": total_steps,
-                "total": total_steps,
-                "message": f"Enrolled {name}",
-                "embedding_dim": len(avg_embedding),
-            }
-        finally:
-            team_ctx.conn.close()
+        yield {
+            "step": total_steps,
+            "total": total_steps,
+            "message": f"Enrolled {name}",
+            "embedding_dim": len(avg_embedding),
+        }
 
     def transcribe(
         self,
@@ -247,86 +242,83 @@ class PipelineRunner:
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to servers..."}
         team_ctx = self._resolve()
-        try:
-            diarization = self._create_diarization(team_ctx)
-            transcriber = self._create_transcriber(effective_language)
+        diarization = self._create_diarization(team_ctx)
+        transcriber = self._create_transcriber(effective_language)
 
-            step = 1
-            all_segments = []
+        step = 1
+        all_segments = []
 
-            for track_idx, track_path in enumerate(track_paths):
-                track_num = track_idx + 1
-                speaker_name = track_speakers.get(track_num)
+        for track_idx, track_path in enumerate(track_paths):
+            track_num = track_idx + 1
+            speaker_name = track_speakers.get(track_num)
 
-                step += 1
-                yield {
-                    "step": step,
-                    "total": total_steps,
-                    "message": f"Track {track_num}: Processing...",
-                }
+            step += 1
+            yield {
+                "step": step,
+                "total": total_steps,
+                "message": f"Track {track_num}: Processing...",
+            }
 
-                if speaker_name:
-                    # Named track: transcribe whole file with speaker
-                    segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
-                else:
-                    # Diarize track
-                    segments = diarization.diarize(track_path)
-                    if not segments:
-                        yield {
-                            "step": step,
-                            "total": total_steps,
-                            "message": f"Track {track_num}: No speech found",
-                        }
-                        continue
-
-                    step += 1
-                    seg_count = len(segments)
+            if speaker_name:
+                # Named track: transcribe whole file with speaker
+                segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
+            else:
+                # Diarize track
+                segments = diarization.diarize(track_path)
+                if not segments:
                     yield {
                         "step": step,
                         "total": total_steps,
-                        "message": f"Track {track_num}: Transcribing {seg_count} segments...",
-                        "progress": 0,
+                        "message": f"Track {track_num}: No speech found",
                     }
+                    continue
 
-                    segs = transcriber.transcribe_segments(track_path, segments)
+                step += 1
+                seg_count = len(segments)
+                yield {
+                    "step": step,
+                    "total": total_steps,
+                    "message": f"Track {track_num}: Transcribing {seg_count} segments...",
+                    "progress": 0,
+                }
 
-                for seg in segs:
-                    seg.track_num = track_num
-                all_segments.extend(segs)
+                segs = transcriber.transcribe_segments(track_path, segments)
 
-            # Merge
-            step += 1
-            yield {"step": step, "total": total_steps, "message": "Merging transcripts..."}
+            for seg in segs:
+                seg.track_num = track_num
+            all_segments.extend(segs)
 
-            all_segments.sort(key=lambda x: x.start_ms)
+        # Merge
+        step += 1
+        yield {"step": step, "total": total_steps, "message": "Merging transcripts..."}
 
-            def format_segment(s: TranscriptSegment) -> str:
-                mins = s.start_ms // 60000
-                secs = (s.start_ms // 1000) % 60
-                speaker = s.speaker or "Unknown"
-                return f"**[{mins:02d}:{secs:02d}] {speaker}:** {s.text}"
+        all_segments.sort(key=lambda x: x.start_ms)
 
-            dialogue = "\n\n".join(format_segment(s) for s in all_segments)
+        def format_segment(s: TranscriptSegment) -> str:
+            mins = s.start_ms // 60000
+            secs = (s.start_ms // 1000) % 60
+            speaker = s.speaker or "Unknown"
+            return f"**[{mins:02d}:{secs:02d}] {speaker}:** {s.text}"
 
-            yield {
-                "step": total_steps,
-                "total": total_steps,
-                "message": "Done",
-                "transcript": dialogue,
-                "segment_count": len(all_segments),
-                "segments": [
-                    {
-                        "track_num": s.track_num or 1,
-                        "start_ms": s.start_ms,
-                        "end_ms": s.end_ms,
-                        "speaker": s.speaker,
-                        "text": s.text,
-                    }
-                    for s in all_segments
-                ],
-            }
-        finally:
-            team_ctx.conn.close()
+        dialogue = "\n\n".join(format_segment(s) for s in all_segments)
+
+        yield {
+            "step": total_steps,
+            "total": total_steps,
+            "message": "Done",
+            "transcript": dialogue,
+            "segment_count": len(all_segments),
+            "segments": [
+                {
+                    "track_num": s.track_num or 1,
+                    "start_ms": s.start_ms,
+                    "end_ms": s.end_ms,
+                    "speaker": s.speaker,
+                    "text": s.text,
+                }
+                for s in all_segments
+            ],
+        }
 
 
 # Singleton pipeline runner (per team)
@@ -345,9 +337,7 @@ def list_team_speakers(team_name: str | None = None) -> list[str]:
     """List enrolled speakers for a team."""
     from meetscribe.database import get_team
 
-    from .session import get_session_service
-
-    conn = get_session_service().conn
+    conn = get_db()
     name = team_name or "default"
     team = get_team(conn, name)
     if not team:
@@ -360,9 +350,7 @@ def remove_team_speaker(name: str, team_name: str | None = None) -> bool:
     """Remove a speaker from a team."""
     from meetscribe.database import get_team as db_get_team
 
-    from .session import get_session_service
-
-    conn = get_session_service().conn
+    conn = get_db()
     tname = team_name or "default"
     team = db_get_team(conn, tname)
     if not team:

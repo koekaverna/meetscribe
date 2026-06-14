@@ -160,16 +160,14 @@ async def _process_video(
 
 
 @router.get("/{session_id}/tracks", response_model=list[TrackConfig])
-async def list_tracks(
-    session_id: str, user: AuthUser = Depends(get_current_user)
-) -> list[TrackConfig]:
+def list_tracks(session_id: str, user: AuthUser = Depends(get_current_user)) -> list[TrackConfig]:
     """List tracks in session."""
     state = get_session_for_user(session_id, user)
     return state.tracks
 
 
 @router.get("/{session_id}/tracks/{track_num}/audio")
-async def get_track_audio(
+def get_track_audio(
     session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)
 ) -> FileResponse:
     """Stream track audio."""
@@ -182,7 +180,7 @@ async def get_track_audio(
 
 
 @router.patch("/{session_id}/tracks/{track_num}")
-async def update_track(
+def update_track(
     session_id: str,
     track_num: int,
     speaker_name: str | None = None,
@@ -198,7 +196,7 @@ async def update_track(
 
 
 @router.delete("/{session_id}/tracks/{track_num}")
-async def delete_track(
+def delete_track(
     session_id: str, track_num: int, user: AuthUser = Depends(get_current_user)
 ) -> dict[str, str]:
     """Delete a track."""

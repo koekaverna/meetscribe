@@ -1,8 +1,5 @@
 """Tests for web auth service: password hashing, login, registration, sessions."""
 
-import sqlite3
-from unittest.mock import patch
-
 import pytest
 
 import meetscribe.web.services.auth as auth_mod
@@ -12,7 +9,6 @@ from meetscribe.web.services.auth import (
     AuthUser,
     get_auth_service,
     hash_password,
-    init_auth_service,
     verify_password,
 )
 
@@ -21,17 +17,15 @@ from meetscribe.web.services.auth import (
 def _isolate_auth_globals():
     """Save and restore auth globals so tests don't leak state."""
     old_cfg = auth_mod._web_cfg
-    old_svc = auth_mod._auth_service
     auth_mod._web_cfg = WebConfig()
     yield
     auth_mod._web_cfg = old_cfg
-    auth_mod._auth_service = old_svc
 
 
 @pytest.fixture
-def auth_service(db: sqlite3.Connection) -> AuthService:
+def auth_service(db) -> AuthService:
     """AuthService backed by the test database."""
-    return AuthService(db)
+    return AuthService()
 
 
 @pytest.fixture
@@ -146,12 +140,6 @@ class TestLogout:
 
 
 class TestSingleton:
-    def test_get_before_init_raises_runtime_error(self) -> None:
-        with patch("meetscribe.web.services.auth._auth_service", None):
-            with pytest.raises(RuntimeError, match="not initialized"):
-                get_auth_service()
-
-    def test_init_then_get_returns_same_instance(self, db: sqlite3.Connection) -> None:
-        svc = init_auth_service(db)
-        with patch("meetscribe.web.services.auth._auth_service", svc):
-            assert get_auth_service() is svc
+    def test_get_returns_instance(self) -> None:
+        svc = get_auth_service()
+        assert isinstance(svc, AuthService)

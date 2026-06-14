@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.post("/login", dependencies=[Depends(verify_csrf)])
-async def login(
+def login(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
@@ -53,7 +53,7 @@ async def login(
 
 
 @router.post("/register", dependencies=[Depends(verify_csrf)])
-async def register(
+def register(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
@@ -95,7 +95,7 @@ async def register(
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])
-async def logout(request: Request) -> RedirectResponse:
+def logout(request: Request) -> RedirectResponse:
     """Logout: delete session and clear cookie."""
     token = request.cookies.get(COOKIE_NAME)
     if token:
