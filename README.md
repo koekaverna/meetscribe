@@ -1,10 +1,10 @@
 # MeetScribe
 
-Meeting transcription with speaker diarization using remote [speaches](https://github.com/speaches-ai/speaches) API servers. Offloads VAD, speaker embeddings, and transcription to GPU servers — the client stays lightweight with no ML dependencies.
+Meeting transcription with speaker diarization using remote [speaches](https://github.com/speaches-ai/speaches) API servers. Offloads diarization, speaker embeddings, and transcription to GPU servers — the client stays lightweight with no ML dependencies.
 
 ## Features
 
-- **Remote processing**: VAD, speaker embeddings, and transcription via speaches API (OpenAI-compatible)
+- **Remote processing**: diarization, speaker embeddings, and transcription via speaches API (OpenAI-compatible)
 - **Web UI**: Browser-based interface with step-by-step workflow
 - **User authentication**: Login/password auth with team-scoped access
 - **Multi-track processing**: Handle video files with multiple audio tracks or individual audio files
@@ -100,9 +100,9 @@ Located at `MEETSCRIBE_DATA_DIR/config.yaml` (by default `./data/config.yaml`). 
 **Sections:**
 
 - **`servers`** — List of speaches API servers (URL + name)
-- **`vad`** — Voice Activity Detection: server, timeout, silence/speech thresholds
-- **`embeddings`** — Speaker embeddings: server, model, identification thresholds, AHC clustering parameters
-- **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging
+- **`diarization`** — Server-side diarization: server, model, timeout
+- **`embeddings`** — Speaker embeddings: server, model, identification thresholds, sample extraction parameters
+- **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging, hallucination filtering
 - **`web`** — Web UI: host, port, session TTL
 
 ## Web UI
@@ -132,7 +132,7 @@ The web UI guides you through a 6-step process:
 
 1. **Upload** — Upload video or audio files
 2. **Configure** — Assign speakers to tracks or enable auto-diarization
-3. **Extract** — Extract speaker samples via VAD + embeddings
+3. **Extract** — Extract speaker samples via server-side diarization + embeddings
 4. **Samples** — Review and organize extracted speaker samples
 5. **Enroll** — Register speakers from samples
 6. **Transcribe** — Generate transcript with speaker attribution
@@ -241,6 +241,15 @@ meetscribe list-speakers
 meetscribe -t my-team list-speakers
 ```
 
+### `meetscribe delete-speaker`
+
+Remove an enrolled speaker and their voiceprint:
+
+```bash
+meetscribe delete-speaker "John Doe"
+meetscribe -t my-team delete-speaker "John Doe"
+```
+
 ### `meetscribe web`
 
 Start the web UI server:
@@ -285,9 +294,9 @@ uv run mypy src/
 Unit, functional, and integration tests covering the pipeline, database, config, and web services:
 
 ```bash
-uv run pytest                  # all tests
-uv run pytest --cov            # with coverage
-uv run pytest tests/test_models.py  # single file
+uv run pytest                       # all tests
+uv run pytest --cov                 # with coverage
+uv run pytest tests/pipeline/test_models.py  # single file
 ```
 
 ### CI

@@ -233,7 +233,6 @@ class PipelineRunner:
         language: str | None = None,
         track_open_space: dict[int, bool] | None = None,
         progress_callback: Any | None = None,
-        progress_queue: Any | None = None,
     ) -> Generator[dict, None, None]:
         """Transcribe tracks. Yields progress and results.
 
