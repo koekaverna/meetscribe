@@ -23,6 +23,8 @@ class TrackConfig(BaseModel):
     filename: str
     speaker_name: str | None = None
     diarize: bool = True
+    # Open-space mic: keep only the assigned speaker's voice (named tracks only).
+    open_space: bool = False
 
 
 class SpeakerBin(BaseModel):

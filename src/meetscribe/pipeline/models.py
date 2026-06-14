@@ -57,6 +57,18 @@ def merge_close_segments(
     return merged
 
 
+def filter_segments_by_speaker(
+    segments: list[SpeechSegment], target_speaker: str
+) -> list[SpeechSegment]:
+    """Keep only segments attributed to the target speaker.
+
+    Used for open-space recordings to drop other people's speech, leaving
+    only the chosen speaker. Segments are filtered before transcription so
+    foreign speech is never sent to the STT server.
+    """
+    return [s for s in segments if s.speaker == target_speaker]
+
+
 def collect_sample_segments(
     segments: list[SpeechSegment],
     min_duration_ms: int,

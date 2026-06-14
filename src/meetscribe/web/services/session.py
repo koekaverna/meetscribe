@@ -78,6 +78,7 @@ class SessionService:
                 filename=t["filename"],
                 speaker_name=t["speaker_name"],
                 diarize=bool(t["diarize"]),
+                open_space=bool(t["open_space"]),
             )
             for t in conn.execute(
                 "SELECT * FROM session_tracks WHERE session_id = ? ORDER BY track_num",
@@ -254,16 +255,23 @@ class SessionService:
         return path if path.exists() else None
 
     def update_track_config(
-        self, session_id: str, track_num: int, speaker_name: str | None, diarize: bool
+        self,
+        session_id: str,
+        track_num: int,
+        speaker_name: str | None,
+        diarize: bool,
+        open_space: bool = False,
     ) -> bool:
         """Update track configuration."""
+        # Open-space filtering only applies to named (non-diarized) tracks.
+        open_space = open_space and not diarize
         conn = get_db()
         try:
             conn.execute("BEGIN IMMEDIATE")
             cursor = conn.execute(
-                "UPDATE session_tracks SET speaker_name = ?, diarize = ? "
+                "UPDATE session_tracks SET speaker_name = ?, diarize = ?, open_space = ? "
                 "WHERE session_id = ? AND track_num = ?",
-                (speaker_name, int(diarize), session_id, track_num),
+                (speaker_name, int(diarize), int(open_space), session_id, track_num),
             )
             if cursor.rowcount == 0:
                 conn.rollback()

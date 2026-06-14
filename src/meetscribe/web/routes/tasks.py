@@ -421,11 +421,13 @@ def start_transcription(
 
     track_paths = []
     track_speakers = {}
+    track_open_space = {}
     for track in state.tracks:
         path = service.get_track_path(session_id, track.track_num)
         if path:
             track_paths.append(path)
             track_speakers[track.track_num] = track.speaker_name if not track.diarize else None
+            track_open_space[track.track_num] = track.open_space
 
     if not track_paths:
         raise HTTPException(status_code=400, detail="No tracks found")
@@ -435,7 +437,11 @@ def start_transcription(
 
     def transcription_gen() -> Generator[dict, None, None]:
         for item in runner.transcribe(
-            track_paths, track_speakers, options.language, progress_callback=True
+            track_paths,
+            track_speakers,
+            options.language,
+            track_open_space=track_open_space,
+            progress_callback=True,
         ):
             if "transcript" in item:
                 transcript_data["transcript"] = item["transcript"]
