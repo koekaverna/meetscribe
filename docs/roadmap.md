@@ -340,6 +340,16 @@ llm:
 - [ ] SSE for real-time progress
 - [ ] Tech choice TBD (HTMX, Alpine.js, or lightweight framework)
 
+#### Component architecture (page-scoped lifecycle)
+
+> Prerequisite for multiple pages (session list, admin) without full reloads.
+
+- [ ] Split the monolithic `app()` on `<body>` into a thin shell (auth, routing, current page) + per-page Alpine components (`workflowPage`, `sessionsPage`, `adminPage`), gated by `x-if`
+- [ ] SSE streams owned by the page that uses them, not the long-lived root — torn down via Alpine `destroy()` on unmount (`x-if` flip / `:key="session.id"` re-mount), **not** `unload`/`beforeunload` (breaks the back/forward cache; the browser already closes EventSource on real navigation)
+- [ ] New session = change `:key` → old `workflowPage` unmounts → `destroy()` closes its streams; navigating to another page does the same
+- [ ] Remove the interim `_closeTaskStreams()` poke in `startNewSession` once streams move into `workflowPage`
+- **Why:** streams currently live on the root component, which never unmounts on session switch — so there is no lifecycle event to detach them, and a stale stream can leak into the next session's UI state
+
 ### Speaker management (dashboard)
 
 - [ ] Enrolled speakers list with sample playback

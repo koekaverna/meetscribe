@@ -1024,7 +1024,22 @@ function app() {
             }
         },
 
+        // Close any open task streams and clear their running flags, so a
+        // stream from the previous session can't mutate the new session's state.
+        _closeTaskStreams() {
+            this._extractionES?.close();
+            this._enrollmentES?.close();
+            this._transcriptionES?.close();
+            this._extractionES = null;
+            this._enrollmentES = null;
+            this._transcriptionES = null;
+            this.extracting = false;
+            this.enrolling = false;
+            this.transcribing = false;
+        },
+
         async startNewSession() {
+            this._closeTaskStreams();
             this.stopPlayer();
             this._trackAudios = [];
             this._playerInited = false;
