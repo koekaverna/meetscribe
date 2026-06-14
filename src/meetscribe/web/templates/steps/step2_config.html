@@ -82,6 +82,22 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Open space: keep only this speaker (named tracks only) -->
+                <div x-show="!track.diarize && track.speaker_name" class="mt-3 pt-3 border-t border-gray-200">
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            :checked="track.open_space"
+                            @change="updateTrackConfig(track.track_num, track.speaker_name, false, $event.target.checked)"
+                            class="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
+                        >
+                        <span class="text-sm text-gray-700">Open space — keep only this speaker's voice</span>
+                    </label>
+                    <p class="text-xs text-gray-500 mt-1 ml-7">
+                        Diarizes the mic track and drops other people's voices it picked up. Requires this speaker to be enrolled.
+                    </p>
+                </div>
             </div>
         </template>
     </div>

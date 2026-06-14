@@ -250,6 +250,35 @@ class TestTranscript:
             svc.set_transcript("no-such-id", "text")
 
 
+class TestTrackOpenSpace:
+    def test_default_is_false(self, session_env):
+        svc, tmp_path = session_env
+        state = svc.create("default")
+        svc.add_track(state.id, "t.wav", make_wav_file(tmp_path / "t.wav"))
+        assert svc.get(state.id).tracks[0].open_space is False
+
+    def test_persists_for_named_track(self, session_env):
+        svc, tmp_path = session_env
+        state = svc.create("default")
+        svc.add_track(state.id, "t.wav", make_wav_file(tmp_path / "t.wav"))
+
+        svc.update_track_config(state.id, 1, speaker_name="Alice", diarize=False, open_space=True)
+
+        track = svc.get(state.id).tracks[0]
+        assert track.speaker_name == "Alice"
+        assert track.open_space is True
+
+    def test_forced_off_when_diarized(self, session_env):
+        svc, tmp_path = session_env
+        state = svc.create("default")
+        svc.add_track(state.id, "t.wav", make_wav_file(tmp_path / "t.wav"))
+
+        # open_space only applies to named tracks — diarize=True clears it
+        svc.update_track_config(state.id, 1, speaker_name=None, diarize=True, open_space=True)
+
+        assert svc.get(state.id).tracks[0].open_space is False
+
+
 class TestSegments:
     def test_save_and_load_segments(self, session_env):
         svc, _ = session_env

@@ -53,7 +53,10 @@
                 <template x-for="track in (session?.tracks || [])" :key="track.track_num">
                     <div class="flex items-center justify-between text-sm">
                         <span class="text-blue-700" x-text="'Track ' + track.track_num + ': ' + track.filename"></span>
-                        <span x-show="track.speaker_name && !track.diarize" class="text-blue-600" x-text="track.speaker_name"></span>
+                        <span x-show="track.speaker_name && !track.diarize" class="text-blue-600">
+                            <span x-text="track.speaker_name"></span>
+                            <span x-show="track.open_space" class="text-blue-500 italic"> · open space</span>
+                        </span>
                         <span x-show="track.diarize" class="text-blue-500 italic">Auto-diarize</span>
                     </div>
                 </template>

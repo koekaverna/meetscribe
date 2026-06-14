@@ -118,6 +118,30 @@ class TestUpdate:
         assert track["speaker_name"] == "Host"
         assert track["diarize"] is False
 
+    def test_persists_open_space_for_named_track(
+        self, auth_client: TestClient, session_id: str, _uploaded_track: int
+    ) -> None:
+        resp = auth_client.patch(
+            f"/api/session/{session_id}/tracks/{_uploaded_track}",
+            params={"speaker_name": "Host", "diarize": False, "open_space": True},
+        )
+        assert resp.status_code == 200
+
+        track = auth_client.get(f"/api/session/{session_id}").json()["tracks"][0]
+        assert track["open_space"] is True
+
+    def test_open_space_ignored_when_diarized(
+        self, auth_client: TestClient, session_id: str, _uploaded_track: int
+    ) -> None:
+        resp = auth_client.patch(
+            f"/api/session/{session_id}/tracks/{_uploaded_track}",
+            params={"diarize": True, "open_space": True},
+        )
+        assert resp.status_code == 200
+
+        track = auth_client.get(f"/api/session/{session_id}").json()["tracks"][0]
+        assert track["open_space"] is False
+
     def test_nonexistent_track_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.patch(
             f"/api/session/{session_id}/tracks/999",

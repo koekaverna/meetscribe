@@ -420,12 +420,13 @@ function app() {
         },
 
         // Config Methods
-        async updateTrackConfig(trackNum, speakerName, diarize) {
+        async updateTrackConfig(trackNum, speakerName, diarize, openSpace = false) {
             if (!this.session?.id) return;
 
             const params = new URLSearchParams();
             if (speakerName) params.set('speaker_name', speakerName);
             params.set('diarize', diarize);
+            params.set('open_space', openSpace);
 
             try {
                 await fetch(`/api/session/${this.session.id}/tracks/${trackNum}?${params}`, {

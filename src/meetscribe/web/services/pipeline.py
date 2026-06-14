@@ -22,7 +22,7 @@ from meetscribe.pipeline import (
     audio,
     enroll_samples,
 )
-from meetscribe.pipeline.models import collect_sample_segments
+from meetscribe.pipeline.models import collect_sample_segments, filter_segments_by_speaker
 from meetscribe.team import TeamContext, resolve_team
 
 logger = logging.getLogger(__name__)
@@ -231,13 +231,27 @@ class PipelineRunner:
         track_paths: list[Path],
         track_speakers: dict[int, str | None],
         language: str | None = None,
+        track_open_space: dict[int, bool] | None = None,
         progress_callback: Any | None = None,
         progress_queue: Any | None = None,
     ) -> Generator[dict, None, None]:
-        """Transcribe tracks. Yields progress and results."""
+        """Transcribe tracks. Yields progress and results.
+
+        A named track flagged in track_open_space is an open-space mic recording:
+        it is diarized and only the assigned speaker's segments are kept, dropping
+        other people's voices the mic picked up. Auto-diarized tracks keep everyone.
+        """
         effective_language = language or self.cfg.transcription.language
-        named_count = sum(1 for i in range(len(track_paths)) if track_speakers.get(i + 1))
-        diarized_count = len(track_paths) - named_count
+        open_space = track_open_space or {}
+
+        def _diarizes(track_num: int, speaker_name: str | None) -> bool:
+            # Auto-diarize tracks, plus named mic tracks filtered to one speaker.
+            return not speaker_name or open_space.get(track_num, False)
+
+        diarized_count = sum(
+            1 for i in range(len(track_paths)) if _diarizes(i + 1, track_speakers.get(i + 1))
+        )
+        named_count = len(track_paths) - diarized_count
         total_steps = named_count + diarized_count * 2 + 2
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to servers..."}
@@ -251,6 +265,7 @@ class PipelineRunner:
         for track_idx, track_path in enumerate(track_paths):
             track_num = track_idx + 1
             speaker_name = track_speakers.get(track_num)
+            filter_to_speaker = bool(speaker_name) and open_space.get(track_num, False)
 
             step += 1
             yield {
@@ -259,12 +274,14 @@ class PipelineRunner:
                 "message": f"Track {track_num}: Processing...",
             }
 
-            if speaker_name:
+            if speaker_name and not filter_to_speaker:
                 # Named track: transcribe whole file with speaker
                 segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
             else:
-                # Diarize track
+                # Diarize track (auto-diarize, or an open-space mic filtered to its speaker)
                 segments = diarization.diarize(track_path)
+                if filter_to_speaker and speaker_name:
+                    segments = filter_segments_by_speaker(segments, speaker_name)
                 if not segments:
                     yield {
                         "step": step,

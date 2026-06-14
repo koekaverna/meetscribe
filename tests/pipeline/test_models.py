@@ -3,6 +3,7 @@
 from meetscribe.pipeline.models import (
     SpeechSegment,
     TranscriptSegment,
+    filter_segments_by_speaker,
     merge_by_proximity,
     merge_close_segments,
 )
@@ -206,6 +207,46 @@ class TestMergeCloseSegmentsBoundary:
         ]
         result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=3000)
         assert len(result) == 2
+
+
+class TestFilterSegmentsBySpeaker:
+    def test_empty_returns_empty(self):
+        assert filter_segments_by_speaker([], "Alice") == []
+
+    def test_keeps_only_target_speaker(self):
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1000, 2000, "Bob"),
+            SpeechSegment(2000, 3000, "Alice"),
+        ]
+        result = filter_segments_by_speaker(segs, "Alice")
+        assert len(result) == 2
+        assert all(s.speaker == "Alice" for s in result)
+        assert result[0].start_ms == 0
+        assert result[1].start_ms == 2000
+
+    def test_drops_unknown_speakers(self):
+        segs = [
+            SpeechSegment(0, 1000, "Alice"),
+            SpeechSegment(1000, 2000, "Unknown-1"),
+            SpeechSegment(2000, 3000, "Unknown-2"),
+        ]
+        result = filter_segments_by_speaker(segs, "Alice")
+        assert len(result) == 1
+        assert result[0].speaker == "Alice"
+
+    def test_no_match_returns_empty(self):
+        segs = [
+            SpeechSegment(0, 1000, "Bob"),
+            SpeechSegment(1000, 2000, "Unknown-1"),
+        ]
+        assert filter_segments_by_speaker(segs, "Alice") == []
+
+    def test_does_not_match_none_speaker(self):
+        segs = [SpeechSegment(0, 1000, None), SpeechSegment(1000, 2000, "Alice")]
+        result = filter_segments_by_speaker(segs, "Alice")
+        assert len(result) == 1
+        assert result[0].speaker == "Alice"
 
 
 class TestDataclassDefaults:

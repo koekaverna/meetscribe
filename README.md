@@ -203,6 +203,10 @@ Tracks without a `--trackN` assignment are diarized automatically.
 | `-l, --language` | Language code (overrides config.yaml) | from config |
 | `--trackN` | Assign speaker name to track N | diarize |
 
+> **Open-space mics (web UI):** a named track captured by a microphone in a shared
+> space also picks up other people's voices. On the Configure step you can mark such a
+> track "Open space" to diarize it and keep only the assigned (enrolled) speaker's voice.
+
 ### `meetscribe enroll`
 
 Register known speakers for automatic identification:

@@ -185,12 +185,13 @@ def update_track(
     track_num: int,
     speaker_name: str | None = None,
     diarize: bool = True,
+    open_space: bool = False,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, str]:
     """Update track configuration."""
     get_session_for_user(session_id, user)
     service = get_session_service()
-    if not service.update_track_config(session_id, track_num, speaker_name, diarize):
+    if not service.update_track_config(session_id, track_num, speaker_name, diarize, open_space):
         raise HTTPException(status_code=404, detail="Track not found")
     return {"status": "updated"}
 
