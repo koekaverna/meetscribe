@@ -35,6 +35,7 @@ from meetscribe.pipeline.models import (
     SpeechSegment,
     collect_sample_segments,
     filter_segments_by_speaker,
+    format_transcript_markdown,
 )
 from meetscribe.team import TeamContext, resolve_team
 
@@ -388,14 +389,7 @@ class PipelineRunner:
         yield {"step": step, "total": total_steps, "message": "Merging transcripts..."}
 
         all_segments.sort(key=lambda x: x.start_ms)
-
-        def format_segment(s: TranscriptSegment) -> str:
-            mins = s.start_ms // 60000
-            secs = (s.start_ms // 1000) % 60
-            speaker = s.speaker or "Unknown"
-            return f"**[{mins:02d}:{secs:02d}] {speaker}:** {s.text}"
-
-        dialogue = "\n\n".join(format_segment(s) for s in all_segments)
+        dialogue = format_transcript_markdown(all_segments)
 
         yield {
             "step": total_steps,
