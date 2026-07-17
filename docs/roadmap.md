@@ -1,6 +1,6 @@
 # MeetScribe — Roadmap
 
-> v0.5.4 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
+> v0.5.5 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
 
 ## Current State
 
@@ -12,6 +12,9 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - Whisper hallucination filtering; thread-safe DB access with task persistence
 - CLI (legacy, slated for removal): transcribe, enroll, list-speakers, delete-speaker, extract, extract-samples, info, web, team/user admin — superseded by the app UI + first-run setup, deleted in Phase 4
 - Web UI: FastAPI + Jinja2 + Alpine.js, 6-step workflow, auth, team scoping, SSE progress
+- Page-scoped frontend: thin shell + per-page Alpine components (`workflowPage`, `sessionsPage`), x-if mounting, SSE teardown in `destroy()`
+- Session archive (`/sessions`): paginated list (status, speakers, duration, preview, creator), sort, open-in-workflow resume, single + bulk delete with files
+- Access model: non-admins see/delete only their own sessions (`creator_id`), admins the whole team; lazy session creation (no empty sessions from just opening the app)
 - Transcript playback (web): structured segments in DB, global player, multi-track sync + per-track mute, active segment/track highlighting, click-to-play
 - DB: SQLite, 10 tables, numbered migrations, multi-team
 - ~5400 lines, 28 modules, Python 3.12+
@@ -103,7 +106,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ### Remaining (transcript access)
 
-- [ ] Listing + viewing stored transcripts → delivered by the app's session list in Phase 3 (**not** CLI `list`/`show` — the CLI is being removed)
+- [x] Listing + viewing stored transcripts → delivered by the session archive (v0.5.5)
 - [ ] Programmatic access → REST API in Phase 6
 
 > Transcript **editing** also moved to Phase 3 (Web UI Maturity) — it belongs with the broader web push.
@@ -112,18 +115,19 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ## Phase 3: Web UI Maturity (v0.6)
 
-> From workflow to application — **next priority**
+> From workflow to application — **in progress** (session list + frontend architecture shipped in v0.5.5)
 
 **Goal:** Turn the linear 6-step workflow into a full application: a meeting archive, participant management, and in-place transcript editing for non-technical users.
 
-### Meeting / session list
+### Meeting / session list — ✅ done (v0.5.5)
 
-- [ ] Session list page: date, duration, speakers, status badge, summary preview
-- [ ] Click → full transcript with speaker timeline
-- [ ] Pagination, sort by date/duration
-- [ ] Per-user history
-- [ ] Resume interrupted sessions
-- [ ] Delete old sessions with their files
+- [x] Session list page (`/sessions`): date, duration, speakers, status badge, transcript preview, creator, track count
+- [x] Click → opens the session in the workflow (transcribed → step 6 transcript view with playback)
+- [x] Pagination, sort by date/duration (rowid tie-breakers for stable OFFSET paging)
+- [x] Per-user history: `creator_id` (migration 004) + access model — non-admins see/delete only their own sessions, admins the whole team (All team / Mine toggle); enforced in `get_session_for_user`, i.e. across the whole session API
+- [x] Resume interrupted sessions: click opens the workflow at the step matching session status
+- [x] Delete sessions with their files: per-row + bulk delete with checkbox selection (`POST /api/session/bulk-delete`)
+- [x] Extras: lazy session creation (no empty sessions from just opening the app; also fixed a double-`init()` bug that created an orphan session per page load), dead `cleanup_old_sessions`/`SESSION_TTL` removed (TTL purge is incompatible with a permanent archive)
 
 ### Participant management (speakers dashboard)
 
@@ -142,16 +146,16 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - [ ] Regenerate markdown after edits
 - [ ] Speaker color coding in the viewer
 
-### Frontend architecture (page-scoped lifecycle)
+### Frontend architecture (page-scoped lifecycle) — ✅ done (v0.5.5)
 
 > Prerequisite for multiple pages (session list, admin) without full reloads.
 
-- [ ] Partial updates instead of full page reload
-- [ ] Split the monolithic `app()` on `<body>` into a thin shell (auth, routing, current page) + per-page Alpine components (`workflowPage`, `sessionsPage`, `adminPage`), gated by `x-if`
-- [ ] SSE streams owned by the page that uses them, not the long-lived root — torn down via Alpine `destroy()` on unmount (`x-if` flip / `:key="session.id"` re-mount), **not** `unload`/`beforeunload` (breaks the back/forward cache; the browser already closes EventSource on real navigation)
-- [ ] New session = change `:key` → old `workflowPage` unmounts → `destroy()` closes its streams; navigating to another page does the same
-- [ ] Remove the interim `_closeTaskStreams()` poke in `startNewSession` once streams move into `workflowPage`
-- **Why:** streams currently live on the root component, which never unmounts on session switch — so there is no lifecycle event to detach them, and a stale stream can leak into the next session's UI state
+- [x] Partial updates instead of full page reload (path-based routing `/` ↔ `/sessions`, history API, same template served on both paths)
+- [x] Split the monolithic `app()` on `<body>` into a thin shell (`shell.js`: routing, page mounting) + per-page Alpine components (`workflowPage`, `sessionsPage`), gated by `x-if`; `adminPage` slots in later
+- [x] SSE streams owned by `workflowPage`, torn down via Alpine `destroy()` on unmount (`x-if` flip / keyed `x-for` re-mount), no `unload`/`beforeunload`
+- [x] New session = bump `workflowKey` → old `workflowPage` unmounts → `destroy()` closes its streams; navigating to another page does the same
+- [x] Removed the interim `_closeTaskStreams()` poke
+- **Gotcha for future pages:** shell state is deliberately named `activePage` — page components shadow same-named properties via the Alpine scope chain (sessionsPage's pagination `page` silently swallowed shell writes)
 
 ### Admin panel
 
@@ -171,8 +175,8 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ### Files
 
-- New: `web/routes/dashboard.py`, `web/routes/admin.py`, `web/routes/transcript.py`, `migrations/004_*.sql`
-- Modified: all `web/templates/`, `web/static/js/app.js`, `web/services/session.py`, `database.py`, `cli.py` (interim "moved to app" notices only)
+- Shipped (v0.5.5): `migrations/004_session_creator.sql`, `web/static/js/{shell,workflow-page,sessions-page}.js` (replaces `app.js`), `web/templates/pages/sessions.html`; session list API lives in `web/routes/session.py` (no separate dashboard router needed)
+- Remaining: `web/routes/admin.py`, `web/routes/transcript.py`, `cli.py` (interim "moved to app" notices only)
 
 ---
 
@@ -405,7 +409,7 @@ llm:
 |-------|---------|-------|--------|-------------|
 | 1 | v0.4 | Foundation & Hardening | ✅ done | Tests, CI, mutation testing, reliability |
 | 2 | v0.5 | Storage & Playback | ✅ done | Segment storage, multi-track sync playback |
-| 3 | v0.6 | Web UI Maturity | next | Session list, participant mgmt, transcript editing, admin |
+| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5); next: participant mgmt, transcript editing, admin |
 | 4 | v0.7 | Desktop (pywebview) | planned | Native app + in-app recording; **CLI removed** |
 | 5 | v0.8 | Search & Analytics | planned | Full-text search, speaker stats, export |
 | 6 | v0.9 | Real-time & Integrations | planned | WebSocket streaming, webhooks, API |
