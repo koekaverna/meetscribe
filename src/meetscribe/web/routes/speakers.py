@@ -1,4 +1,4 @@
-"""Enrolled speakers routes (team-scoped via authenticated user)."""
+"""Enrolled speakers routes (team-scoped; admin-only, gated at router include)."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse

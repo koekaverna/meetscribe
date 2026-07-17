@@ -59,31 +59,33 @@ def _stored_embedding(team_id: int, name: str) -> list[float] | None:
 
 @pytest.fixture
 def other_team_client(app, web_auth_service: AuthService) -> TestClient:
-    """Client authenticated as a user of a second team ('teamb')."""
+    """Client authenticated as an admin of a second team ('teamb')."""
     create_team(get_db(), "teamb")
-    _, token = web_auth_service.register("bob", "test-pass-000", "teamb")
+    user, token = web_auth_service.register("bob", "test-pass-000", "teamb")
+    get_db().execute("UPDATE users SET is_admin = 1 WHERE id = ?", (user.id,))
+    get_db().commit()
     c = TestClient(app)
     c.cookies.set("meetscribe_session", token)
     return c
 
 
 class TestListSpeakers:
-    def test_no_voiceprints_returns_empty_list(self, auth_client: TestClient) -> None:
-        resp = auth_client.get("/api/speakers")
+    def test_no_voiceprints_returns_empty_list(self, admin_client: TestClient) -> None:
+        resp = admin_client.get("/api/speakers")
         assert resp.status_code == 200
         assert resp.json() == []
 
-    def test_returns_enrolled_speaker_names(self, auth_client: TestClient, web_db) -> None:
+    def test_returns_enrolled_speaker_names(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
-        resp = auth_client.get("/api/speakers")
+        resp = admin_client.get("/api/speakers")
         assert resp.status_code == 200
         names = [s["name"] for s in resp.json()]
         assert "Alice" in names
 
-    def test_returns_sample_stats_and_model(self, auth_client: TestClient, web_db) -> None:
+    def test_returns_sample_stats_and_model(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
         _add_samples("Alice", [1.0, 2.0])
-        resp = auth_client.get("/api/speakers")
+        resp = admin_client.get("/api/speakers")
         assert resp.status_code == 200
         speaker = resp.json()[0]
         assert speaker["name"] == "Alice"
@@ -92,27 +94,27 @@ class TestListSpeakers:
         assert speaker["total_duration_ms"] == 3000
 
     def test_speaker_without_samples_dir_reports_zero(
-        self, auth_client: TestClient, web_db
+        self, admin_client: TestClient, web_db
     ) -> None:
         _insert_voiceprint(web_db, "Alice")
-        resp = auth_client.get("/api/speakers")
+        resp = admin_client.get("/api/speakers")
         speaker = resp.json()[0]
         assert speaker["sample_count"] == 0
         assert speaker["total_duration_ms"] == 0
 
 
 class TestListSamples:
-    def test_lists_wav_files_with_duration(self, auth_client: TestClient, web_db) -> None:
+    def test_lists_wav_files_with_duration(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
         _add_samples("Alice", [1.0, 2.0])
-        resp = auth_client.get("/api/speakers/Alice/samples")
+        resp = admin_client.get("/api/speakers/Alice/samples")
         assert resp.status_code == 200
         samples = resp.json()
         assert [s["filename"] for s in samples] == ["s0.wav", "s1.wav"]
         assert [s["duration_ms"] for s in samples] == [1000, 2000]
 
-    def test_unknown_speaker_returns_404(self, auth_client: TestClient) -> None:
-        resp = auth_client.get("/api/speakers/NoSuchPerson/samples")
+    def test_unknown_speaker_returns_404(self, admin_client: TestClient) -> None:
+        resp = admin_client.get("/api/speakers/NoSuchPerson/samples")
         assert resp.status_code == 404
 
     def test_unsafe_speaker_name_rejected(self, web_db) -> None:
@@ -121,17 +123,17 @@ class TestListSamples:
 
 
 class TestSampleAudio:
-    def test_streams_wav_bytes(self, auth_client: TestClient, web_db) -> None:
+    def test_streams_wav_bytes(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
         d = _add_samples("Alice", [1.0])
-        resp = auth_client.get("/api/speakers/Alice/samples/s0.wav/audio")
+        resp = admin_client.get("/api/speakers/Alice/samples/s0.wav/audio")
         assert resp.status_code == 200
         assert resp.headers["content-type"] == "audio/wav"
         assert resp.content == (d / "s0.wav").read_bytes()
 
-    def test_missing_sample_returns_404(self, auth_client: TestClient, web_db) -> None:
+    def test_missing_sample_returns_404(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
-        resp = auth_client.get("/api/speakers/Alice/samples/nope.wav/audio")
+        resp = admin_client.get("/api/speakers/Alice/samples/nope.wav/audio")
         assert resp.status_code == 404
 
     def test_traversal_filename_rejected(self, web_db, tmp_path: Path) -> None:
@@ -144,14 +146,14 @@ class TestSampleAudio:
 
 
 class TestDeleteSample:
-    def test_recomputes_voiceprint_from_remaining(self, auth_client: TestClient, web_db) -> None:
+    def test_recomputes_voiceprint_from_remaining(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Alice")
         d = _add_samples("Alice", [1.0, 1.0, 1.0])
 
         extractor = MagicMock()
         extractor.extract_from_file.side_effect = [[1.0, 0.0], [0.0, 1.0]]
         with patch("meetscribe.web.services.pipeline._make_extractor", return_value=extractor):
-            resp = auth_client.delete("/api/speakers/Alice/samples/s2.wav")
+            resp = admin_client.delete("/api/speakers/Alice/samples/s2.wav")
 
         assert resp.status_code == 200
         assert resp.json() == {"status": "deleted"}
@@ -172,29 +174,29 @@ class TestDeleteSample:
         )
         assert row["model"] == EMBEDDING_MODEL
 
-    def test_last_sample_rejected(self, auth_client: TestClient, web_db) -> None:
+    def test_last_sample_rejected(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Alice")
         d = _add_samples("Alice", [1.0])
-        resp = auth_client.delete("/api/speakers/Alice/samples/s0.wav")
+        resp = admin_client.delete("/api/speakers/Alice/samples/s0.wav")
         assert resp.status_code == 409
         assert "delete the speaker" in resp.json()["detail"].lower()
         assert (d / "s0.wav").exists()
         assert _stored_embedding(team_id, "Alice") == [0.1] * 256
 
-    def test_missing_sample_returns_404(self, auth_client: TestClient, web_db) -> None:
+    def test_missing_sample_returns_404(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
         _add_samples("Alice", [1.0])
-        resp = auth_client.delete("/api/speakers/Alice/samples/nope.wav")
+        resp = admin_client.delete("/api/speakers/Alice/samples/nope.wav")
         assert resp.status_code == 404
 
-    def test_embedding_api_failure_keeps_sample(self, auth_client: TestClient, web_db) -> None:
+    def test_embedding_api_failure_keeps_sample(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Alice")
         d = _add_samples("Alice", [1.0, 1.0])
 
         extractor = MagicMock()
         extractor.extract_from_file.side_effect = SpeachesAPIError("server down")
         with patch("meetscribe.web.services.pipeline._make_extractor", return_value=extractor):
-            resp = auth_client.delete("/api/speakers/Alice/samples/s1.wav")
+            resp = admin_client.delete("/api/speakers/Alice/samples/s1.wav")
 
         assert resp.status_code == 502
         assert (d / "s1.wav").exists()
@@ -202,10 +204,10 @@ class TestDeleteSample:
 
 
 class TestRenameSpeaker:
-    def test_renames_voiceprint_and_samples_dir(self, auth_client: TestClient, web_db) -> None:
+    def test_renames_voiceprint_and_samples_dir(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Alice")
         old_dir = _add_samples("Alice", [1.0])
-        resp = auth_client.patch("/api/speakers/Alice", json={"name": "Alicia"})
+        resp = admin_client.patch("/api/speakers/Alice", json={"name": "Alicia"})
         assert resp.status_code == 200
         assert resp.json() == {"status": "renamed"}
 
@@ -220,10 +222,10 @@ class TestRenameSpeaker:
         assert not old_dir.exists()
         assert (new_dir / "s0.wav").is_file()
 
-    def test_collision_returns_409(self, auth_client: TestClient, web_db) -> None:
+    def test_collision_returns_409(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Alice")
         _insert_voiceprint(web_db, "Bob")
-        resp = auth_client.patch("/api/speakers/Alice", json={"name": "Bob"})
+        resp = admin_client.patch("/api/speakers/Alice", json={"name": "Bob"})
         assert resp.status_code == 409
         names = {
             r["name"]
@@ -233,25 +235,25 @@ class TestRenameSpeaker:
         }
         assert names == {"Alice", "Bob"}
 
-    def test_unknown_speaker_returns_404(self, auth_client: TestClient) -> None:
-        resp = auth_client.patch("/api/speakers/NoSuchPerson", json={"name": "X"})
+    def test_unknown_speaker_returns_404(self, admin_client: TestClient) -> None:
+        resp = admin_client.patch("/api/speakers/NoSuchPerson", json={"name": "X"})
         assert resp.status_code == 404
 
-    def test_invalid_new_name_returns_400(self, auth_client: TestClient, web_db) -> None:
+    def test_invalid_new_name_returns_400(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
-        resp = auth_client.patch("/api/speakers/Alice", json={"name": "../evil"})
+        resp = admin_client.patch("/api/speakers/Alice", json={"name": "../evil"})
         assert resp.status_code == 400
 
-    def test_same_name_is_noop(self, auth_client: TestClient, web_db) -> None:
+    def test_same_name_is_noop(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Alice")
-        resp = auth_client.patch("/api/speakers/Alice", json={"name": "Alice"})
+        resp = admin_client.patch("/api/speakers/Alice", json={"name": "Alice"})
         assert resp.status_code == 200
 
 
 class TestDeleteSpeaker:
-    def test_removes_voiceprint_from_db(self, auth_client: TestClient, web_db) -> None:
+    def test_removes_voiceprint_from_db(self, admin_client: TestClient, web_db) -> None:
         team_id = _insert_voiceprint(web_db, "Bob")
-        resp = auth_client.delete("/api/speakers/Bob")
+        resp = admin_client.delete("/api/speakers/Bob")
         assert resp.status_code == 200
 
         row = (
@@ -264,15 +266,15 @@ class TestDeleteSpeaker:
         )
         assert row is None
 
-    def test_removes_enrolled_samples_dir(self, auth_client: TestClient, web_db) -> None:
+    def test_removes_enrolled_samples_dir(self, admin_client: TestClient, web_db) -> None:
         _insert_voiceprint(web_db, "Bob")
         d = _add_samples("Bob", [1.0])
-        resp = auth_client.delete("/api/speakers/Bob")
+        resp = admin_client.delete("/api/speakers/Bob")
         assert resp.status_code == 200
         assert not d.exists()
 
-    def test_nonexistent_speaker_returns_404(self, auth_client: TestClient) -> None:
-        resp = auth_client.delete("/api/speakers/NoSuchPerson")
+    def test_nonexistent_speaker_returns_404(self, admin_client: TestClient) -> None:
+        resp = admin_client.delete("/api/speakers/NoSuchPerson")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
 
@@ -281,14 +283,28 @@ class TestDeleteSpeaker:
         assert resp.status_code == 401
 
 
+class TestAdminOnly:
+    def test_regular_user_gets_403(self, auth_client: TestClient, web_db) -> None:
+        _insert_voiceprint(web_db, "Alice")
+        assert auth_client.get("/api/speakers").status_code == 403
+        assert auth_client.get("/api/speakers/Alice/samples").status_code == 403
+        assert auth_client.patch("/api/speakers/Alice", json={"name": "X"}).status_code == 403
+        assert auth_client.delete("/api/speakers/Alice").status_code == 403
+
+    def test_regular_user_redirected_from_page(self, auth_client: TestClient) -> None:
+        resp = auth_client.get("/speakers", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/"
+
+
 class TestTeamIsolation:
     def test_other_team_speakers_invisible(
-        self, auth_client: TestClient, other_team_client: TestClient, web_db
+        self, admin_client: TestClient, other_team_client: TestClient, web_db
     ) -> None:
         _insert_voiceprint(web_db, "Alice")
         _add_samples("Alice", [1.0])
         assert other_team_client.get("/api/speakers").json() == []
-        assert [s["name"] for s in auth_client.get("/api/speakers").json()] == ["Alice"]
+        assert [s["name"] for s in admin_client.get("/api/speakers").json()] == ["Alice"]
 
     def test_other_team_cannot_access_or_mutate(
         self, other_team_client: TestClient, web_db
