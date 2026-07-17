@@ -1,0 +1,33 @@
+<!-- Insert-segment form; where it lands is set by insertAfterId (null = before first) -->
+<div @click.stop class="mt-2 p-3 bg-white border border-primary-200 rounded-lg space-y-2 cursor-auto">
+    <textarea
+        x-model="insertText"
+        rows="2"
+        placeholder="Text of the missed phrase"
+        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+    ></textarea>
+    <div class="flex flex-wrap items-center gap-2">
+        <select
+            x-model="insertSpeaker"
+            class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+        >
+            <option value="">Unknown</option>
+            <template x-for="name in sessionSpeakers" :key="name">
+                <option :value="name" x-text="name"></option>
+            </template>
+            <option value="__new__">New speaker&hellip;</option>
+        </select>
+        <input
+            x-show="insertSpeaker === '__new__'"
+            x-model="insertNewName"
+            type="text"
+            placeholder="Speaker name"
+            class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+        >
+        <span class="text-xs text-gray-400">Time is taken from the gap — adjust via edit afterwards</span>
+    </div>
+    <div class="flex gap-2">
+        <button @click="saveInsertSegment()" :disabled="segmentBusy" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">Insert</button>
+        <button @click="cancelInsertSegment()" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+    </div>
+</div>

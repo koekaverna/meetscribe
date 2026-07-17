@@ -77,7 +77,14 @@ document.addEventListener('alpine:init', () => {
         editSegmentText: '',
         editSegmentSpeaker: '',
         editSegmentNewName: '',
+        editSegmentStart: '',
+        editSegmentEnd: '',
         segmentBusy: false,
+        insertAfterId: null,
+        insertOpen: false,
+        insertText: '',
+        insertSpeaker: '',
+        insertNewName: '',
 
         // Transcript player state
         playerPlaying: false,
@@ -918,6 +925,25 @@ document.addEventListener('alpine:init', () => {
             this.editSegmentText = seg.text;
             this.editSegmentSpeaker = seg.speaker || '';
             this.editSegmentNewName = '';
+            this.editSegmentStart = this.formatSegTime(seg.start_ms);
+            this.editSegmentEnd = this.formatSegTime(seg.end_ms);
+            this.insertOpen = false;
+        },
+
+        formatSegTime(ms) {
+            const totalS = ms / 1000;
+            const m = Math.floor(totalS / 60);
+            const s = (totalS % 60).toFixed(1).padStart(4, '0');
+            return `${m}:${s}`;
+        },
+
+        // "M:SS", "M:SS.s" or bare seconds; null if unparseable
+        parseSegTime(str) {
+            const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(str.trim());
+            if (!m) return null;
+            const secs = parseFloat(m[2]);
+            if (m[1] !== undefined && secs >= 60) return null;
+            return Math.round((parseInt(m[1] || '0') * 60 + secs) * 1000);
         },
 
         cancelEditSegment() {
@@ -954,10 +980,19 @@ document.addEventListener('alpine:init', () => {
                 ? this.editSegmentNewName.trim()
                 : this.editSegmentSpeaker;
             if (speaker && speaker !== (seg.speaker || '')) patch.speaker = speaker;
+            const startMs = this.parseSegTime(this.editSegmentStart);
+            const endMs = this.parseSegTime(this.editSegmentEnd);
+            if (startMs !== null && startMs !== seg.start_ms) patch.start_ms = startMs;
+            if (endMs !== null && endMs !== seg.end_ms) patch.end_ms = endMs;
             return patch;
         },
 
         async saveSegmentEdit(seg) {
+            if (this.parseSegTime(this.editSegmentStart) === null
+                || this.parseSegTime(this.editSegmentEnd) === null) {
+                alert('Invalid time — use M:SS.s');
+                return;
+            }
             const patch = this._editedSegmentPatch(seg);
             if (patch.text !== undefined && !patch.text.trim()) {
                 alert('Segment text cannot be empty');
@@ -984,6 +1019,44 @@ document.addEventListener('alpine:init', () => {
                 `/api/session/${this.session.id}/segments/${seg.id}`,
                 { method: 'DELETE' }
             );
+        },
+
+        // afterId === null inserts before the first segment
+        startInsertSegment(afterId) {
+            this.insertOpen = true;
+            this.insertAfterId = afterId;
+            this.insertText = '';
+            this.insertSpeaker = '';
+            this.insertNewName = '';
+            this.editingSegmentId = null;
+        },
+
+        cancelInsertSegment() {
+            this.insertOpen = false;
+        },
+
+        async saveInsertSegment() {
+            const text = this.insertText.trim();
+            if (!text) {
+                alert('Segment text cannot be empty');
+                return;
+            }
+            const speaker = this.insertSpeaker === '__new__'
+                ? this.insertNewName.trim()
+                : this.insertSpeaker;
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        after_id: this.insertAfterId,
+                        text,
+                        speaker: speaker || null
+                    })
+                }
+            );
+            if (ok) this.insertOpen = false;
         },
 
         async mergeSegmentWithNext(seg) {

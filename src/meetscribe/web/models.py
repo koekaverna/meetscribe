@@ -137,16 +137,26 @@ class SampleMove(BaseModel):
 
 
 class SegmentPatch(BaseModel):
-    """Partial update of a transcript segment (text and/or speaker)."""
+    """Partial update of a transcript segment (text, speaker and/or timing)."""
 
     text: str | None = Field(None, min_length=1)
     speaker: str | None = Field(None, min_length=1)
+    start_ms: int | None = Field(None, ge=0)
+    end_ms: int | None = Field(None, ge=0)
 
 
 class SegmentSplit(BaseModel):
     """Request to split a segment at a character offset in its text."""
 
     offset: int
+
+
+class SegmentInsert(BaseModel):
+    """Request to insert a segment after an existing one (or first, when after_id is None)."""
+
+    after_id: int | None = None
+    text: str = Field(..., min_length=1)
+    speaker: str | None = None
 
 
 class TranscribeOptions(BaseModel):

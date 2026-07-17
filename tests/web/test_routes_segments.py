@@ -111,6 +111,141 @@ class TestPatchSegment:
         assert resp.status_code == 404
 
 
+class TestPatchTiming:
+    def test_updates_times_and_transcript(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.patch(
+            f"/api/session/{sid}/segments/{ids[0]}", json={"start_ms": 61000, "end_ms": 64000}
+        )
+        assert resp.status_code == 200
+        row = _segments(sid)[0]
+        assert (row["start_ms"], row["end_ms"]) == (61000, 64000)
+        assert _transcript(sid).startswith("**[01:01] Alice:** hello there")
+
+    def test_end_only_patch(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.patch(f"/api/session/{sid}/segments/{ids[0]}", json={"end_ms": 4500})
+        assert resp.status_code == 200
+        row = _segments(sid)[0]
+        assert (row["start_ms"], row["end_ms"]) == (0, 4500)
+
+    def test_start_not_before_end_rejected(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.patch(f"/api/session/{sid}/segments/{ids[0]}", json={"start_ms": 5000})
+        assert resp.status_code == 400
+        assert "start must be before" in resp.json()["detail"]
+        row = _segments(sid)[0]
+        assert (row["start_ms"], row["end_ms"]) == (0, 5000)
+
+    def test_negative_start_rejected(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.patch(f"/api/session/{sid}/segments/{ids[0]}", json={"start_ms": -1})
+        assert resp.status_code == 422
+
+
+class TestInsertSegment:
+    def test_insert_into_gap_uses_gap_times(self, auth_client: TestClient, session_id: str) -> None:
+        _seed_transcript(
+            session_id, "t", [(1, 0, 5000, "Alice", "one"), (1, 8000, 12000, "Bob", "two")]
+        )
+        ids = [r["id"] for r in _segments(session_id)]
+
+        resp = auth_client.post(
+            f"/api/session/{session_id}/segments",
+            json={"after_id": ids[0], "text": "missed phrase", "speaker": "Alice"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "inserted"}
+
+        rows = _segments(session_id)
+        assert [r["text"] for r in rows] == ["one", "missed phrase", "two"]
+        new = rows[1]
+        assert (new["start_ms"], new["end_ms"]) == (5000, 8000)
+        assert new["speaker"] == "Alice"
+        assert new["track_num"] == 1
+        assert [r["sort_order"] for r in rows] == [0, 1, 2]
+        assert "**[00:05] Alice:** missed phrase" in _transcript(session_id)
+
+    def test_insert_without_gap_uses_one_second_stub(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.post(
+            f"/api/session/{sid}/segments", json={"after_id": ids[0], "text": "stub"}
+        )
+        assert resp.status_code == 200
+        new = _segments(sid)[1]
+        assert (new["start_ms"], new["end_ms"]) == (5000, 6000)
+        assert new["speaker"] is None
+
+    def test_insert_after_last(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        auth_client.post(f"/api/session/{sid}/segments", json={"after_id": ids[2], "text": "tail"})
+        rows = _segments(sid)
+        assert rows[3]["text"] == "tail"
+        assert (rows[3]["start_ms"], rows[3]["end_ms"]) == (15000, 16000)
+
+    def test_insert_at_start_uses_gap_before_first(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
+        _seed_transcript(session_id, "t", [(1, 3000, 5000, "Alice", "one")])
+        resp = auth_client.post(
+            f"/api/session/{session_id}/segments", json={"after_id": None, "text": "intro"}
+        )
+        assert resp.status_code == 200
+        rows = _segments(session_id)
+        assert [r["text"] for r in rows] == ["intro", "one"]
+        assert (rows[0]["start_ms"], rows[0]["end_ms"]) == (2000, 3000)
+
+    def test_insert_at_start_when_first_at_zero(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        auth_client.post(f"/api/session/{sid}/segments", json={"after_id": None, "text": "intro"})
+        rows = _segments(sid)
+        assert rows[0]["text"] == "intro"
+        assert (rows[0]["start_ms"], rows[0]["end_ms"]) == (0, 1000)
+
+    def test_unknown_after_id_returns_404(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        resp = auth_client.post(
+            f"/api/session/{sid}/segments", json={"after_id": 999999, "text": "x"}
+        )
+        assert resp.status_code == 404
+
+    def test_no_segments_returns_404(self, auth_client: TestClient, session_id: str) -> None:
+        _seed_transcript(session_id, "t", [])
+        resp = auth_client.post(
+            f"/api/session/{session_id}/segments", json={"after_id": None, "text": "x"}
+        )
+        assert resp.status_code == 404
+
+    def test_empty_text_rejected(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        resp = auth_client.post(f"/api/session/{sid}/segments", json={"after_id": None, "text": ""})
+        assert resp.status_code == 422
+
+    def test_non_transcribed_returns_409(self, auth_client: TestClient, session_id: str) -> None:
+        resp = auth_client.post(
+            f"/api/session/{session_id}/segments", json={"after_id": None, "text": "x"}
+        )
+        assert resp.status_code == 409
+
+
 class TestDeleteSegment:
     def test_delete_renumbers_and_regenerates_transcript(
         self, auth_client: TestClient, seeded_session: tuple[str, list[int]]

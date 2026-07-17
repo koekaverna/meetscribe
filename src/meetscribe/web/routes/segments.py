@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..deps import get_current_user, get_session_for_user
-from ..models import SegmentPatch, SegmentSplit, SessionStatus
+from ..models import SegmentInsert, SegmentPatch, SegmentSplit, SessionStatus
 from ..services.auth import AuthUser
 from ..services.session import get_session_service
 
@@ -24,13 +24,32 @@ def update_segment(
     data: SegmentPatch,
     user: AuthUser = Depends(get_current_user),
 ) -> dict[str, str]:
-    """Update a segment's text and/or speaker."""
+    """Update a segment's text, speaker and/or timing."""
     _require_transcribed(session_id, user)
-    if data.text is None and data.speaker is None:
+    if all(v is None for v in (data.text, data.speaker, data.start_ms, data.end_ms)):
         raise HTTPException(status_code=400, detail="Nothing to update")
-    if not get_session_service().update_segment(session_id, segment_id, data.text, data.speaker):
+    try:
+        updated = get_session_service().update_segment(
+            session_id, segment_id, data.text, data.speaker, data.start_ms, data.end_ms
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not updated:
         raise HTTPException(status_code=404, detail="Segment not found")
     return {"status": "updated"}
+
+
+@router.post("/{session_id}/segments")
+def insert_segment(
+    session_id: str,
+    data: SegmentInsert,
+    user: AuthUser = Depends(get_current_user),
+) -> dict[str, str]:
+    """Insert a segment after an existing one (or before the first)."""
+    _require_transcribed(session_id, user)
+    if not get_session_service().insert_segment(session_id, data.after_id, data.text, data.speaker):
+        raise HTTPException(status_code=404, detail="Segment not found")
+    return {"status": "inserted"}
 
 
 @router.delete("/{session_id}/segments/{segment_id}")

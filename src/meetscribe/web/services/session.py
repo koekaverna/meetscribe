@@ -578,19 +578,32 @@ class SessionService:
         )
 
     def update_segment(
-        self, session_id: str, segment_id: int, text: str | None, speaker: str | None
+        self,
+        session_id: str,
+        segment_id: int,
+        text: str | None,
+        speaker: str | None,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
     ) -> bool:
-        """Update a segment's text and/or speaker; regenerate the transcript."""
+        """Update a segment's text, speaker and/or timing; regenerate the transcript.
+
+        Raises ValueError if the resulting start is not before the end.
+        """
         conn = get_db()
         try:
             conn.execute("BEGIN IMMEDIATE")
             row = conn.execute(
-                "SELECT id FROM session_segments WHERE session_id = ? AND id = ?",
+                "SELECT id, start_ms, end_ms FROM session_segments WHERE session_id = ? AND id = ?",
                 (session_id, segment_id),
             ).fetchone()
             if not row:
                 conn.rollback()
                 return False
+            new_start = row["start_ms"] if start_ms is None else start_ms
+            new_end = row["end_ms"] if end_ms is None else end_ms
+            if new_start >= new_end:
+                raise ValueError("Segment start must be before its end")
             if text is not None:
                 conn.execute(
                     "UPDATE session_segments SET text = ? WHERE id = ?", (text, segment_id)
@@ -599,6 +612,70 @@ class SessionService:
                 conn.execute(
                     "UPDATE session_segments SET speaker = ? WHERE id = ?", (speaker, segment_id)
                 )
+            if start_ms is not None or end_ms is not None:
+                conn.execute(
+                    "UPDATE session_segments SET start_ms = ?, end_ms = ? WHERE id = ?",
+                    (new_start, new_end, segment_id),
+                )
+            self._regenerate_transcript(conn, session_id)
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+    def insert_segment(
+        self, session_id: str, after_id: int | None, text: str, speaker: str | None
+    ) -> bool:
+        """Insert a segment after `after_id` (or before the first one when None).
+
+        Times default to the gap to the next segment; with no gap a 1-second
+        stub is used — fix up via the timing edit. Returns False if after_id
+        (or, for None, any segment to anchor on) doesn't exist.
+        """
+        conn = get_db()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            if after_id is not None:
+                prev = conn.execute(
+                    "SELECT * FROM session_segments WHERE session_id = ? AND id = ?",
+                    (session_id, after_id),
+                ).fetchone()
+                if not prev:
+                    conn.rollback()
+                    return False
+                nxt = conn.execute(
+                    "SELECT start_ms FROM session_segments "
+                    "WHERE session_id = ? AND (sort_order, id) > (?, ?) "
+                    "ORDER BY sort_order, id LIMIT 1",
+                    (session_id, prev["sort_order"], prev["id"]),
+                ).fetchone()
+                start = prev["end_ms"]
+                end = nxt["start_ms"] if nxt and nxt["start_ms"] > start else start + 1000
+                track_num = prev["track_num"]
+                # Same sort_order as prev: _renumber_segments breaks the tie by id,
+                # placing the new (higher-id) row right after it.
+                sort_order = prev["sort_order"]
+            else:
+                first = conn.execute(
+                    "SELECT start_ms, track_num FROM session_segments "
+                    "WHERE session_id = ? ORDER BY sort_order, id LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if not first:
+                    conn.rollback()
+                    return False
+                start = max(0, first["start_ms"] - 1000)
+                end = first["start_ms"] if first["start_ms"] > start else start + 1000
+                track_num = first["track_num"]
+                sort_order = -1
+            conn.execute(
+                "INSERT INTO session_segments "
+                "(session_id, track_num, start_ms, end_ms, speaker, text, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (session_id, track_num, start, end, speaker, text, sort_order),
+            )
+            self._renumber_segments(conn, session_id)
             self._regenerate_transcript(conn, session_id)
             conn.commit()
             return True
