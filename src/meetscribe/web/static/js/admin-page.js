@@ -2,7 +2,9 @@
 // Users/teams management, Speaches server status, disk usage, recent errors.
 
 document.addEventListener('alpine:init', () => {
-    Alpine.data('adminPage', () => ({
+    Alpine.data('adminPage', (isSuperadmin = false, currentUser = '') => ({
+        isSuperadmin,
+        currentUser,
         users: [],
         teams: [],
         servers: [],
@@ -16,10 +18,13 @@ document.addEventListener('alpine:init', () => {
 
         init() {
             this.loadUsers();
-            this.loadTeams();
-            this.loadStatus();
-            this.loadDisk();
-            this.loadErrors();
+            // Teams, server status, disk and errors are superadmin-only APIs
+            if (this.isSuperadmin) {
+                this.loadTeams();
+                this.loadStatus();
+                this.loadDisk();
+                this.loadErrors();
+            }
         },
 
         async _get(url) {
@@ -92,12 +97,14 @@ document.addEventListener('alpine:init', () => {
                     body: JSON.stringify({
                         username: this.newUser.username,
                         password: this.newUser.password,
-                        team_name: this.newUser.team,
+                        // Team admins omit the team: the server uses their own
+                        ...(this.isSuperadmin && { team_name: this.newUser.team }),
                         is_admin: this.newUser.isAdmin,
                     }),
                 });
                 this.newUser = { username: '', password: '', team: 'default', isAdmin: false };
-                await Promise.all([this.loadUsers(), this.loadTeams()]);
+                await this.loadUsers();
+                if (this.isSuperadmin) await this.loadTeams();
             } catch (error) {
                 this.actionError = error.message;
             }
@@ -110,7 +117,42 @@ document.addEventListener('alpine:init', () => {
             this.actionError = null;
             try {
                 await this._send(`/api/admin/users/${encodeURIComponent(u.username)}`, { method: 'DELETE' });
-                await Promise.all([this.loadUsers(), this.loadTeams()]);
+                await this.loadUsers();
+                if (this.isSuperadmin) await this.loadTeams();
+            } catch (error) {
+                this.actionError = error.message;
+            }
+        },
+
+        async toggleAdmin(u) {
+            const msg = u.is_admin
+                ? `Revoke admin from "${u.username}"?`
+                : `Make "${u.username}" an admin of team "${u.team_name}"?`;
+            if (!confirm(msg)) return;
+            this.actionError = null;
+            try {
+                await this._send(`/api/admin/users/${encodeURIComponent(u.username)}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_admin: !u.is_admin }),
+                });
+                await this.loadUsers();
+            } catch (error) {
+                this.actionError = error.message;
+            }
+        },
+
+        async resetPassword(u) {
+            const password = prompt(`New password for "${u.username}" (min 8 chars):`);
+            if (password === null) return;
+            this.actionError = null;
+            try {
+                await this._send(`/api/admin/users/${encodeURIComponent(u.username)}/password`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password }),
+                });
+                alert(`Password for "${u.username}" changed. Their sessions were logged out.`);
             } catch (error) {
                 this.actionError = error.message;
             }

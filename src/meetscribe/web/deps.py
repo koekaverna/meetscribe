@@ -34,6 +34,13 @@ def get_admin_user(user: AuthUser = Depends(get_current_user)) -> AuthUser:
     return user
 
 
+def get_superadmin_user(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Require a superadmin user. Raises 403 otherwise."""
+    if not user.is_superadmin:
+        raise HTTPException(status_code=403, detail="Superadmin access required")
+    return user
+
+
 def get_current_user_or_none(request: Request) -> AuthUser | None:
     """Extract authenticated user or return None (for page routes that redirect)."""
     token = request.cookies.get(COOKIE_NAME)

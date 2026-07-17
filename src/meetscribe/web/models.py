@@ -161,16 +161,29 @@ class AdminUser(BaseModel):
     username: str
     team_name: str
     is_admin: bool
+    is_superadmin: bool = False
     created_at: str
 
 
 class AdminUserCreate(BaseModel):
-    """Request to create a user from the admin panel."""
+    """Request to create a user from the admin panel. None team = requester's own."""
 
     username: str = Field(..., min_length=1, max_length=64)
     password: str
-    team_name: str
+    team_name: str | None = None
     is_admin: bool = False
+
+
+class AdminUserPatch(BaseModel):
+    """Request to change a user's admin role."""
+
+    is_admin: bool
+
+
+class AdminPasswordReset(BaseModel):
+    """Request to set a user's new password."""
+
+    password: str
 
 
 class AdminTeam(BaseModel):

@@ -681,10 +681,18 @@ def cmd_user_create(args: argparse.Namespace) -> None:
 
     try:
         pw_hash = hash_password(password)
-        is_admin = getattr(args, "admin", False)
-        create_user(conn, args.username, pw_hash, team["id"], is_admin=is_admin)
+        is_superadmin = getattr(args, "superadmin", False)
+        is_admin = getattr(args, "admin", False) or is_superadmin
+        create_user(
+            conn,
+            args.username,
+            pw_hash,
+            team["id"],
+            is_admin=is_admin,
+            is_superadmin=is_superadmin,
+        )
         conn.commit()
-        role = " (admin)" if is_admin else ""
+        role = " (superadmin)" if is_superadmin else (" (admin)" if is_admin else "")
         print(
             f"\n  {C_GREEN}\u2714{C_RESET}  User '{C_BOLD}{args.username}{C_RESET}'"
             f" created (team: {args.team}){role}\n"
@@ -708,9 +716,10 @@ def cmd_user_list(args: argparse.Namespace) -> None:
         warn("No users registered.")
     else:
         for u in users:
+            role = ", superadmin" if u["is_superadmin"] else (", admin" if u["is_admin"] else "")
             print(
                 f"  {C_GREEN}\u2714{C_RESET} {u['username']}"
-                f" {C_DIM}(team: {u['team_name']}){C_RESET}"
+                f" {C_DIM}(team: {u['team_name']}{role}){C_RESET}"
             )
     print()
 
@@ -877,7 +886,12 @@ def main() -> None:
     p = user_subs.add_parser("create", help="Create a new user")
     p.add_argument("username", help="Username")
     p.add_argument("--team", required=True, help="Team name")
-    p.add_argument("--admin", action="store_true", help="Grant admin privileges")
+    p.add_argument("--admin", action="store_true", help="Grant admin privileges (own team)")
+    p.add_argument(
+        "--superadmin",
+        action="store_true",
+        help="Grant instance-wide superadmin privileges (implies --admin)",
+    )
     p.set_defaults(func=cmd_user_create)
 
     p = user_subs.add_parser("list", help="List all users")

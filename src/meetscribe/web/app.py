@@ -196,9 +196,13 @@ def create_app() -> FastAPI:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
 
-    def _shell_context(request: Request) -> dict[str, bool]:
+    def _shell_context(request: Request) -> dict[str, bool | str]:
         user = get_current_user_or_none(request)
-        return {"is_admin": bool(user and user.is_admin)}
+        return {
+            "is_admin": bool(user and user.is_admin),
+            "is_superadmin": bool(user and user.is_superadmin),
+            "username": user.username if user else "",
+        }
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
