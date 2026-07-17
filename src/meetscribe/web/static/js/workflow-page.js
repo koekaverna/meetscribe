@@ -1,6 +1,20 @@
 // MeetScribe Web UI - workflow page component (6-step transcription flow).
 // Mounted by the shell via x-if + keyed x-for; reads ?session=&step= from the URL.
 
+// Full class names (not fragments) so the Tailwind CDN compiler picks them up.
+const SPEAKER_COLORS = [
+    'text-blue-700',
+    'text-emerald-700',
+    'text-purple-700',
+    'text-rose-700',
+    'text-amber-700',
+    'text-cyan-700',
+    'text-indigo-700',
+    'text-orange-700',
+    'text-teal-700',
+    'text-fuchsia-700',
+];
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('workflowPage', () => ({
         // State
@@ -57,6 +71,13 @@ document.addEventListener('alpine:init', () => {
         sampleDuration: 0,
         sampleCurrentTime: 0,
         currentSampleInfo: null,
+
+        // Transcript editing state
+        editingSegmentId: null,
+        editSegmentText: '',
+        editSegmentSpeaker: '',
+        editSegmentNewName: '',
+        segmentBusy: false,
 
         // Transcript player state
         playerPlaying: false,
@@ -874,6 +895,134 @@ document.addEventListener('alpine:init', () => {
                 console.error('Transcription failed:', error);
                 this.transcribing = false;
             }
+        },
+
+        // --- Transcript Editing Methods ---
+
+        speakerColor(name) {
+            if (!name) return 'text-gray-700';
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+            }
+            return SPEAKER_COLORS[hash % SPEAKER_COLORS.length];
+        },
+
+        get sessionSpeakers() {
+            const names = (this.session?.segments || []).map(s => s.speaker).filter(Boolean);
+            return [...new Set(names)].sort();
+        },
+
+        startEditSegment(seg) {
+            this.editingSegmentId = seg.id;
+            this.editSegmentText = seg.text;
+            this.editSegmentSpeaker = seg.speaker || '';
+            this.editSegmentNewName = '';
+        },
+
+        cancelEditSegment() {
+            this.editingSegmentId = null;
+        },
+
+        async _segmentRequest(url, options = {}) {
+            this.segmentBusy = true;
+            try {
+                const response = await authFetch(url, options);
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    const detail = typeof err.detail === 'string' ? err.detail : response.statusText;
+                    alert('Edit failed: ' + detail);
+                    return false;
+                }
+                await this.loadSession();
+                // Indices shifted — let the next timeupdate recompute the active segment
+                this.activeSegmentIdx = -1;
+                this.activeTrackNum = null;
+                return true;
+            } catch (error) {
+                console.error('Segment edit failed:', error);
+                return false;
+            } finally {
+                this.segmentBusy = false;
+            }
+        },
+
+        _editedSegmentPatch(seg) {
+            const patch = {};
+            if (this.editSegmentText !== seg.text) patch.text = this.editSegmentText;
+            const speaker = this.editSegmentSpeaker === '__new__'
+                ? this.editSegmentNewName.trim()
+                : this.editSegmentSpeaker;
+            if (speaker && speaker !== (seg.speaker || '')) patch.speaker = speaker;
+            return patch;
+        },
+
+        async saveSegmentEdit(seg) {
+            const patch = this._editedSegmentPatch(seg);
+            if (patch.text !== undefined && !patch.text.trim()) {
+                alert('Segment text cannot be empty');
+                return;
+            }
+            if (Object.keys(patch).length === 0) {
+                this.editingSegmentId = null;
+                return;
+            }
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(patch)
+                }
+            );
+            if (ok) this.editingSegmentId = null;
+        },
+
+        async deleteSegment(seg) {
+            if (!confirm('Delete this segment?')) return;
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}`,
+                { method: 'DELETE' }
+            );
+        },
+
+        async mergeSegmentWithNext(seg) {
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}/merge-next`,
+                { method: 'POST' }
+            );
+        },
+
+        async splitSegmentAtCursor(seg) {
+            const textarea = document.getElementById('seg-edit-' + seg.id);
+            if (!textarea) return;
+            const offset = textarea.selectionStart;
+            // Persist pending edits first so the offset refers to the stored text
+            const patch = this._editedSegmentPatch(seg);
+            if (patch.text !== undefined && !patch.text.trim()) {
+                alert('Segment text cannot be empty');
+                return;
+            }
+            if (Object.keys(patch).length > 0) {
+                const saved = await this._segmentRequest(
+                    `/api/session/${this.session.id}/segments/${seg.id}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(patch)
+                    }
+                );
+                if (!saved) return;
+            }
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}/split`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ offset })
+                }
+            );
+            if (ok) this.editingSegmentId = null;
         },
 
         // --- Transcript Player Methods ---
