@@ -51,6 +51,8 @@ class Sample(BaseModel):
 class TranscriptSegmentModel(BaseModel):
     """Structured transcript segment for playback."""
 
+    # DB row id (session_segments PK); lets the frontend address segments for editing
+    id: int | None = None
     track_num: int
     start_ms: int
     end_ms: int
@@ -132,6 +134,19 @@ class SampleMove(BaseModel):
     """Request to move a sample to a speaker bin."""
 
     speaker_id: str | None
+
+
+class SegmentPatch(BaseModel):
+    """Partial update of a transcript segment (text and/or speaker)."""
+
+    text: str | None = Field(None, min_length=1)
+    speaker: str | None = Field(None, min_length=1)
+
+
+class SegmentSplit(BaseModel):
+    """Request to split a segment at a character offset in its text."""
+
+    offset: int
 
 
 class TranscribeOptions(BaseModel):

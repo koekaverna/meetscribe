@@ -34,7 +34,7 @@ from .i18n import (
     set_current_lang,
     t,
 )
-from .routes import admin, auth, samples, session, speakers, tasks, tracks
+from .routes import admin, auth, samples, segments, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
 from .services.auth import get_secure_cookies
 from .services.session import init_session_service
@@ -201,6 +201,12 @@ def create_app() -> FastAPI:
         tasks.router,
         prefix="/api/session",
         tags=["tasks"],
+        dependencies=[Depends(get_current_user)],
+    )
+    app.include_router(
+        segments.router,
+        prefix="/api/session",
+        tags=["segments"],
         dependencies=[Depends(get_current_user)],
     )
     app.include_router(
