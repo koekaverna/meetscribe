@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SessionStatus(StrEnum):
@@ -63,6 +63,7 @@ class SessionState(BaseModel):
     id: str
     status: SessionStatus = SessionStatus.CREATED
     team_name: str = "default"
+    creator_id: int | None = None
     tracks: list[TrackConfig] = []
     speakers: list[SpeakerBin] = []
     samples: list[Sample] = []
@@ -75,6 +76,36 @@ class CreateSessionResponse(BaseModel):
     """Response for session creation."""
 
     session_id: str
+
+
+class SessionSummary(BaseModel):
+    """One row in the session archive list."""
+
+    id: str
+    status: SessionStatus
+    created_at: str
+    creator: str | None = None
+    track_count: int = 0
+    # MAX(end_ms) over segments; None until transcribed
+    duration_ms: int | None = None
+    speakers: list[str] = []
+    preview: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    """Paginated session list."""
+
+    sessions: list[SessionSummary]
+    total: int
+    page: int
+    per_page: int
+
+
+class BulkDeleteRequest(BaseModel):
+    """Request to delete multiple sessions."""
+
+    # Selection is page-bound; per_page is capped at 100
+    ids: list[str] = Field(..., max_length=100)
 
 
 class TrackUploadResponse(BaseModel):

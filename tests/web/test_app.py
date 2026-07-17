@@ -65,3 +65,12 @@ class TestPageRoutes:
     def test_index_page_renders(self, auth_client: TestClient) -> None:
         resp = auth_client.get("/")
         assert resp.status_code == 200
+
+    def test_sessions_page_renders(self, auth_client: TestClient) -> None:
+        resp = auth_client.get("/sessions")
+        assert resp.status_code == 200
+
+    def test_sessions_page_redirects_unauthenticated_to_login(self, client: TestClient) -> None:
+        resp = client.get("/sessions", follow_redirects=False)
+        assert resp.status_code == 303
+        assert resp.headers["location"] == "/login"

@@ -1,0 +1,132 @@
+<!-- Session archive -->
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <h2 class="text-2xl font-bold text-gray-800">Meetings</h2>
+        {% if is_admin %}
+        <!-- Mine / All team toggle (non-admins only ever see their own — enforced server-side) -->
+        <div class="flex rounded-lg overflow-hidden border border-gray-200 text-sm font-medium">
+            <button
+                @click="toggleMine(false)"
+                :class="!mine ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                class="px-3 py-1.5 transition-colors"
+            >All team</button>
+            <button
+                @click="toggleMine(true)"
+                :class="mine ? 'bg-primary-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                class="px-3 py-1.5 transition-colors"
+            >Mine</button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sort / selection controls -->
+    <div class="flex items-center justify-between text-sm text-gray-600">
+        <div class="flex items-center gap-4">
+            <input
+                type="checkbox"
+                :checked="allSelected"
+                @change="toggleSelectAll()"
+                x-show="sessions.length > 0"
+                title="Select all on this page"
+                class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+            >
+            <span class="text-gray-400">Sort by:</span>
+            <button @click="setSort('date')" class="hover:text-gray-900 font-medium" :class="sort === 'date' && 'text-primary-600'">
+                Date <span x-show="sort === 'date'" x-text="order === 'desc' ? '↓' : '↑'"></span>
+            </button>
+            <button @click="setSort('duration')" class="hover:text-gray-900 font-medium" :class="sort === 'duration' && 'text-primary-600'">
+                Duration <span x-show="sort === 'duration'" x-text="order === 'desc' ? '↓' : '↑'"></span>
+            </button>
+        </div>
+        <button
+            x-show="selected.length > 0"
+            x-cloak
+            @click="removeSelected()"
+            class="px-3 py-1.5 rounded-lg text-red-600 font-medium hover:bg-red-50 transition-colors"
+        >
+            Delete selected (<span x-text="selected.length"></span>)
+        </button>
+    </div>
+
+    <!-- Error state -->
+    <div x-show="loadError" x-cloak class="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center justify-between">
+        <span>Failed to load sessions.</span>
+        <button @click="load()" class="font-medium underline hover:no-underline">Retry</button>
+    </div>
+
+    <!-- Session list -->
+    <div class="space-y-3">
+        <template x-for="s in sessions" :key="s.id">
+            <div
+                @click="openSession(s)"
+                @keydown.enter="openSession(s)"
+                @keydown.space.prevent="openSession(s)"
+                role="button"
+                tabindex="0"
+                class="p-4 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <!-- Padded label enlarges the hit area without shifting layout -->
+                        <label @click.stop class="p-3 -m-3 shrink-0 flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                :value="s.id"
+                                x-model="selected"
+                                class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                            >
+                        </label>
+                        <p class="font-medium text-gray-800 shrink-0" x-text="formatDate(s.created_at)"></p>
+                        <span
+                            class="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
+                            :class="statusBadge(s.status)"
+                            x-text="s.status"
+                        ></span>
+                        <span class="text-sm text-gray-600 truncate" x-text="speakerLabel(s.speakers)"></span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-sm text-gray-500" x-text="formatDuration(s.duration_ms)"></span>
+                        <button
+                            @click.stop="removeSession(s.id)"
+                            class="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                            title="Delete session"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-1 flex items-center gap-3 text-xs text-gray-500">
+                    <span x-text="s.creator || '—'"></span>
+                    <span x-text="s.track_count + (s.track_count === 1 ? ' track' : ' tracks')"></span>
+                </div>
+                <p x-show="s.preview" class="mt-2 text-sm text-gray-500 truncate" x-text="formatPreview(s.preview)"></p>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty state -->
+    <div x-show="!loading && !loadError && sessions.length === 0" x-cloak class="text-center py-16">
+        <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+        </svg>
+        <p class="mt-4 text-lg font-medium text-gray-600">No sessions yet</p>
+        <p class="mt-1 text-sm text-gray-500">Start a new meeting from the workflow</p>
+    </div>
+
+    <!-- Pager -->
+    <div x-show="totalPages > 1" class="flex items-center justify-center gap-4 text-sm">
+        <button
+            @click="prevPage()"
+            :disabled="page <= 1"
+            class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >Prev</button>
+        <span class="text-gray-600">Page <span x-text="page"></span> of <span x-text="totalPages"></span></span>
+        <button
+            @click="nextPage()"
+            :disabled="page >= totalPages"
+            class="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >Next</button>
+    </div>
+</div>

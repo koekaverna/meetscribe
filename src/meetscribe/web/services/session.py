@@ -12,13 +12,11 @@ from ..models import (
     Sample,
     SessionState,
     SessionStatus,
+    SessionSummary,
     SpeakerBin,
     TrackConfig,
     TranscriptSegmentModel,
 )
-
-# Session TTL in seconds (2 hours)
-SESSION_TTL = 2 * 60 * 60
 
 
 class SessionService:
@@ -39,7 +37,7 @@ class SessionService:
 
     # --- Core CRUD ---
 
-    def create(self, team_name: str = "default") -> SessionState:
+    def create(self, team_name: str = "default", creator_id: int | None = None) -> SessionState:
         """Create a new session."""
         session_id = str(uuid.uuid4())
 
@@ -54,12 +52,13 @@ class SessionService:
         cfg = get_config()
         language = cfg.transcription.language if cfg.transcription else "ru"
         conn.execute(
-            "INSERT INTO sessions (id, team_id, status, language) VALUES (?, ?, ?, ?)",
-            (session_id, team["id"], SessionStatus.CREATED.value, language),
+            "INSERT INTO sessions (id, team_id, status, language, creator_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (session_id, team["id"], SessionStatus.CREATED.value, language, creator_id),
         )
         conn.commit()
 
-        return SessionState(id=session_id, team_name=team_name)
+        return SessionState(id=session_id, team_name=team_name, creator_id=creator_id)
 
     def get(self, session_id: str) -> SessionState | None:
         """Get full session state."""
@@ -129,6 +128,7 @@ class SessionService:
             id=row["id"],
             status=SessionStatus(row["status"]),
             team_name=row["team_name"],
+            creator_id=row["creator_id"],
             tracks=tracks,
             speakers=speakers,
             samples=samples,
@@ -160,6 +160,109 @@ class SessionService:
             shutil.rmtree(session_dir)
 
         return deleted
+
+    def delete_many_for_user(
+        self, ids: list[str], team_id: int, creator_id: int | None = None
+    ) -> int:
+        """Delete the subset of ids the caller may access. Returns count deleted.
+
+        Access predicate matches list_summaries: NULL creator_id means no creator
+        filter (admin acting on the whole team). Inaccessible ids are skipped.
+        """
+        if not ids:
+            return 0
+        conn = get_db()
+        placeholders = ",".join("?" * len(ids))
+        # B608: the interpolation is "?" placeholders only; values are bound.
+        rows = conn.execute(
+            f"SELECT id FROM sessions WHERE id IN ({placeholders}) "  # nosec B608
+            f"AND team_id = ? AND (? IS NULL OR creator_id = ?)",
+            (*ids, team_id, creator_id, creator_id),
+        ).fetchall()
+        return sum(1 for row in rows if self.delete(row["id"]))
+
+    # ORDER BY whitelist — never interpolate user input into SQL.
+    # rowid breaks ties: created_at has 1-second resolution.
+    _SORT_SQL = {
+        ("date", "asc"): "s.created_at ASC, s.rowid ASC",
+        ("date", "desc"): "s.created_at DESC, s.rowid DESC",
+        ("duration", "asc"): "duration_ms ASC NULLS LAST, s.created_at DESC, s.rowid DESC",
+        ("duration", "desc"): "duration_ms DESC NULLS LAST, s.created_at DESC, s.rowid DESC",
+    }
+
+    def list_summaries(
+        self,
+        team_id: int,
+        page: int = 1,
+        per_page: int = 20,
+        sort: str = "date",
+        order: str = "desc",
+        creator_id: int | None = None,
+    ) -> tuple[list[SessionSummary], int]:
+        """Return one page of session summaries for a team, plus the total count."""
+        order_by = self._SORT_SQL[(sort, order)]
+
+        # NULL creator_id disables the filter (admin viewing the whole team)
+        params = (team_id, creator_id, creator_id)
+
+        conn = get_db()
+        total = conn.execute(
+            "SELECT COUNT(*) as cnt FROM sessions s "
+            "WHERE s.team_id = ? AND (? IS NULL OR s.creator_id = ?)",
+            params,
+        ).fetchone()["cnt"]
+
+        # B608: order_by comes from the _SORT_SQL whitelist; all values are bound.
+        rows = conn.execute(
+            f"""
+            SELECT
+                s.id,
+                s.status,
+                s.created_at,
+                u.username AS creator,
+                SUBSTR(s.transcript, 1, 150) AS preview,
+                (SELECT COUNT(*) FROM session_tracks tr
+                  WHERE tr.session_id = s.id) AS track_count,
+                (SELECT MAX(seg.end_ms) FROM session_segments seg
+                  WHERE seg.session_id = s.id) AS duration_ms
+            FROM sessions s
+            LEFT JOIN users u ON u.id = s.creator_id
+            WHERE s.team_id = ? AND (? IS NULL OR s.creator_id = ?)
+            ORDER BY {order_by}
+            LIMIT ? OFFSET ?
+            """,  # nosec B608
+            params + (per_page, (page - 1) * per_page),
+        ).fetchall()
+
+        # Speakers per session in one query for the page's ids (not GROUP_CONCAT:
+        # speaker names are arbitrary text, splitting on a separator is unsafe).
+        # B608: the interpolation is "?" placeholders only; ids are bound.
+        speakers: dict[str, list[str]] = {}
+        if rows:
+            ids = [r["id"] for r in rows]
+            placeholders = ",".join("?" * len(ids))
+            for r in conn.execute(
+                f"SELECT DISTINCT session_id, speaker FROM session_segments "  # nosec B608
+                f"WHERE session_id IN ({placeholders}) AND speaker IS NOT NULL "
+                f"ORDER BY session_id, speaker",
+                ids,
+            ).fetchall():
+                speakers.setdefault(r["session_id"], []).append(r["speaker"])
+
+        summaries = [
+            SessionSummary(
+                id=r["id"],
+                status=SessionStatus(r["status"]),
+                created_at=r["created_at"],
+                creator=r["creator"],
+                track_count=r["track_count"],
+                duration_ms=r["duration_ms"],
+                speakers=speakers.get(r["id"], []),
+                preview=r["preview"],
+            )
+            for r in rows
+        ]
+        return summaries, total
 
     # --- Tracks ---
 
@@ -465,39 +568,6 @@ class SessionService:
         except Exception:
             conn.rollback()
             raise
-
-    # --- Cleanup ---
-
-    def cleanup_old_sessions(self) -> int:
-        """Remove sessions older than TTL. Returns count of removed sessions."""
-        conn = get_db()
-        ttl_minutes = SESSION_TTL // 60
-        threshold = f"-{ttl_minutes} minutes"
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            expired = conn.execute(
-                "SELECT id FROM sessions WHERE updated_at < datetime('now', ?)",
-                (threshold,),
-            ).fetchall()
-
-            if not expired:
-                conn.rollback()
-                return 0
-
-            ids = [r["id"] for r in expired]
-            for session_id in ids:
-                conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-
-        for session_id in ids:
-            session_dir = self._session_dir(session_id)
-            if session_dir.exists():
-                shutil.rmtree(session_dir)
-
-        return len(ids)
 
 
 # Singleton (no state beyond sessions_dir)
