@@ -63,6 +63,13 @@ document.addEventListener('alpine:init', () => {
                 + `/samples/${encodeURIComponent(filename)}/audio`;
         },
 
+        // Only one sample plays at a time
+        pauseOthers(current) {
+            this.$root.querySelectorAll('audio').forEach(a => {
+                if (a !== current) a.pause();
+            });
+        },
+
         async removeSample(filename) {
             if (!confirm(`Delete sample "${filename}"? The voiceprint will be recomputed from the remaining samples.`)) return;
             this.actionError = '';
