@@ -89,7 +89,19 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        toggleSelected(id) {
+            this.selected = this.selected.includes(id)
+                ? this.selected.filter(x => x !== id)
+                : [...this.selected, id];
+        },
+
         openSession(s) {
+            // While selecting, a row click toggles the checkbox instead of navigating —
+            // a stray click would otherwise throw away the whole selection.
+            if (this.selected.length > 0) {
+                this.toggleSelected(s.id);
+                return;
+            }
             // openWorkflow lives on the shell — resolves up the Alpine scope chain
             this.openWorkflow(s.id, STATUS_STEP[s.status] || 1);
         },

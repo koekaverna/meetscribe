@@ -28,7 +28,7 @@
                 @change="toggleSelectAll()"
                 x-show="sessions.length > 0"
                 title="Select all on this page"
-                class="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
             >
             <span class="text-gray-400">Sort by:</span>
             <button @click="setSort('date')" class="hover:text-gray-900 font-medium" :class="sort === 'date' && 'text-primary-600'">
@@ -63,13 +63,15 @@
             >
                 <div class="flex items-center justify-between gap-3">
                     <div class="flex items-center gap-3 min-w-0">
-                        <input
-                            type="checkbox"
-                            :value="s.id"
-                            x-model="selected"
-                            @click.stop
-                            class="w-4 h-4 shrink-0 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        >
+                        <!-- Padded label enlarges the hit area without shifting layout -->
+                        <label @click.stop class="p-3 -m-3 shrink-0 flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                :value="s.id"
+                                x-model="selected"
+                                class="w-5 h-5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                            >
+                        </label>
                         <p class="font-medium text-gray-800 shrink-0" x-text="formatDate(s.created_at)"></p>
                         <span
                             class="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
