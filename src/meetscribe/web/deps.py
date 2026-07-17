@@ -36,9 +36,14 @@ def get_current_user_or_none(request: Request) -> AuthUser | None:
 
 
 def get_session_for_user(session_id: str, user: AuthUser) -> SessionState:
-    """Get a session and verify it belongs to the user's team."""
+    """Get a session and verify access: own sessions only; admins get any team session.
+
+    404 (not 403) in all deny cases so existence isn't leaked.
+    """
     service = get_session_service()
     state = service.get(session_id)
     if not state or state.team_name != user.team_name:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not user.is_admin and state.creator_id != user.id:
         raise HTTPException(status_code=404, detail="Session not found")
     return state

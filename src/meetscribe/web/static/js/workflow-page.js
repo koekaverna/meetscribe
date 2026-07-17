@@ -1,17 +1,8 @@
-// MeetScribe Web UI - Alpine.js Application
+// MeetScribe Web UI - workflow page component (6-step transcription flow).
+// Mounted by the shell via x-if + keyed x-for; reads ?session=&step= from the URL.
 
-// Fetch wrapper that redirects to login on 401
-async function authFetch(url, options = {}) {
-    const response = await fetch(url, options);
-    if (response.status === 401) {
-        window.location.href = '/login';
-        throw new Error('Not authenticated');
-    }
-    return response;
-}
-
-function app() {
-    return {
+document.addEventListener('alpine:init', () => {
+    Alpine.data('workflowPage', () => ({
         // State
         session: null,
         sessionNotFound: false,
@@ -1025,36 +1016,15 @@ function app() {
             }
         },
 
-        // Close any open task streams and clear their running flags, so a
-        // stream from the previous session can't mutate the new session's state.
-        _closeTaskStreams() {
+        // Called by Alpine on unmount (page switch or :key re-mount) — the only
+        // place where streams from an old session get detached.
+        destroy() {
             this._extractionES?.close();
             this._enrollmentES?.close();
             this._transcriptionES?.close();
-            this._extractionES = null;
-            this._enrollmentES = null;
-            this._transcriptionES = null;
-            this.extracting = false;
-            this.enrolling = false;
-            this.transcribing = false;
-        },
-
-        async startNewSession() {
-            this._closeTaskStreams();
-            this.stopPlayer();
-            this._trackAudios = [];
-            this._playerInited = false;
-            this.session = null;
-            this.currentStep = 1;
-            this.extractionComplete = false;
-            this.extractionLogs = [];
-            this.enrollmentComplete = false;
-            this.enrollmentLogs = [];
-            this.transcriptionComplete = false;
-            this.transcriptionLogs = [];
-            // Clear URL params before creating new session
-            window.history.replaceState({}, '', window.location.pathname);
-            await this.createSession();
+            this.sortables.forEach(s => s.destroy());
+            this._trackAudios.forEach(a => a.pause());
+            this.$refs.samplePlayer?.pause();
         }
-    };
-}
+    }));
+});

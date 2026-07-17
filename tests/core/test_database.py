@@ -140,6 +140,38 @@ class TestMigrations:
         assert "migration_test_ok" not in tables
         conn.close()
 
+    def test_migration_004_preserves_existing_sessions(self, tmp_path: Path):
+        """004 adds creator_id as NULL to sessions created before the migration."""
+        migrations_dir = tmp_path / "migrations"
+        migrations_dir.mkdir()
+        real_dir = Path(__file__).parent.parent.parent / "src/meetscribe/migrations"
+        for name in ("001_initial.sql", "002_transcript_segments.sql", "003_track_open_space.sql"):
+            (migrations_dir / name).write_text((real_dir / name).read_text())
+
+        conn = sqlite3.connect(str(tmp_path / "test.db"))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        with patch("meetscribe.database._MIGRATIONS_DIR", migrations_dir):
+            _run_migrations(conn)
+        assert _get_schema_version(conn) == 3
+
+        conn.execute("INSERT INTO teams (name) VALUES ('default')")
+        team_id = conn.execute("SELECT id FROM teams WHERE name = 'default'").fetchone()["id"]
+        conn.execute(
+            "INSERT INTO sessions (id, team_id, status, language) "
+            "VALUES ('old-session', ?, 'created', 'ru')",
+            (team_id,),
+        )
+        conn.commit()
+
+        # Real migrations dir: applies 004 onward
+        _run_migrations(conn)
+
+        assert _get_schema_version(conn) == get_schema_version_expected()
+        row = conn.execute("SELECT creator_id FROM sessions WHERE id = 'old-session'").fetchone()
+        assert row["creator_id"] is None
+        conn.close()
+
 
 class TestValidateTeamName:
     @pytest.mark.parametrize("name", ["default", "my-team", "Team_1", "a" * 64])

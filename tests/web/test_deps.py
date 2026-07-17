@@ -150,9 +150,39 @@ class TestGetSessionForUser:
                 get_session_for_user("s1", user)
             assert exc_info.value.status_code == 404
 
-    def test_correct_team_returns_state(self) -> None:
+    def test_creator_gets_own_session(self) -> None:
         user = AuthUser(id=1, username="u", team_id=1, team_name="default")
-        state = SessionState(id="s1", team_name="default")
+        state = SessionState(id="s1", team_name="default", creator_id=1)
+        with patch("meetscribe.web.deps.get_session_service") as mock_svc:
+            mock_svc.return_value.get.return_value = state
+            result = get_session_for_user("s1", user)
+            assert result.id == "s1"
+
+    def test_non_creator_raises_404(self) -> None:
+        from fastapi import HTTPException
+
+        user = AuthUser(id=2, username="u", team_id=1, team_name="default")
+        state = SessionState(id="s1", team_name="default", creator_id=1)
+        with patch("meetscribe.web.deps.get_session_service") as mock_svc:
+            mock_svc.return_value.get.return_value = state
+            with pytest.raises(HTTPException) as exc_info:
+                get_session_for_user("s1", user)
+            assert exc_info.value.status_code == 404
+
+    def test_null_creator_raises_404_for_non_admin(self) -> None:
+        from fastapi import HTTPException
+
+        user = AuthUser(id=1, username="u", team_id=1, team_name="default")
+        state = SessionState(id="s1", team_name="default", creator_id=None)
+        with patch("meetscribe.web.deps.get_session_service") as mock_svc:
+            mock_svc.return_value.get.return_value = state
+            with pytest.raises(HTTPException) as exc_info:
+                get_session_for_user("s1", user)
+            assert exc_info.value.status_code == 404
+
+    def test_admin_gets_any_team_session(self) -> None:
+        user = AuthUser(id=2, username="a", team_id=1, team_name="default", is_admin=True)
+        state = SessionState(id="s1", team_name="default", creator_id=1)
         with patch("meetscribe.web.deps.get_session_service") as mock_svc:
             mock_svc.return_value.get.return_value = state
             result = get_session_for_user("s1", user)

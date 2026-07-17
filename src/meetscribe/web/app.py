@@ -190,10 +190,19 @@ def create_app() -> FastAPI:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
 
+    def _shell_context(request: Request) -> dict[str, bool]:
+        user = get_current_user_or_none(request)
+        return {"is_admin": bool(user and user.is_admin)}
+
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> HTMLResponse:
         """Render the main page."""
-        return templates.TemplateResponse(request, "index.html")
+        return templates.TemplateResponse(request, "index.html", _shell_context(request))
+
+    @app.get("/sessions", response_class=HTMLResponse)
+    async def sessions_page(request: Request) -> HTMLResponse:
+        """Render the session archive (same shell template, page picked client-side)."""
+        return templates.TemplateResponse(request, "index.html", _shell_context(request))
 
     @app.get("/step/{step_num}", response_class=HTMLResponse)
     async def get_step(request: Request, step_num: int) -> HTMLResponse:

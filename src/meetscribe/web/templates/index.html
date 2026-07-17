@@ -1,31 +1,79 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% include "session_not_found.html" %}
+<template x-if="activePage === 'workflow'">
+    <!-- Single-item keyed x-for: bumping workflowKey re-mounts the page (destroy + fresh init) -->
+    <template x-for="k in [workflowKey]" :key="k">
+        <div x-data="workflowPage">
+            <!-- Stepper -->
+            <nav x-show="!sessionNotFound" class="mb-4 sm:mb-8">
+                <ol class="flex items-center justify-center space-x-2 sm:space-x-4">
+                    <template x-for="(step, index) in steps" :key="index">
+                        <li class="flex items-center">
+                            <button
+                                @click="goToStep(index + 1)"
+                                :disabled="!canGoToStep(index + 1)"
+                                :class="{
+                                    'bg-primary-600 text-white': currentStep === index + 1,
+                                    'bg-green-500 text-white': index + 1 < currentStep,
+                                    'bg-gray-200 text-gray-600': index + 1 > currentStep,
+                                    'cursor-not-allowed opacity-50': !canGoToStep(index + 1)
+                                }"
+                                class="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-sm sm:text-base font-semibold shadow-md transition-all duration-200 hover:shadow-lg"
+                            >
+                                <span x-show="index + 1 >= currentStep" x-text="index + 1"></span>
+                                <svg x-show="index + 1 < currentStep" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </button>
+                            <span
+                                class="ml-2 text-sm font-medium hidden sm:inline"
+                                :class="currentStep === index + 1 ? 'text-primary-600' : 'text-gray-500'"
+                                x-text="step.name"
+                            ></span>
+                            <div x-show="index < steps.length - 1" class="w-8 h-0.5 bg-gray-300 mx-2 hidden sm:block"></div>
+                        </li>
+                    </template>
+                </ol>
+            </nav>
 
-<div x-show="!sessionNotFound" x-cloak>
-    <div x-show="currentStep === 1" x-cloak>
-        {% include "steps/step1_upload.html" %}
-    </div>
+            <!-- Main Content -->
+            <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8">
+                {% include "session_not_found.html" %}
 
-    <div x-show="currentStep === 2" x-cloak>
-        {% include "steps/step2_config.html" %}
-    </div>
+                <div x-show="!sessionNotFound" x-cloak>
+                    <div x-show="currentStep === 1" x-cloak>
+                        {% include "steps/step1_upload.html" %}
+                    </div>
 
-    <div x-show="currentStep === 3" x-cloak>
-        {% include "steps/step3_extract.html" %}
-    </div>
+                    <div x-show="currentStep === 2" x-cloak>
+                        {% include "steps/step2_config.html" %}
+                    </div>
 
-    <div x-show="currentStep === 4" x-cloak>
-        {% include "steps/step4_samples.html" %}
-    </div>
+                    <div x-show="currentStep === 3" x-cloak>
+                        {% include "steps/step3_extract.html" %}
+                    </div>
 
-    <div x-show="currentStep === 5" x-cloak>
-        {% include "steps/step5_enroll.html" %}
-    </div>
+                    <div x-show="currentStep === 4" x-cloak>
+                        {% include "steps/step4_samples.html" %}
+                    </div>
 
-    <div x-show="currentStep === 6" x-cloak>
-        {% include "steps/step6_transcribe.html" %}
-    </div>
-</div>
+                    <div x-show="currentStep === 5" x-cloak>
+                        {% include "steps/step5_enroll.html" %}
+                    </div>
+
+                    <div x-show="currentStep === 6" x-cloak>
+                        {% include "steps/step6_transcribe.html" %}
+                    </div>
+                </div>
+            </main>
+        </div>
+    </template>
+</template>
+
+<template x-if="activePage === 'sessions'">
+    <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8" x-data="sessionsPage">
+        {% include "pages/sessions.html" %}
+    </main>
+</template>
 {% endblock %}
