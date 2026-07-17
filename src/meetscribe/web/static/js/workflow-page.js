@@ -67,6 +67,7 @@ document.addEventListener('alpine:init', () => {
         trackMuted: {},
         _trackAudios: [],
         _playerInited: false,
+        _creating: null,
         _extractionES: null,
         _enrollmentES: null,
         _transcriptionES: null,
@@ -109,9 +110,9 @@ document.addEventListener('alpine:init', () => {
                     console.error('Failed to restore session:', error);
                     this.sessionNotFound = true;
                 }
-            } else {
-                await this.createSession();
             }
+            // No ?session= — don't create one yet: uploadFiles() creates it lazily,
+            // so merely opening the app doesn't leave an empty session behind.
             await this.loadGlobalSpeakers();
         },
 
@@ -343,7 +344,15 @@ document.addEventListener('alpine:init', () => {
 
         // Upload Methods
         async uploadFiles(files) {
-            if (!this.session?.id || !files.length) return;
+            if (!files.length) return;
+
+            if (!this.session?.id) {
+                // Shared promise: two quick drops must not create two sessions
+                this._creating ??= this.createSession();
+                await this._creating;
+                this._creating = null;
+                if (!this.session?.id) return; // creation failed, already logged
+            }
 
             this.uploading = true;
             this.uploadProgress = 0;
