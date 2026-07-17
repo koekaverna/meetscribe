@@ -18,8 +18,8 @@ from meetscribe.config import get_config
 from meetscribe.database import close_all_db, init_db
 from meetscribe.log import StructuredFormatter, apply_log_level
 
-from .deps import CSRF_COOKIE_NAME, get_current_user, get_current_user_or_none
-from .routes import auth, samples, session, speakers, tasks, tracks
+from .deps import CSRF_COOKIE_NAME, get_admin_user, get_current_user, get_current_user_or_none
+from .routes import admin, auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
 from .services.auth import get_secure_cookies
 from .services.session import init_session_service
@@ -168,6 +168,12 @@ def create_app() -> FastAPI:
         tags=["speakers"],
         dependencies=[Depends(get_current_user)],
     )
+    app.include_router(
+        admin.router,
+        prefix="/api/admin",
+        tags=["admin"],
+        dependencies=[Depends(get_admin_user)],
+    )
 
     # Page routes
 
@@ -202,6 +208,16 @@ def create_app() -> FastAPI:
     @app.get("/sessions", response_class=HTMLResponse)
     async def sessions_page(request: Request) -> HTMLResponse:
         """Render the session archive (same shell template, page picked client-side)."""
+        return templates.TemplateResponse(request, "index.html", _shell_context(request))
+
+    @app.get("/admin", response_class=HTMLResponse)
+    def admin_page(request: Request) -> Response:
+        """Render the admin panel (same shell template). Only admins can access."""
+        user = get_current_user_or_none(request)
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+        if not user.is_admin:
+            return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "index.html", _shell_context(request))
 
     @app.get("/step/{step_num}", response_class=HTMLResponse)

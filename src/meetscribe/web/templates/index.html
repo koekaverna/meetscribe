@@ -76,4 +76,12 @@
         {% include "pages/sessions.html" %}
     </main>
 </template>
+
+{% if is_admin %}
+<template x-if="activePage === 'admin'">
+    <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8" x-data="adminPage">
+        {% include "pages/admin.html" %}
+    </main>
+</template>
+{% endif %}
 {% endblock %}

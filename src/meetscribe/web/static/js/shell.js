@@ -29,7 +29,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         _pageFromPath() {
-            return window.location.pathname.startsWith('/sessions') ? 'sessions' : 'workflow';
+            if (window.location.pathname.startsWith('/sessions')) return 'sessions';
+            if (window.location.pathname.startsWith('/admin')) return 'admin';
+            return 'workflow';
         },
 
         navigate(path) {

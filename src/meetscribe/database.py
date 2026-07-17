@@ -197,6 +197,17 @@ def list_teams(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM teams ORDER BY name").fetchall()
 
 
+def list_teams_with_counts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """List all teams with user, session, and voiceprint counts."""
+    return conn.execute(
+        "SELECT t.id, t.name, t.description, t.created_at, "
+        "(SELECT COUNT(*) FROM users u WHERE u.team_id = t.id) AS user_count, "
+        "(SELECT COUNT(*) FROM sessions s WHERE s.team_id = t.id) AS session_count, "
+        "(SELECT COUNT(*) FROM voiceprints v WHERE v.team_id = t.id) AS voiceprint_count "
+        "FROM teams t ORDER BY t.name"
+    ).fetchall()
+
+
 def delete_team(conn: sqlite3.Connection, name: str) -> bool:
     """Delete a team by name. Refuses to delete 'default'. Returns True if deleted."""
     if name == "default":
@@ -299,9 +310,15 @@ def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None
 def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     """List all users with team names."""
     return conn.execute(
-        "SELECT u.id, u.username, t.name as team_name, u.created_at "
+        "SELECT u.id, u.username, t.name as team_name, u.is_admin, u.created_at "
         "FROM users u JOIN teams t ON u.team_id = t.id ORDER BY u.username"
     ).fetchall()
+
+
+def count_admins(conn: sqlite3.Connection) -> int:
+    """Count admin users."""
+    row = conn.execute("SELECT COUNT(*) as cnt FROM users WHERE is_admin = 1").fetchone()
+    return row["cnt"]  # type: ignore[no-any-return]
 
 
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:

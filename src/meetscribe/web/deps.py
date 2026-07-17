@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and session access control."""
 
-from fastapi import Form, HTTPException, Request
+from fastapi import Depends, Form, HTTPException, Request
 
 from .models import SessionState
 from .services.auth import COOKIE_NAME, AuthUser, get_auth_service
@@ -24,6 +24,13 @@ def get_current_user(request: Request) -> AuthUser:
     user = get_auth_service().verify_session(token)
     if not user:
         raise HTTPException(status_code=401, detail="Session expired")
+    return user
+
+
+def get_admin_user(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    """Require an admin user. Raises 403 for non-admins."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
 
