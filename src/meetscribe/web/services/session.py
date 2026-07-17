@@ -182,17 +182,17 @@ class SessionService:
         """Return one page of session summaries for a team, plus the total count."""
         order_by = self._SORT_SQL[(sort, order)]
 
-        where = "WHERE s.team_id = ?"
-        params: list[int | str] = [team_id]
-        if creator_id is not None:
-            where += " AND s.creator_id = ?"
-            params.append(creator_id)
+        # NULL creator_id disables the filter (admin viewing the whole team)
+        params = (team_id, creator_id, creator_id)
 
         conn = get_db()
-        total = conn.execute(f"SELECT COUNT(*) as cnt FROM sessions s {where}", params).fetchone()[
-            "cnt"
-        ]
+        total = conn.execute(
+            "SELECT COUNT(*) as cnt FROM sessions s "
+            "WHERE s.team_id = ? AND (? IS NULL OR s.creator_id = ?)",
+            params,
+        ).fetchone()["cnt"]
 
+        # B608: order_by comes from the _SORT_SQL whitelist; all values are bound.
         rows = conn.execute(
             f"""
             SELECT
@@ -207,21 +207,22 @@ class SessionService:
                   WHERE seg.session_id = s.id) AS duration_ms
             FROM sessions s
             LEFT JOIN users u ON u.id = s.creator_id
-            {where}
+            WHERE s.team_id = ? AND (? IS NULL OR s.creator_id = ?)
             ORDER BY {order_by}
             LIMIT ? OFFSET ?
-            """,
-            params + [per_page, (page - 1) * per_page],
+            """,  # nosec B608
+            params + (per_page, (page - 1) * per_page),
         ).fetchall()
 
         # Speakers per session in one query for the page's ids (not GROUP_CONCAT:
         # speaker names are arbitrary text, splitting on a separator is unsafe).
+        # B608: the interpolation is "?" placeholders only; ids are bound.
         speakers: dict[str, list[str]] = {}
         if rows:
             ids = [r["id"] for r in rows]
             placeholders = ",".join("?" * len(ids))
             for r in conn.execute(
-                f"SELECT DISTINCT session_id, speaker FROM session_segments "
+                f"SELECT DISTINCT session_id, speaker FROM session_segments "  # nosec B608
                 f"WHERE session_id IN ({placeholders}) AND speaker IS NOT NULL "
                 f"ORDER BY session_id, speaker",
                 ids,
