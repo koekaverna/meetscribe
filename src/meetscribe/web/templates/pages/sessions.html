@@ -59,7 +59,11 @@
         <template x-for="s in sessions" :key="s.id">
             <div
                 @click="openSession(s)"
-                class="p-4 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                @keydown.enter="openSession(s)"
+                @keydown.space.prevent="openSession(s)"
+                role="button"
+                tabindex="0"
+                class="p-4 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
                 <div class="flex items-center justify-between gap-3">
                     <div class="flex items-center gap-3 min-w-0">

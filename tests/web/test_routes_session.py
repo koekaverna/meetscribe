@@ -128,6 +128,20 @@ class TestListSessions:
             data = auth_client.get(f"/api/session?sort=duration&order={order}").json()
             assert [s["id"] for s in data["sessions"]] == [with_duration, without_duration]
 
+    def test_equal_durations_paginate_without_dupes_or_gaps(self, auth_client: TestClient) -> None:
+        """Equal sort keys need the rowid tie-breaker, or OFFSET can skip/repeat rows."""
+        ids = [auth_client.post("/api/session").json()["session_id"] for _ in range(3)]
+        for session_id in ids:
+            _seed_transcript(session_id, "text", [(1, 0, 5000, "Alice", "hi")])
+
+        seen = []
+        for page in (1, 2, 3):
+            data = auth_client.get(
+                f"/api/session?sort=duration&order=desc&page={page}&per_page=1"
+            ).json()
+            seen += [s["id"] for s in data["sessions"]]
+        assert sorted(seen) == sorted(ids)
+
     def test_regular_user_sees_only_own_sessions(
         self, auth_client: TestClient, web_auth_service: AuthService
     ) -> None:

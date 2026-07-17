@@ -161,13 +161,33 @@ class SessionService:
 
         return deleted
 
+    def delete_many_for_user(
+        self, ids: list[str], team_id: int, creator_id: int | None = None
+    ) -> int:
+        """Delete the subset of ids the caller may access. Returns count deleted.
+
+        Access predicate matches list_summaries: NULL creator_id means no creator
+        filter (admin acting on the whole team). Inaccessible ids are skipped.
+        """
+        if not ids:
+            return 0
+        conn = get_db()
+        placeholders = ",".join("?" * len(ids))
+        # B608: the interpolation is "?" placeholders only; values are bound.
+        rows = conn.execute(
+            f"SELECT id FROM sessions WHERE id IN ({placeholders}) "  # nosec B608
+            f"AND team_id = ? AND (? IS NULL OR creator_id = ?)",
+            (*ids, team_id, creator_id, creator_id),
+        ).fetchall()
+        return sum(1 for row in rows if self.delete(row["id"]))
+
     # ORDER BY whitelist — never interpolate user input into SQL.
     # rowid breaks ties: created_at has 1-second resolution.
     _SORT_SQL = {
         ("date", "asc"): "s.created_at ASC, s.rowid ASC",
         ("date", "desc"): "s.created_at DESC, s.rowid DESC",
-        ("duration", "asc"): "duration_ms ASC NULLS LAST, s.created_at DESC",
-        ("duration", "desc"): "duration_ms DESC NULLS LAST, s.created_at DESC",
+        ("duration", "asc"): "duration_ms ASC NULLS LAST, s.created_at DESC, s.rowid DESC",
+        ("duration", "desc"): "duration_ms DESC NULLS LAST, s.created_at DESC, s.rowid DESC",
     }
 
     def list_summaries(

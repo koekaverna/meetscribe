@@ -23,6 +23,7 @@ document.addEventListener('alpine:init', () => {
         loading: false,
         loadError: false,
         selected: [],
+        _loadGen: 0,
 
         init() {
             this.load();
@@ -33,6 +34,9 @@ document.addEventListener('alpine:init', () => {
         },
 
         async load() {
+            // Rapid sort/page clicks leave several requests in flight; only the
+            // latest one may touch the state, or an older response wins the race.
+            const gen = ++this._loadGen;
             this.loading = true;
             this.selected = [];
             try {
@@ -46,14 +50,16 @@ document.addEventListener('alpine:init', () => {
                 const response = await authFetch(`/api/session?${params}`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const data = await response.json();
+                if (gen !== this._loadGen) return;
                 this.sessions = data.sessions;
                 this.total = data.total;
                 this.loadError = false;
             } catch (error) {
+                if (gen !== this._loadGen) return;
                 console.error('Failed to load sessions:', error);
                 this.loadError = true;
             } finally {
-                this.loading = false;
+                if (gen === this._loadGen) this.loading = false;
             }
         },
 
@@ -109,7 +115,8 @@ document.addEventListener('alpine:init', () => {
         async removeSession(id) {
             if (!confirm('Delete this session and all its files? This cannot be undone.')) return;
             try {
-                await authFetch(`/api/session/${id}`, { method: 'DELETE' });
+                const response = await authFetch(`/api/session/${id}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 // Don't strand the user on a page that just became empty
                 if (this.sessions.length === 1 && this.page > 1) this.page--;
                 await this.load();

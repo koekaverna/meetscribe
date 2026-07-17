@@ -62,13 +62,9 @@ def bulk_delete_sessions(
     body: BulkDeleteRequest, user: AuthUser = Depends(get_current_user)
 ) -> dict[str, int]:
     """Delete multiple sessions with their files; ids the user cannot access are skipped."""
-    service = get_session_service()
-    deleted = 0
-    for session_id in body.ids:
-        try:
-            get_session_for_user(session_id, user)
-        except HTTPException:
-            continue
-        if service.delete(session_id):
-            deleted += 1
+    deleted = get_session_service().delete_many_for_user(
+        body.ids,
+        team_id=user.team_id,
+        creator_id=None if user.is_admin else user.id,
+    )
     return {"deleted": deleted}
