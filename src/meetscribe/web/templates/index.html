@@ -77,6 +77,12 @@
     </main>
 </template>
 
+<template x-if="activePage === 'speakers'">
+    <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8" x-data="speakersPage">
+        {% include "pages/speakers.html" %}
+    </main>
+</template>
+
 {% if is_admin %}
 <template x-if="activePage === 'admin'">
     {# Single-quoted attribute: tojson emits double quotes #}

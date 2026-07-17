@@ -214,6 +214,11 @@ def create_app() -> FastAPI:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "index.html", _shell_context(request))
 
+    @app.get("/speakers", response_class=HTMLResponse)
+    async def speakers_page(request: Request) -> HTMLResponse:
+        """Render the speakers dashboard (same shell template, page picked client-side)."""
+        return templates.TemplateResponse(request, "index.html", _shell_context(request))
+
     @app.get("/step/{step_num}", response_class=HTMLResponse)
     async def get_step(request: Request, step_num: int) -> HTMLResponse:
         """Render a specific step."""

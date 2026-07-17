@@ -1,7 +1,9 @@
 """Pipeline service wrappers for web UI using remote speaches API."""
 
 import logging
+import shutil
 import tempfile
+import wave
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,11 @@ from meetscribe.config import AppConfig, get_config
 from meetscribe.database import (
     delete_voiceprint,
     get_db,
+    get_team,
+    get_voiceprint,
+    list_voiceprint_meta,
     load_voiceprints,
+    rename_voiceprint,
     save_voiceprint,
 )
 from meetscribe.pipeline import (
@@ -20,12 +26,25 @@ from meetscribe.pipeline import (
     Transcriber,
     TranscriptSegment,
     audio,
+    compute_voiceprint,
     enroll_samples,
 )
 from meetscribe.pipeline.models import collect_sample_segments, filter_segments_by_speaker
 from meetscribe.team import TeamContext, resolve_team
 
+from ..models import GlobalSpeaker, SpeakerSample
+
 logger = logging.getLogger(__name__)
+
+
+def _make_extractor(cfg: AppConfig) -> EmbeddingExtractor:
+    """Create an embedding extractor from app config."""
+    return EmbeddingExtractor(
+        cfg.get_embeddings_url(),
+        cfg.embeddings.timeout,
+        cfg.embeddings.min_duration_ms,
+        model=cfg.embeddings.model,
+    )
 
 
 class PipelineRunner:
@@ -192,12 +211,7 @@ class PipelineRunner:
         total_steps = 2
 
         yield {"step": 1, "total": total_steps, "message": "Connecting to server..."}
-        extractor = EmbeddingExtractor(
-            self.cfg.get_embeddings_url(),
-            self.cfg.embeddings.timeout,
-            self.cfg.embeddings.min_duration_ms,
-            model=self.cfg.embeddings.model,
-        )
+        extractor = _make_extractor(self.cfg)
 
         team_ctx = self._resolve()
         enrolled_dir = team_ctx.enrolled_samples_dir / name
@@ -349,26 +363,134 @@ def get_pipeline_runner(team_name: str | None = None) -> PipelineRunner:
     return _pipeline_runners[key]
 
 
-def list_team_speakers(team_name: str | None = None) -> list[str]:
-    """List enrolled speakers for a team."""
-    from meetscribe.database import get_team
+def _safe_speaker_dir(team_name: str, name: str) -> Path | None:
+    """Samples dir for an enrolled speaker, or None if the name could escape it."""
+    # Path("..").name == ".." — the explicit check is not redundant
+    if not name or name == ".." or name != Path(name).name:
+        return None
+    return config.get_team_enrolled_dir(team_name) / name
 
+
+def _wav_duration_ms(path: Path) -> int:
+    try:
+        with wave.open(str(path), "rb") as wf:
+            rate = wf.getframerate()
+            return wf.getnframes() * 1000 // rate if rate else 0
+    except (wave.Error, EOFError, OSError):
+        # A corrupt sample must not take down the whole dashboard
+        return 0
+
+
+def _resolve_speaker(name: str, team_name: str | None) -> tuple[int, Path]:
+    """Return (team_id, samples_dir) for an enrolled speaker.
+
+    Raises LookupError if the team or speaker doesn't exist or the name is unsafe.
+    """
     conn = get_db()
-    name = team_name or "default"
-    team = get_team(conn, name)
+    tname = team_name or "default"
+    team = get_team(conn, tname)
+    samples_dir = _safe_speaker_dir(tname, name)
+    if team is None or samples_dir is None or get_voiceprint(conn, team["id"], name) is None:
+        raise LookupError(f"Speaker not found: {name}")
+    return team["id"], samples_dir
+
+
+def _sample_path(samples_dir: Path, filename: str) -> Path:
+    """Resolve a sample filename inside a speaker dir. Raises LookupError if invalid."""
+    if filename != Path(filename).name or not filename.endswith(".wav"):
+        raise LookupError(f"Sample not found: {filename}")
+    path = samples_dir / filename
+    if not path.is_file():
+        raise LookupError(f"Sample not found: {filename}")
+    return path
+
+
+def list_team_speakers(team_name: str | None = None) -> list[GlobalSpeaker]:
+    """List enrolled speakers for a team with voiceprint quality stats."""
+    conn = get_db()
+    tname = team_name or "default"
+    team = get_team(conn, tname)
     if not team:
         return []
-    voiceprints = load_voiceprints(conn, team["id"])
-    return sorted(voiceprints.keys())
+    speakers = []
+    for row in list_voiceprint_meta(conn, team["id"]):
+        samples_dir = _safe_speaker_dir(tname, row["name"])
+        wavs = sorted(samples_dir.glob("*.wav")) if samples_dir and samples_dir.is_dir() else []
+        speakers.append(
+            GlobalSpeaker(
+                name=row["name"],
+                model=row["model"],
+                sample_count=len(wavs),
+                total_duration_ms=sum(_wav_duration_ms(p) for p in wavs),
+            )
+        )
+    return speakers
+
+
+def list_speaker_samples(name: str, team_name: str | None = None) -> list[SpeakerSample]:
+    """List enrolled samples of a speaker. Raises LookupError if the speaker is unknown."""
+    _, samples_dir = _resolve_speaker(name, team_name)
+    wavs = sorted(samples_dir.glob("*.wav")) if samples_dir.is_dir() else []
+    return [SpeakerSample(filename=p.name, duration_ms=_wav_duration_ms(p)) for p in wavs]
+
+
+def get_speaker_sample_path(name: str, filename: str, team_name: str | None = None) -> Path:
+    """Path to an enrolled sample. Raises LookupError if speaker or sample is unknown."""
+    _, samples_dir = _resolve_speaker(name, team_name)
+    return _sample_path(samples_dir, filename)
+
+
+def delete_speaker_sample(name: str, filename: str, team_name: str | None = None) -> None:
+    """Delete one enrolled sample and recompute the voiceprint from the rest.
+
+    Raises LookupError if speaker or sample is unknown, ValueError for the last
+    sample (the voiceprint would have no source data — delete the speaker instead).
+    """
+    team_id, samples_dir = _resolve_speaker(name, team_name)
+    target = _sample_path(samples_dir, filename)
+    remaining = [p for p in sorted(samples_dir.glob("*.wav")) if p != target]
+    if not remaining:
+        raise ValueError("Cannot delete the last sample — delete the speaker instead")
+    cfg = get_config()
+    # Recompute before unlinking: if the embeddings API fails, nothing has changed
+    embedding = compute_voiceprint(_make_extractor(cfg), remaining)
+    target.unlink()
+    save_voiceprint(get_db(), team_id, name, embedding, cfg.embeddings.model)
+
+
+def rename_team_speaker(old: str, new: str, team_name: str | None = None) -> None:
+    """Rename an enrolled speaker: voiceprint row + samples dir.
+
+    Raises LookupError if the speaker is unknown, ValueError if the new name is
+    invalid, FileExistsError if the new name is already taken.
+    """
+    team_id, old_dir = _resolve_speaker(old, team_name)
+    tname = team_name or "default"
+    new = new.strip()
+    new_dir = _safe_speaker_dir(tname, new)
+    if new_dir is None:
+        raise ValueError(f"Invalid speaker name: {new!r}")
+    if new == old:
+        return
+    # A leftover dir (pre-cleanup deletes) counts as a collision too — renaming
+    # onto it would silently mix another speaker's samples into this voiceprint
+    if get_voiceprint(get_db(), team_id, new) is not None or new_dir.exists():
+        raise FileExistsError(f"Speaker '{new}' already exists")
+    rename_voiceprint(get_db(), team_id, old, new)
+    if old_dir.is_dir():
+        old_dir.rename(new_dir)
 
 
 def remove_team_speaker(name: str, team_name: str | None = None) -> bool:
-    """Remove a speaker from a team."""
-    from meetscribe.database import get_team as db_get_team
-
+    """Remove a speaker from a team: voiceprint + enrolled samples dir."""
     conn = get_db()
     tname = team_name or "default"
-    team = db_get_team(conn, tname)
+    team = get_team(conn, tname)
     if not team:
         return False
-    return delete_voiceprint(conn, team["id"], name)
+    if not delete_voiceprint(conn, team["id"], name):
+        return False
+    samples_dir = _safe_speaker_dir(tname, name)
+    if samples_dir is not None and samples_dir.is_dir():
+        shutil.rmtree(samples_dir, ignore_errors=True)
+    return True

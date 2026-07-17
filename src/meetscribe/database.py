@@ -252,6 +252,32 @@ def load_voiceprints(conn: sqlite3.Connection, team_id: int) -> dict[str, list[f
     return {row["name"]: json.loads(row["embedding"]) for row in rows}
 
 
+def get_voiceprint(conn: sqlite3.Connection, team_id: int, name: str) -> sqlite3.Row | None:
+    """Fetch a voiceprint row (without embedding) by team and name."""
+    return conn.execute(  # type: ignore[no-any-return]
+        "SELECT id, name, model, created_at FROM voiceprints WHERE team_id = ? AND name = ?",
+        (team_id, name),
+    ).fetchone()
+
+
+def list_voiceprint_meta(conn: sqlite3.Connection, team_id: int) -> list[sqlite3.Row]:
+    """List voiceprint metadata (no embeddings) for a team, ordered by name."""
+    return conn.execute(
+        "SELECT name, model, created_at FROM voiceprints WHERE team_id = ? ORDER BY name",
+        (team_id,),
+    ).fetchall()
+
+
+def rename_voiceprint(conn: sqlite3.Connection, team_id: int, old: str, new: str) -> bool:
+    """Rename a voiceprint. Returns True if a row was updated."""
+    cursor = conn.execute(
+        "UPDATE voiceprints SET name = ? WHERE team_id = ? AND name = ?",
+        (new, team_id, old),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def delete_voiceprint(conn: sqlite3.Connection, team_id: int, name: str) -> bool:
     """Delete a voiceprint by team and name. Returns True if deleted."""
     cursor = conn.execute(
