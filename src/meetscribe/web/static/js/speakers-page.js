@@ -11,6 +11,10 @@ document.addEventListener('alpine:init', () => {
         samples: [],
         samplesLoading: false,
         samplesRequestId: 0, // discards stale responses after switching speakers
+        playbackRate: 1,     // shared across all sample players
+        volume: 1,           // volume/mute are shared too
+        muted: false,
+        _syncingVolume: false,
         renameTarget: null,
         renameValue: '',
 
@@ -72,11 +76,33 @@ document.addEventListener('alpine:init', () => {
                 + `/samples/${encodeURIComponent(filename)}/audio`;
         },
 
-        // Only one sample plays at a time
+        // Only one sample plays at a time; shared settings are re-applied on play
+        // because re-rendered <audio> elements start with browser defaults
         pauseOthers(current) {
+            current.playbackRate = this.playbackRate;
+            current.volume = this.volume;
+            current.muted = this.muted;
             this.$root.querySelectorAll('audio').forEach(a => {
                 if (a !== current) a.pause();
             });
+        },
+
+        setPlaybackSpeed(rate) {
+            this.playbackRate = rate;
+            this.$root.querySelectorAll('audio').forEach(a => { a.playbackRate = rate; });
+        },
+
+        // Volume/mute changed on one player propagates to the rest. Identical
+        // assignments don't re-fire volumechange, so this settles in one pass.
+        syncVolume(el) {
+            if (this._syncingVolume) return;
+            this.volume = el.volume;
+            this.muted = el.muted;
+            this._syncingVolume = true;
+            this.$root.querySelectorAll('audio').forEach(a => {
+                if (a !== el) { a.volume = this.volume; a.muted = this.muted; }
+            });
+            this._syncingVolume = false;
         },
 
         async removeSample(filename) {

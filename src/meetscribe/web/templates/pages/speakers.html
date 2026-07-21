@@ -77,9 +77,21 @@
                 <div x-show="openSpeaker === s.name" x-cloak class="mt-3 space-y-2">
                     <p x-show="samplesLoading" class="text-sm text-gray-500">Loading samples...</p>
                     <p x-show="!samplesLoading && samples.length === 0" class="text-sm text-gray-500">No samples on disk for this speaker.</p>
+                    <!-- Shared speed for all sample players -->
+                    <div x-show="samples.length > 0" class="flex items-center gap-1">
+                        <span class="text-xs text-gray-500 mr-1">Speed</span>
+                        <template x-for="rate in [1, 1.5, 2]" :key="rate">
+                            <button
+                                @click="setPlaybackSpeed(rate)"
+                                :class="playbackRate === rate ? 'bg-primary-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                                class="px-2 py-1 rounded text-xs font-medium transition-colors"
+                                x-text="rate + 'x'"
+                            ></button>
+                        </template>
+                    </div>
                     <template x-for="sm in samples" :key="sm.filename">
                         <div class="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
-                            <audio controls preload="none" :src="sampleUrl(sm.filename)" @play="pauseOthers($event.target)" class="h-8 grow min-w-0"></audio>
+                            <audio controls controlslist="nodownload noplaybackrate" preload="none" :src="sampleUrl(sm.filename)" @play="pauseOthers($event.target)" @volumechange="syncVolume($event.target)" class="h-8 grow min-w-0"></audio>
                             <span class="text-xs text-gray-500 shrink-0" x-text="formatDuration(sm.duration_ms)"></span>
                             <span class="text-xs text-gray-400 truncate hidden sm:inline" x-text="sm.filename"></span>
                             <button
