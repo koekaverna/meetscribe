@@ -422,6 +422,7 @@ def list_team_speakers(team_name: str | None = None) -> list[GlobalSpeaker]:
                 model=row["model"],
                 sample_count=len(wavs),
                 total_duration_ms=sum(_wav_duration_ms(p) for p in wavs),
+                created_at=row["created_at"],
             )
         )
     return speakers
@@ -476,9 +477,16 @@ def rename_team_speaker(old: str, new: str, team_name: str | None = None) -> Non
     # onto it would silently mix another speaker's samples into this voiceprint
     if get_voiceprint(get_db(), team_id, new) is not None or new_dir.exists():
         raise FileExistsError(f"Speaker '{new}' already exists")
-    rename_voiceprint(get_db(), team_id, old, new)
+    # Dir first: a failed DB update can undo the dir rename, but a failed dir
+    # rename after a committed DB update would leave the samples orphaned
     if old_dir.is_dir():
         old_dir.rename(new_dir)
+    try:
+        rename_voiceprint(get_db(), team_id, old, new)
+    except Exception:
+        if new_dir.is_dir():
+            new_dir.rename(old_dir)
+        raise
 
 
 def remove_team_speaker(name: str, team_name: str | None = None) -> bool:

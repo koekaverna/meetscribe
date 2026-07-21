@@ -10,6 +10,7 @@ document.addEventListener('alpine:init', () => {
         openSpeaker: null,   // name of the speaker whose samples are expanded
         samples: [],
         samplesLoading: false,
+        samplesRequestId: 0, // discards stale responses after switching speakers
         renameTarget: null,
         renameValue: '',
 
@@ -34,27 +35,35 @@ document.addEventListener('alpine:init', () => {
 
         async toggleSamples(name) {
             if (this.openSpeaker === name) {
+                this.samplesRequestId++;
                 this.openSpeaker = null;
                 this.samples = [];
+                this.samplesLoading = false;
                 return;
             }
             this.openSpeaker = name;
-            await this.loadSamples();
+            await this.loadSamples(name);
         },
 
-        async loadSamples() {
+        async loadSamples(name) {
+            // An in-flight response for another speaker must not render (or be
+            // deleted) under this one, so anything but the latest request is dropped
+            const requestId = ++this.samplesRequestId;
             this.samplesLoading = true;
             this.samples = [];
             try {
                 const response = await authFetch(
-                    `/api/speakers/${encodeURIComponent(this.openSpeaker)}/samples`);
+                    `/api/speakers/${encodeURIComponent(name)}/samples`);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                this.samples = await response.json();
+                const samples = await response.json();
+                if (requestId !== this.samplesRequestId) return;
+                this.samples = samples;
             } catch (error) {
+                if (requestId !== this.samplesRequestId) return;
                 console.error('Failed to load samples:', error);
                 this.actionError = 'Failed to load samples.';
             } finally {
-                this.samplesLoading = false;
+                if (requestId === this.samplesRequestId) this.samplesLoading = false;
             }
         },
 
@@ -71,17 +80,21 @@ document.addEventListener('alpine:init', () => {
         },
 
         async removeSample(filename) {
+            // Snapshot before awaiting — openSpeaker may change mid-request
+            const speaker = this.openSpeaker;
             if (!confirm(`Delete sample "${filename}"? The voiceprint will be recomputed from the remaining samples.`)) return;
             this.actionError = '';
             try {
                 const response = await authFetch(
-                    `/api/speakers/${encodeURIComponent(this.openSpeaker)}/samples/${encodeURIComponent(filename)}`,
+                    `/api/speakers/${encodeURIComponent(speaker)}/samples/${encodeURIComponent(filename)}`,
                     { method: 'DELETE' });
                 if (!response.ok) {
                     const data = await response.json().catch(() => ({}));
                     throw new Error(data.detail || `HTTP ${response.status}`);
                 }
-                await Promise.all([this.loadSamples(), this.load()]);
+                const reloads = [this.load()];
+                if (this.openSpeaker === speaker) reloads.push(this.loadSamples(speaker));
+                await Promise.all(reloads);
             } catch (error) {
                 console.error('Failed to delete sample:', error);
                 this.actionError = String(error.message || error);
@@ -161,6 +174,11 @@ document.addEventListener('alpine:init', () => {
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
             return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+        },
+
+        formatDate(t) {
+            // created_at is UTC text from SQLite datetime('now')
+            return new Date(t.replace(' ', 'T') + 'Z').toLocaleString();
         },
     }));
 });

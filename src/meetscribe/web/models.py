@@ -146,6 +146,7 @@ class GlobalSpeaker(BaseModel):
     model: str
     sample_count: int
     total_duration_ms: int
+    created_at: str
 
 
 class SpeakerSample(BaseModel):

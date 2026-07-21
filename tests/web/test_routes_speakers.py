@@ -92,6 +92,7 @@ class TestListSpeakers:
         assert speaker["model"] == "test"
         assert speaker["sample_count"] == 2
         assert speaker["total_duration_ms"] == 3000
+        assert speaker["created_at"]
 
     def test_speaker_without_samples_dir_reports_zero(
         self, admin_client: TestClient, web_db
