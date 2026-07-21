@@ -930,11 +930,13 @@ document.addEventListener('alpine:init', () => {
             this.insertOpen = false;
         },
 
+        // Exact ms so a text-only save round-trips the timing unchanged
         formatSegTime(ms) {
-            const totalS = ms / 1000;
-            const m = Math.floor(totalS / 60);
-            const s = (totalS % 60).toFixed(1).padStart(4, '0');
-            return `${m}:${s}`;
+            const m = Math.floor(ms / 60000);
+            const s = Math.floor((ms % 60000) / 1000);
+            const millis = ms % 1000;
+            const base = `${m}:${String(s).padStart(2, '0')}`;
+            return millis ? `${base}.${String(millis).padStart(3, '0')}` : base;
         },
 
         // "M:SS", "M:SS.s" or bare seconds; null if unparseable
@@ -979,7 +981,9 @@ document.addEventListener('alpine:init', () => {
             const speaker = this.editSegmentSpeaker === '__new__'
                 ? this.editSegmentNewName.trim()
                 : this.editSegmentSpeaker;
-            if (speaker && speaker !== (seg.speaker || '')) patch.speaker = speaker;
+            // "" (Unknown) clears the speaker; a blank new-speaker name is a no-op
+            const newNameBlank = this.editSegmentSpeaker === '__new__' && !speaker;
+            if (!newNameBlank && speaker !== (seg.speaker || '')) patch.speaker = speaker || null;
             const startMs = this.parseSegTime(this.editSegmentStart);
             const endMs = this.parseSegTime(this.editSegmentEnd);
             if (startMs !== null && startMs !== seg.start_ms) patch.start_ms = startMs;
@@ -990,7 +994,7 @@ document.addEventListener('alpine:init', () => {
         async saveSegmentEdit(seg) {
             if (this.parseSegTime(this.editSegmentStart) === null
                 || this.parseSegTime(this.editSegmentEnd) === null) {
-                alert('Invalid time — use M:SS.s');
+                alert('Invalid time — use M:SS.mmm');
                 return;
             }
             const patch = this._editedSegmentPatch(seg);
@@ -1069,6 +1073,11 @@ document.addEventListener('alpine:init', () => {
         async splitSegmentAtCursor(seg) {
             const textarea = document.getElementById('seg-edit-' + seg.id);
             if (!textarea) return;
+            if (this.parseSegTime(this.editSegmentStart) === null
+                || this.parseSegTime(this.editSegmentEnd) === null) {
+                alert('Invalid time — use M:SS.mmm');
+                return;
+            }
             const offset = textarea.selectionStart;
             // Persist pending edits first so the offset refers to the stored text
             const patch = this._editedSegmentPatch(seg);

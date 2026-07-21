@@ -96,6 +96,20 @@ class TestPatchSegment:
             "**[00:00] Alice:** hello there\n\n**[00:05] Charlie:** hi\n\n**[00:09] Alice:** bye"
         )
 
+    def test_patch_null_speaker_clears_it(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        resp = auth_client.patch(f"/api/session/{sid}/segments/{ids[1]}", json={"speaker": None})
+        assert resp.status_code == 200
+
+        rows = _segments(sid)
+        assert rows[1]["speaker"] is None
+        assert rows[1]["text"] == "hi"
+        assert _transcript(sid) == (
+            "**[00:00] Alice:** hello there\n\n**[00:05] Unknown:** hi\n\n**[00:09] Alice:** bye"
+        )
+
     def test_patch_empty_body_returns_400(
         self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
     ) -> None:
@@ -287,6 +301,21 @@ class TestMergeSegment:
         assert rows[1]["text"] == "bye"
         assert _transcript(sid) == "**[00:00] Alice:** hello there hi\n\n**[00:09] Alice:** bye"
 
+    def test_merge_after_timing_edit_keeps_full_span(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        # Timing edit nests the first segment inside the second (6000-8000 vs 5000-9000)
+        auth_client.patch(
+            f"/api/session/{sid}/segments/{ids[0]}", json={"start_ms": 6000, "end_ms": 8000}
+        )
+        resp = auth_client.post(f"/api/session/{sid}/segments/{ids[0]}/merge-next")
+        assert resp.status_code == 200
+
+        rows = _segments(sid)
+        assert rows[0]["start_ms"] == 5000
+        assert rows[0]["end_ms"] == 9000
+
     def test_merge_last_segment_returns_400(
         self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
     ) -> None:
@@ -337,6 +366,18 @@ class TestSplitSegment:
             f"/api/session/{sid}/segments/{ids[0]}/split", json={"offset": offset}
         )
         assert resp.status_code == 400
+
+    def test_split_too_short_segment_returns_400(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        # 1 ms long: the proportional midpoint collapses onto an endpoint
+        auth_client.patch(
+            f"/api/session/{sid}/segments/{ids[1]}", json={"start_ms": 5000, "end_ms": 5001}
+        )
+        resp = auth_client.post(f"/api/session/{sid}/segments/{ids[1]}/split", json={"offset": 1})
+        assert resp.status_code == 400
+        assert "too short" in resp.json()["detail"].lower()
 
     def test_split_invalid_segment_returns_404(
         self, auth_client: TestClient, seeded_session: tuple[str, list[int]]

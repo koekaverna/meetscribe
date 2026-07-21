@@ -212,14 +212,14 @@
                                 <input
                                     x-model="editSegmentStart"
                                     type="text"
-                                    title="Start (M:SS.s)"
+                                    title="Start (M:SS.mmm)"
                                     class="w-20 px-2 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                 <span class="text-gray-400 text-xs">&ndash;</span>
                                 <input
                                     x-model="editSegmentEnd"
                                     type="text"
-                                    title="End (M:SS.s)"
+                                    title="End (M:SS.mmm)"
                                     class="w-20 px-2 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                             </div>
@@ -235,7 +235,7 @@
                         </div>
                     </div>
                     <!-- Edit actions -->
-                    <div x-show="editingSegmentId !== seg.id" class="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div x-show="editingSegmentId !== seg.id" class="shrink-0 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
                         <button @click.stop="startInsertSegment(seg.id)" :disabled="segmentBusy" title="Insert segment after" class="p-1 text-gray-400 hover:text-primary-600 rounded disabled:opacity-50">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                         </button>

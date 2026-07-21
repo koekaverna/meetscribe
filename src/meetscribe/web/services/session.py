@@ -585,10 +585,13 @@ class SessionService:
         speaker: str | None,
         start_ms: int | None = None,
         end_ms: int | None = None,
+        clear_speaker: bool = False,
     ) -> bool:
         """Update a segment's text, speaker and/or timing; regenerate the transcript.
 
-        Raises ValueError if the resulting start is not before the end.
+        clear_speaker distinguishes "set speaker to Unknown" from "don't touch it"
+        (both arrive as speaker=None). Raises ValueError if the resulting start is
+        not before the end.
         """
         conn = get_db()
         try:
@@ -608,7 +611,7 @@ class SessionService:
                 conn.execute(
                     "UPDATE session_segments SET text = ? WHERE id = ?", (text, segment_id)
                 )
-            if speaker is not None:
+            if speaker is not None or clear_speaker:
                 conn.execute(
                     "UPDATE session_segments SET speaker = ? WHERE id = ?", (speaker, segment_id)
                 )
@@ -727,9 +730,15 @@ class SessionService:
             if not second:
                 raise ValueError("No next segment to merge with")
             merged_text = " ".join(t for t in (first["text"], second["text"]) if t)
+            # Full span, not first.start..second.end: timing edits can reorder them
             conn.execute(
-                "UPDATE session_segments SET text = ?, end_ms = ? WHERE id = ?",
-                (merged_text, second["end_ms"], first["id"]),
+                "UPDATE session_segments SET text = ?, start_ms = ?, end_ms = ? WHERE id = ?",
+                (
+                    merged_text,
+                    min(first["start_ms"], second["start_ms"]),
+                    max(first["end_ms"], second["end_ms"]),
+                    first["id"],
+                ),
             )
             conn.execute("DELETE FROM session_segments WHERE id = ?", (second["id"],))
             self._renumber_segments(conn, session_id)
@@ -762,6 +771,8 @@ class SessionService:
             if not (0 < offset < len(text)) or not first_text or not second_text:
                 raise ValueError("Split offset must leave text on both sides")
             mid_ms = seg["start_ms"] + (seg["end_ms"] - seg["start_ms"]) * offset // len(text)
+            if not seg["start_ms"] < mid_ms < seg["end_ms"]:
+                raise ValueError("Segment is too short to split")
             conn.execute(
                 "UPDATE session_segments SET text = ?, end_ms = ? WHERE id = ?",
                 (first_text, mid_ms, seg["id"]),

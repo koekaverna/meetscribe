@@ -26,11 +26,21 @@ def update_segment(
 ) -> dict[str, str]:
     """Update a segment's text, speaker and/or timing."""
     _require_transcribed(session_id, user)
-    if all(v is None for v in (data.text, data.speaker, data.start_ms, data.end_ms)):
+    # An explicit {"speaker": null} clears the speaker; an omitted field means "keep"
+    clear_speaker = "speaker" in data.model_fields_set and data.speaker is None
+    if not clear_speaker and all(
+        v is None for v in (data.text, data.speaker, data.start_ms, data.end_ms)
+    ):
         raise HTTPException(status_code=400, detail="Nothing to update")
     try:
         updated = get_session_service().update_segment(
-            session_id, segment_id, data.text, data.speaker, data.start_ms, data.end_ms
+            session_id,
+            segment_id,
+            data.text,
+            data.speaker,
+            data.start_ms,
+            data.end_ms,
+            clear_speaker=clear_speaker,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
