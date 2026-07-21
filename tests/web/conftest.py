@@ -66,6 +66,18 @@ def admin_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
 
 
 @pytest.fixture
+def superadmin_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
+    """Create a superadmin user. Returns (AuthUser, session_token)."""
+    user, token = web_auth_service.register("superadmin", "test-pass-000", "default")
+    conn = get_db()
+    conn.execute("UPDATE users SET is_admin = 1, is_superadmin = 1 WHERE id = ?", (user.id,))
+    conn.commit()
+    user.is_admin = True
+    user.is_superadmin = True
+    return user, token
+
+
+@pytest.fixture
 def regular_user(web_auth_service: AuthService) -> tuple[AuthUser, str]:
     """Create a regular (non-admin) user. Returns (AuthUser, session_token)."""
     return web_auth_service.register("regular", "test-pass-000", "default")
@@ -107,6 +119,14 @@ def auth_client(client: TestClient, regular_user: tuple[AuthUser, str]) -> TestC
 def admin_client(client: TestClient, admin_user: tuple[AuthUser, str]) -> TestClient:
     """Test client with an admin session cookie."""
     _, token = admin_user
+    client.cookies.set("meetscribe_session", token)
+    return client
+
+
+@pytest.fixture
+def superadmin_client(client: TestClient, superadmin_user: tuple[AuthUser, str]) -> TestClient:
+    """Test client with a superadmin session cookie."""
+    _, token = superadmin_user
     client.cookies.set("meetscribe_session", token)
     return client
 

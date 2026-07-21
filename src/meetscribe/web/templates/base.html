@@ -7,8 +7,6 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- HTMX -->
-    <script src="https://unpkg.com/htmx.org@1.9.10" integrity="sha384-YwQSRkoBOUtKKVfHQ8C2zCPslUZHuxiPHts6X/xQCuGHipTtRXd7ImqS1VTLlpiT" crossorigin="anonymous"></script>
     <!-- Alpine.js -->
     <script defer src="https://unpkg.com/alpinejs@3.13.3/dist/cdn.min.js" integrity="sha384-Rpe/8orFUm5Q1GplYBHxbuA8Az8O8C5sAoOsdbRWkqPjKFaxPgGZipj4zeHL7lxX" crossorigin="anonymous"></script>
     <!-- SortableJS -->
@@ -73,6 +71,20 @@
                         </svg>
                         <span class="hidden sm:inline">Sessions</span>
                     </button>
+                    {% if is_admin %}
+                    <button
+                        @click="navigate('/admin')"
+                        class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                        :class="activePage === 'admin' && 'bg-gray-100 text-gray-800'"
+                        title="Admin panel"
+                    >
+                        <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span class="hidden sm:inline">Admin</span>
+                    </button>
+                    {% endif %}
                     <button
                         @click="if(confirm('Start a new session? Current progress will be lost.')) newWorkflowSession()"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
@@ -109,5 +121,6 @@
     <script src="/static/js/shell.js"></script>
     <script src="/static/js/workflow-page.js"></script>
     <script src="/static/js/sessions-page.js"></script>
+    <script src="/static/js/admin-page.js"></script>
 </body>
 </html>

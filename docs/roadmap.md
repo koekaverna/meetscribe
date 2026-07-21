@@ -1,6 +1,6 @@
 # MeetScribe — Roadmap
 
-> v0.5.5 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
+> v0.5.6 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
 
 ## Current State
 
@@ -15,6 +15,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - Page-scoped frontend: thin shell + per-page Alpine components (`workflowPage`, `sessionsPage`), x-if mounting, SSE teardown in `destroy()`
 - Session archive (`/sessions`): paginated list (status, speakers, duration, preview, creator), sort, open-in-workflow resume, single + bulk delete with files
 - Access model: non-admins see/delete only their own sessions (`creator_id`), admins the whole team; lazy session creation (no empty sessions from just opening the app)
+- Admin panel (`/admin`): two-tier access — superadmin (all teams, team CRUD, Speaches status, disk usage, error log) vs team admin (own team's users only); user create/delete, password reset, grant/revoke admin; registration page removed
 - Transcript playback (web): structured segments in DB, global player, multi-track sync + per-track mute, active segment/track highlighting, click-to-play
 - DB: SQLite, 10 tables, numbered migrations, multi-team
 - ~5400 lines, 28 modules, Python 3.12+
@@ -157,12 +158,16 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - [x] Removed the interim `_closeTaskStreams()` poke
 - **Gotcha for future pages:** shell state is deliberately named `activePage` — page components shadow same-named properties via the Alpine scope chain (sessionsPage's pagination `page` silently swallowed shell writes)
 
-### Admin panel
+### Admin panel — ✅ done (v0.5.6)
 
-- [ ] User and team management (currently CLI-only) — the last thing that *requires* the CLI; moving it here is what lets the CLI be removed
-- [ ] Speaches server status
-- [ ] Disk usage
-- [ ] Recent error log
+- [x] User and team management (was CLI-only) — the last thing that *required* the CLI
+  - Two-tier access: **superadmin** (instance owner — all teams, team CRUD) vs **team admin** (own team's users only); `is_superadmin` flag (migration 005, existing admins promoted), bootstrap via `meetscribe user create --superadmin`
+  - Password reset (invalidates the user's sessions; resetting your own logs you out) and grant/revoke admin toggle
+  - Guards: self-delete, last-admin, last-superadmin, team admins can't touch superadmins, team deletion blocked while it has users/sessions
+  - Registration page removed — users are created in the panel (or via CLI)
+- [x] Speaches server status (health ping with latency; non-2xx counts as down)
+- [x] Disk usage (data dir total, sessions, team samples)
+- [x] Recent error log (streamed tail of the newest log file)
 
 ### CLI retirement (prep)
 
@@ -176,7 +181,8 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 ### Files
 
 - Shipped (v0.5.5): `migrations/004_session_creator.sql`, `web/static/js/{shell,workflow-page,sessions-page}.js` (replaces `app.js`), `web/templates/pages/sessions.html`; session list API lives in `web/routes/session.py` (no separate dashboard router needed)
-- Remaining: `web/routes/admin.py`, `web/routes/transcript.py`, `cli.py` (interim "moved to app" notices only)
+- Shipped (v0.5.6): `migrations/005_superadmin.sql`, `web/routes/admin.py`, `web/static/js/admin-page.js`, `web/templates/pages/admin.html`; `register.html` + `/auth/register` removed
+- Remaining: `web/routes/transcript.py`, `cli.py` (interim "moved to app" notices only)
 
 ---
 
@@ -409,7 +415,7 @@ llm:
 |-------|---------|-------|--------|-------------|
 | 1 | v0.4 | Foundation & Hardening | ✅ done | Tests, CI, mutation testing, reliability |
 | 2 | v0.5 | Storage & Playback | ✅ done | Segment storage, multi-track sync playback |
-| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5); next: participant mgmt, transcript editing, admin |
+| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6); next: participant mgmt, transcript editing |
 | 4 | v0.7 | Desktop (pywebview) | planned | Native app + in-app recording; **CLI removed** |
 | 5 | v0.8 | Search & Analytics | planned | Full-text search, speaker stats, export |
 | 6 | v0.9 | Real-time & Integrations | planned | WebSocket streaming, webhooks, API |

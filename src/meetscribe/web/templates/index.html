@@ -76,4 +76,14 @@
         {% include "pages/sessions.html" %}
     </main>
 </template>
+
+{% if is_admin %}
+<template x-if="activePage === 'admin'">
+    {# Single-quoted attribute: tojson emits double quotes #}
+    <main class="bg-white rounded-2xl shadow-xl p-4 sm:p-6 md:p-8"
+          x-data='adminPage({{ "true" if is_superadmin else "false" }}, {{ username | tojson }})'>
+        {% include "pages/admin.html" %}
+    </main>
+</template>
+{% endif %}
 {% endblock %}

@@ -55,6 +55,7 @@ class AuthUser:
     team_id: int
     team_name: str
     is_admin: bool = False
+    is_superadmin: bool = False
 
 
 def hash_password(password: str) -> str:
@@ -149,6 +150,7 @@ class AuthService:
             team_id=row["team_id"],
             team_name=row["team_name"],
             is_admin=bool(row["is_admin"]),
+            is_superadmin=bool(row["is_superadmin"]),
         )
         return user, token
 
@@ -163,6 +165,7 @@ class AuthService:
             team_id=row["team_id"],
             team_name=row["team_name"],
             is_admin=bool(row["is_admin"]),
+            is_superadmin=bool(row["is_superadmin"]),
         )
 
     def logout(self, token: str) -> None:

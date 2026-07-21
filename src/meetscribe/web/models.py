@@ -152,3 +152,80 @@ class ProgressEvent(BaseModel):
     total_steps: int
     message: str
     progress: float | None = None
+
+
+class AdminUser(BaseModel):
+    """User row in the admin panel."""
+
+    id: int
+    username: str
+    team_name: str
+    is_admin: bool
+    is_superadmin: bool = False
+    created_at: str
+
+
+class AdminUserCreate(BaseModel):
+    """Request to create a user from the admin panel. None team = requester's own."""
+
+    # No "/": users are addressed via path parameters in the manage endpoints
+    username: str = Field(..., min_length=1, max_length=64, pattern=r"^[^/]+$")
+    password: str
+    team_name: str | None = None
+    is_admin: bool = False
+
+
+class AdminUserPatch(BaseModel):
+    """Request to change a user's admin role."""
+
+    is_admin: bool
+
+
+class AdminPasswordReset(BaseModel):
+    """Request to set a user's new password."""
+
+    password: str
+
+
+class AdminTeam(BaseModel):
+    """Team row with usage counts."""
+
+    id: int
+    name: str
+    description: str | None = None
+    created_at: str
+    user_count: int
+    session_count: int
+    voiceprint_count: int
+
+
+class AdminTeamCreate(BaseModel):
+    """Request to create a team from the admin panel."""
+
+    name: str
+    description: str | None = None
+
+
+class ServerStatus(BaseModel):
+    """Reachability of one configured Speaches server."""
+
+    name: str
+    url: str
+    reachable: bool
+    latency_ms: int | None = None
+    error: str | None = None
+
+
+class DiskUsage(BaseModel):
+    """Disk usage of the data directory (bytes)."""
+
+    total_bytes: int
+    sessions_bytes: int
+    samples_bytes: int
+
+
+class ErrorLogTail(BaseModel):
+    """Recent ERROR lines from the newest log file."""
+
+    file: str | None = None
+    lines: list[str] = []

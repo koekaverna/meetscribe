@@ -197,6 +197,17 @@ def list_teams(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM teams ORDER BY name").fetchall()
 
 
+def list_teams_with_counts(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """List all teams with user, session, and voiceprint counts."""
+    return conn.execute(
+        "SELECT t.id, t.name, t.description, t.created_at, "
+        "(SELECT COUNT(*) FROM users u WHERE u.team_id = t.id) AS user_count, "
+        "(SELECT COUNT(*) FROM sessions s WHERE s.team_id = t.id) AS session_count, "
+        "(SELECT COUNT(*) FROM voiceprints v WHERE v.team_id = t.id) AS voiceprint_count "
+        "FROM teams t ORDER BY t.name"
+    ).fetchall()
+
+
 def delete_team(conn: sqlite3.Connection, name: str) -> bool:
     """Delete a team by name. Refuses to delete 'default'. Returns True if deleted."""
     if name == "default":
@@ -269,11 +280,13 @@ def create_user(
     password_hash: str,
     team_id: int,
     is_admin: bool = False,
+    is_superadmin: bool = False,
 ) -> int:
-    """Create a user. Returns its id."""
+    """Create a user. Returns its id. Superadmin implies admin."""
     cursor = conn.execute(
-        "INSERT INTO users (username, password_hash, team_id, is_admin) VALUES (?, ?, ?, ?)",
-        (username, password_hash, team_id, int(is_admin)),
+        "INSERT INTO users (username, password_hash, team_id, is_admin, is_superadmin) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (username, password_hash, team_id, int(is_admin or is_superadmin), int(is_superadmin)),
     )
     return cursor.lastrowid  # type: ignore[return-value]
 
@@ -296,12 +309,36 @@ def get_user_by_id(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None
     ).fetchone()
 
 
-def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """List all users with team names."""
+def list_users(conn: sqlite3.Connection, team_id: int | None = None) -> list[sqlite3.Row]:
+    """List users with team names, optionally only one team's."""
     return conn.execute(
-        "SELECT u.id, u.username, t.name as team_name, u.created_at "
-        "FROM users u JOIN teams t ON u.team_id = t.id ORDER BY u.username"
+        "SELECT u.id, u.username, t.name as team_name, u.is_admin, u.is_superadmin, u.created_at "
+        "FROM users u JOIN teams t ON u.team_id = t.id "
+        "WHERE (? IS NULL OR u.team_id = ?) ORDER BY u.username",
+        (team_id, team_id),
     ).fetchall()
+
+
+def count_admins(conn: sqlite3.Connection) -> int:
+    """Count admin users."""
+    row = conn.execute("SELECT COUNT(*) as cnt FROM users WHERE is_admin = 1").fetchone()
+    return row["cnt"]  # type: ignore[no-any-return]
+
+
+def count_superadmins(conn: sqlite3.Connection) -> int:
+    """Count superadmin users."""
+    row = conn.execute("SELECT COUNT(*) as cnt FROM users WHERE is_superadmin = 1").fetchone()
+    return row["cnt"]  # type: ignore[no-any-return]
+
+
+def set_user_password(conn: sqlite3.Connection, user_id: int, password_hash: str) -> None:
+    """Replace a user's password hash."""
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def set_user_admin(conn: sqlite3.Connection, user_id: int, is_admin: bool) -> None:
+    """Grant or revoke a user's admin flag."""
+    conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(is_admin), user_id))
 
 
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:
@@ -324,7 +361,7 @@ def get_auth_session(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None
     """Get auth session with user and team info. Returns None if expired or not found."""
     return conn.execute(  # type: ignore[no-any-return]
         "SELECT s.token, s.expires_at, u.id as user_id, u.username, "
-        "u.team_id, u.is_admin, t.name as team_name "
+        "u.team_id, u.is_admin, u.is_superadmin, t.name as team_name "
         "FROM auth_sessions s "
         "JOIN users u ON s.user_id = u.id "
         "JOIN teams t ON u.team_id = t.id "
@@ -337,6 +374,12 @@ def delete_auth_session(conn: sqlite3.Connection, token: str) -> bool:
     """Delete an auth session. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM auth_sessions WHERE token = ?", (token,))
     return cursor.rowcount > 0
+
+
+def delete_auth_sessions_for_user(conn: sqlite3.Connection, user_id: int) -> int:
+    """Delete all auth sessions of a user (e.g. after a password reset). Returns count."""
+    cursor = conn.execute("DELETE FROM auth_sessions WHERE user_id = ?", (user_id,))
+    return cursor.rowcount
 
 
 def delete_expired_sessions(conn: sqlite3.Connection) -> int:
