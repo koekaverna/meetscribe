@@ -118,19 +118,26 @@ def post_user(req: AdminUserCreate, admin: AuthUser = Depends(get_admin_user)) -
 def remove_user(username: str, admin: AuthUser = Depends(get_admin_user)) -> dict[str, str]:
     """Delete a user. Refuses self-deletion and deleting the last (super)admin."""
     conn = get_db()
-    target = _get_target_user(conn, username, admin)
-    if target["is_superadmin"] and not admin.is_superadmin:
-        raise HTTPException(status_code=403, detail="Cannot delete a superadmin")
-    # Last-role checks first: they are only reachable via self-deletion (the requester
-    # holds the same role), so the self check would otherwise shadow them.
-    if target["is_superadmin"] and count_superadmins(conn) == 1:
-        raise HTTPException(status_code=400, detail="Cannot delete the last superadmin")
-    if target["is_admin"] and count_admins(conn) == 1:
-        raise HTTPException(status_code=400, detail="Cannot delete the last admin")
-    if username == admin.username:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
-    delete_user(conn, username)
-    conn.commit()
+    # BEGIN IMMEDIATE serializes the count guards against concurrent deletes:
+    # two admins deleting each other could otherwise both read a count of 2.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        target = _get_target_user(conn, username, admin)
+        if target["is_superadmin"] and not admin.is_superadmin:
+            raise HTTPException(status_code=403, detail="Cannot delete a superadmin")
+        # Last-role checks first: they are only reachable via self-deletion (the requester
+        # holds the same role), so the self check would otherwise shadow them.
+        if target["is_superadmin"] and count_superadmins(conn) == 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last superadmin")
+        if target["is_admin"] and count_admins(conn) == 1:
+            raise HTTPException(status_code=400, detail="Cannot delete the last admin")
+        if username == admin.username:
+            raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        delete_user(conn, username)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     logger.info("User deleted via admin panel", extra={"username": username})
     return {"status": "deleted"}
 
