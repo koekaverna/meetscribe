@@ -1,8 +1,7 @@
-"""Tests for auth routes: login, register, logout."""
+"""Tests for auth routes: login, logout."""
 
 from fastapi.testclient import TestClient
 
-from meetscribe.database import get_db
 from meetscribe.web.services.auth import get_auth_service
 
 
@@ -46,83 +45,6 @@ class TestLogin:
         )
         assert resp.status_code == 403
         assert "meetscribe_session" not in resp.cookies
-
-
-class TestRegister:
-    def test_admin_creates_user_persisted_in_db(self, admin_client: TestClient, web_db) -> None:
-        csrf_token = _get_csrf_token(admin_client)
-        resp = admin_client.post(
-            "/auth/register",
-            data={
-                "username": "newuser",
-                "password": "test-pass-000",
-                "password_confirm": "test-pass-000",
-                "csrf_token": csrf_token,
-            },
-        )
-        assert resp.status_code == 200
-
-        row = (
-            get_db()
-            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
-            .fetchone()
-        )
-        assert row is not None
-
-    def test_password_mismatch_returns_400_and_no_user_created(
-        self, admin_client: TestClient, web_db
-    ) -> None:
-        csrf_token = _get_csrf_token(admin_client)
-        resp = admin_client.post(
-            "/auth/register",
-            data={
-                "username": "newuser",
-                "password": "test-pass-000",
-                "password_confirm": "different",
-                "csrf_token": csrf_token,
-            },
-        )
-        assert resp.status_code == 400
-
-        row = (
-            get_db()
-            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
-            .fetchone()
-        )
-        assert row is None
-
-    def test_short_password_returns_400(self, admin_client: TestClient) -> None:
-        csrf_token = _get_csrf_token(admin_client)
-        resp = admin_client.post(
-            "/auth/register",
-            data={
-                "username": "newuser",
-                "password": "short",
-                "password_confirm": "short",
-                "csrf_token": csrf_token,
-            },
-        )
-        assert resp.status_code == 400
-
-    def test_non_admin_cannot_register_users(self, auth_client: TestClient, web_db) -> None:
-        csrf_token = _get_csrf_token(auth_client)
-        resp = auth_client.post(
-            "/auth/register",
-            data={
-                "username": "newuser",
-                "password": "test-pass-000",
-                "password_confirm": "test-pass-000",
-                "csrf_token": csrf_token,
-            },
-        )
-        assert resp.status_code == 400
-
-        row = (
-            get_db()
-            .execute("SELECT username FROM users WHERE username = ?", ("newuser",))
-            .fetchone()
-        )
-        assert row is None
 
 
 class TestLogout:

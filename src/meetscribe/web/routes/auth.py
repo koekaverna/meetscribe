@@ -1,4 +1,4 @@
-"""Authentication routes: login, register, logout."""
+"""Authentication routes: login, logout. Users are created via the admin panel or CLI."""
 
 import logging
 
@@ -6,10 +6,9 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from ..deps import get_current_user, verify_csrf
+from ..deps import verify_csrf
 from ..services.auth import (
     COOKIE_NAME,
-    AuthUser,
     get_auth_service,
     get_secure_cookies,
     get_session_ttl_days,
@@ -50,48 +49,6 @@ def login(
         path="/",
     )
     return response
-
-
-@router.post("/register", dependencies=[Depends(verify_csrf)])
-def register(
-    request: Request,
-    username: str = Form(...),
-    password: str = Form(...),
-    password_confirm: str = Form(...),
-    admin: AuthUser = Depends(get_current_user),
-) -> Response:
-    """Register a new user in admin's team."""
-    templates: Jinja2Templates = request.app.state.templates
-
-    def _render_error(error: str) -> Response:
-        return templates.TemplateResponse(
-            request,
-            "register.html",
-            {"error": error, "team_name": admin.team_name},
-            status_code=400,
-        )
-
-    if not admin.is_admin:
-        return _render_error("Only admins can register new users")
-
-    if password != password_confirm:
-        return _render_error("Passwords do not match")
-
-    if len(password) < 8:
-        return _render_error("Password must be at least 8 characters")
-
-    auth = get_auth_service()
-    try:
-        auth.register(username, password, admin.team_name)
-    except ValueError as e:
-        logger.warning("Registration failed", extra={"error": str(e)})
-        return _render_error("Registration failed. Please try a different username.")
-
-    return templates.TemplateResponse(
-        request,
-        "register.html",
-        {"team_name": admin.team_name, "success": username},
-    )
 
 
 @router.post("/logout", dependencies=[Depends(verify_csrf)])

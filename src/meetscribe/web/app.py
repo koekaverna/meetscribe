@@ -186,16 +186,6 @@ def create_app() -> FastAPI:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "login.html")
 
-    @app.get("/register", response_class=HTMLResponse)
-    def register_page(request: Request) -> Response:
-        """Render registration page. Only admins can access."""
-        user = get_current_user_or_none(request)
-        if not user:
-            return RedirectResponse("/login", status_code=303)
-        if not user.is_admin:
-            return RedirectResponse("/", status_code=303)
-        return templates.TemplateResponse(request, "register.html", {"team_name": user.team_name})
-
     def _shell_context(request: Request) -> dict[str, bool | str]:
         user = get_current_user_or_none(request)
         return {

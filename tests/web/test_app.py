@@ -48,15 +48,6 @@ class TestPageRoutes:
         assert resp.status_code == 303
         assert resp.headers["location"] == "/"
 
-    def test_register_page_redirects_non_admin_to_home(self, auth_client: TestClient) -> None:
-        resp = auth_client.get("/register", follow_redirects=False)
-        assert resp.status_code == 303
-        assert resp.headers["location"] == "/"
-
-    def test_register_page_accessible_by_admin(self, admin_client: TestClient) -> None:
-        resp = admin_client.get("/register")
-        assert resp.status_code == 200
-
     @pytest.mark.parametrize("step", [1, 2, 3, 4, 5, 6])
     def test_step_page_renders(self, auth_client: TestClient, step: int) -> None:
         resp = auth_client.get(f"/step/{step}")
