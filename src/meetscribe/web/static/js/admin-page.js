@@ -28,9 +28,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async _get(url) {
-            const response = await authFetch(url);
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return response.json();
+            return (await this._send(url)).json();
         },
 
         // Mutations surface the API's error detail in the banner
@@ -103,8 +101,7 @@ document.addEventListener('alpine:init', () => {
                     }),
                 });
                 this.newUser = { username: '', password: '', team: 'default', isAdmin: false };
-                await this.loadUsers();
-                if (this.isSuperadmin) await this.loadTeams();
+                await this._reloadLists();
             } catch (error) {
                 this.actionError = error.message;
             }
@@ -117,8 +114,7 @@ document.addEventListener('alpine:init', () => {
             this.actionError = null;
             try {
                 await this._send(`/api/admin/users/${encodeURIComponent(u.username)}`, { method: 'DELETE' });
-                await this.loadUsers();
-                if (this.isSuperadmin) await this.loadTeams();
+                await this._reloadLists();
             } catch (error) {
                 this.actionError = error.message;
             }
@@ -143,7 +139,10 @@ document.addEventListener('alpine:init', () => {
         },
 
         async resetPassword(u) {
-            const password = prompt(`New password for "${u.username}" (min 8 chars):`);
+            const self = u.username === this.currentUser;
+            const password = prompt(self
+                ? 'New password for your own account (min 8 chars). You will be logged out:'
+                : `New password for "${u.username}" (min 8 chars):`);
             if (password === null) return;
             this.actionError = null;
             try {
@@ -152,10 +151,22 @@ document.addEventListener('alpine:init', () => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ password }),
                 });
+                if (self) {
+                    // The reset invalidated our own session too
+                    window.location.href = '/login';
+                    return;
+                }
                 alert(`Password for "${u.username}" changed. Their sessions were logged out.`);
             } catch (error) {
                 this.actionError = error.message;
             }
+        },
+
+        // Users always; teams only for superadmins (counts change with users)
+        async _reloadLists() {
+            const jobs = [this.loadUsers()];
+            if (this.isSuperadmin) jobs.push(this.loadTeams());
+            await Promise.all(jobs);
         },
 
         async createTeam() {

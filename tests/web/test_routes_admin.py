@@ -134,6 +134,11 @@ class TestUsers:
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Team 'no-such-team' not found"
 
+    def test_create_with_slash_in_username_returns_422(self, admin_client: TestClient) -> None:
+        # "/" would break the /api/admin/users/{username} manage endpoints
+        resp = _create_user(admin_client, "bad/name")
+        assert resp.status_code == 422
+
     def test_create_with_short_password_returns_400(self, admin_client: TestClient) -> None:
         resp = admin_client.post(
             "/api/admin/users",
@@ -434,6 +439,18 @@ class TestStatus:
         assert status["reachable"] is False
         assert status["latency_ms"] is None
         assert status["error"] == "Connection refused"
+
+    def test_unhealthy_status_code_reports_unreachable(self, superadmin_client: TestClient) -> None:
+        config_mod._app_config.servers = [ServerInfo(url="http://speaches:8000", name="main")]
+        with patch("meetscribe.web.routes.admin.httpx.get") as mock_get:
+            mock_get.return_value.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "Server error '503 Service Unavailable'", request=Mock(), response=Mock()
+            )
+            resp = superadmin_client.get("/api/admin/status")
+        assert resp.status_code == 200
+        [status] = resp.json()
+        assert status["reachable"] is False
+        assert "503" in status["error"]
 
     def test_no_servers_configured_returns_empty(self, superadmin_client: TestClient) -> None:
         resp = superadmin_client.get("/api/admin/status")

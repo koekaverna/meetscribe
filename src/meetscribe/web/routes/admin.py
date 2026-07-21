@@ -4,6 +4,7 @@ import logging
 import shutil
 import sqlite3
 import time
+from collections import deque
 from pathlib import Path
 
 import httpx
@@ -24,6 +25,8 @@ from meetscribe.database import (
     get_user_by_username,
     list_teams_with_counts,
     list_users,
+    set_user_admin,
+    set_user_password,
 )
 
 from ..deps import get_admin_user, get_superadmin_user
@@ -143,7 +146,7 @@ def patch_user(
         raise HTTPException(status_code=403, detail="Superadmin role is managed via CLI")
     if username == admin.username:
         raise HTTPException(status_code=400, detail="Cannot change your own role")
-    conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(req.is_admin), target["id"]))
+    set_user_admin(conn, target["id"], req.is_admin)
     conn.commit()
     logger.info(
         "User role changed via admin panel",
@@ -164,10 +167,7 @@ def reset_password(
     target = _get_target_user(conn, username, admin)
     if target["is_superadmin"] and not admin.is_superadmin:
         raise HTTPException(status_code=403, detail="Cannot reset a superadmin's password")
-    conn.execute(
-        "UPDATE users SET password_hash = ? WHERE id = ?",
-        (hash_password(req.password), target["id"]),
-    )
+    set_user_password(conn, target["id"], hash_password(req.password))
     delete_auth_sessions_for_user(conn, target["id"])
     conn.commit()
     logger.info("Password reset via admin panel", extra={"username": username})
@@ -237,7 +237,7 @@ def get_status() -> list[ServerStatus]:
     for server in get_config().servers:
         start = time.perf_counter()
         try:
-            httpx.get(f"{server.url}/health", timeout=STATUS_TIMEOUT_S)
+            httpx.get(f"{server.url}/health", timeout=STATUS_TIMEOUT_S).raise_for_status()
             statuses.append(
                 ServerStatus(
                     name=server.name,
@@ -260,7 +260,14 @@ def _dir_size(path: Path) -> int:
     """Sum of file sizes under a directory (0 if it doesn't exist)."""
     if not path.is_dir():
         return 0
-    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    total = 0
+    for f in path.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:  # deleted mid-scan, e.g. a session being removed
+            continue
+    return total
 
 
 @router.get("/disk", response_model=DiskUsage, dependencies=[Depends(get_superadmin_user)])
@@ -276,13 +283,24 @@ def get_disk() -> DiskUsage:
 # --- Error log ---
 
 
+def _mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:  # rotated away mid-listing
+        return 0.0
+
+
 @router.get("/errors", response_model=ErrorLogTail, dependencies=[Depends(get_superadmin_user)])
 def get_errors(limit: int = Query(50, ge=1, le=500)) -> ErrorLogTail:
     """Last ERROR-level lines from the newest log file."""
-    log_files = sorted(config.LOGS_DIR.glob("*.log"), key=lambda p: p.stat().st_mtime)
+    log_files = sorted(config.LOGS_DIR.glob("*.log"), key=_mtime)
     if not log_files:
         return ErrorLogTail()
     newest = log_files[-1]
-    lines = newest.read_text(encoding="utf-8", errors="replace").splitlines()
-    error_lines = [line for line in lines if "[ERROR]" in line]
-    return ErrorLogTail(file=newest.name, lines=error_lines[-limit:])
+    # Stream instead of read_text(): the DEBUG-level log can grow very large
+    try:
+        with newest.open(encoding="utf-8", errors="replace") as fh:
+            error_lines = deque((ln.rstrip("\n") for ln in fh if "[ERROR]" in ln), maxlen=limit)
+    except OSError:
+        return ErrorLogTail()
+    return ErrorLogTail(file=newest.name, lines=list(error_lines))

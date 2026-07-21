@@ -168,7 +168,8 @@ class AdminUser(BaseModel):
 class AdminUserCreate(BaseModel):
     """Request to create a user from the admin panel. None team = requester's own."""
 
-    username: str = Field(..., min_length=1, max_length=64)
+    # No "/": users are addressed via path parameters in the manage endpoints
+    username: str = Field(..., min_length=1, max_length=64, pattern=r"^[^/]+$")
     password: str
     team_name: str | None = None
     is_admin: bool = False

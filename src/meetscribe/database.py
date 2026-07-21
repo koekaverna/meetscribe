@@ -331,6 +331,16 @@ def count_superadmins(conn: sqlite3.Connection) -> int:
     return row["cnt"]  # type: ignore[no-any-return]
 
 
+def set_user_password(conn: sqlite3.Connection, user_id: int, password_hash: str) -> None:
+    """Replace a user's password hash."""
+    conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
+
+
+def set_user_admin(conn: sqlite3.Connection, user_id: int, is_admin: bool) -> None:
+    """Grant or revoke a user's admin flag."""
+    conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (int(is_admin), user_id))
+
+
 def delete_user(conn: sqlite3.Connection, username: str) -> bool:
     """Delete a user by username. Returns True if deleted."""
     cursor = conn.execute("DELETE FROM users WHERE username = ?", (username,))
