@@ -132,7 +132,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ### Participant management (speakers dashboard) — ✅ done
 
-- [x] Enrolled speakers list with sample playback (`/speakers`: name, model, sample count, total duration)
+- [x] Enrolled speakers list with sample playback (`/speakers`, admin-only like the admin panel: name, model, sample count, total duration, enrollment date)
 - [x] Play / delete individual samples to curate voiceprint quality — deleting a sample recomputes the voiceprint from the remaining ones; the last sample can't be deleted (delete the speaker instead)
 - [x] Delete / rename speakers — delete now also removes the enrolled samples directory; rename moves it and rejects collisions
 - [x] Voiceprint quality indicator (sample count + total duration tiers). Embedding spread skipped: per-sample embeddings aren't persisted (only the averaged voiceprint), and recomputing them via the API on every dashboard load is too expensive
