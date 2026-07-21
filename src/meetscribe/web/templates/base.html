@@ -47,6 +47,10 @@
         .prose hr { border-top: 1px solid #d1d5db; margin: 0.75rem 0; }
         .prose code { background: #e5e7eb; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.875em; }
         .prose blockquote { border-left: 3px solid #d1d5db; padding-left: 0.75rem; color: #6b7280; margin: 0.5rem 0; }
+        /* Sample players share one page-level volume control */
+        .sample-audio::-webkit-media-controls-mute-button,
+        .sample-audio::-webkit-media-controls-volume-slider,
+        .sample-audio::-webkit-media-controls-volume-control-container { display: none !important; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen" x-data="shell">

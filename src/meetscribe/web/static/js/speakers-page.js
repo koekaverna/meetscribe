@@ -92,8 +92,21 @@ document.addEventListener('alpine:init', () => {
             this.$root.querySelectorAll('audio').forEach(a => { a.playbackRate = rate; });
         },
 
-        // Volume/mute changed on one player propagates to the rest. Identical
-        // assignments don't re-fire volumechange, so this settles in one pass.
+        applyVolume() {
+            this.$root.querySelectorAll('audio').forEach(a => {
+                a.volume = this.volume;
+                a.muted = this.muted;
+            });
+        },
+
+        toggleMute() {
+            this.muted = !this.muted;
+            this.applyVolume();
+        },
+
+        // Native volume UI is hidden, but keyboard shortcuts on a focused player
+        // can still change it — mirror that back into the shared state.
+        // Identical assignments don't re-fire volumechange, so this settles.
         syncVolume(el) {
             if (this._syncingVolume) return;
             this.volume = el.volume;
