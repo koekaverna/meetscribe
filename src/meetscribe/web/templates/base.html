@@ -47,6 +47,10 @@
         .prose hr { border-top: 1px solid #d1d5db; margin: 0.75rem 0; }
         .prose code { background: #e5e7eb; padding: 0.1rem 0.3rem; border-radius: 0.25rem; font-size: 0.875em; }
         .prose blockquote { border-left: 3px solid #d1d5db; padding-left: 0.75rem; color: #6b7280; margin: 0.5rem 0; }
+        /* Sample players share one page-level volume control */
+        .sample-audio::-webkit-media-controls-mute-button,
+        .sample-audio::-webkit-media-controls-volume-slider,
+        .sample-audio::-webkit-media-controls-volume-control-container { display: none !important; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen" x-data="shell">
@@ -72,6 +76,17 @@
                         <span class="hidden sm:inline">Sessions</span>
                     </button>
                     {% if is_admin %}
+                    <button
+                        @click="navigate('/speakers')"
+                        class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+                        :class="activePage === 'speakers' && 'bg-gray-100 text-gray-800'"
+                        title="Enrolled speakers"
+                    >
+                        <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                        </svg>
+                        <span class="hidden sm:inline">Speakers</span>
+                    </button>
                     <button
                         @click="navigate('/admin')"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
@@ -121,6 +136,7 @@
     <script src="/static/js/shell.js"></script>
     <script src="/static/js/workflow-page.js"></script>
     <script src="/static/js/sessions-page.js"></script>
+    <script src="/static/js/speakers-page.js"></script>
     <script src="/static/js/admin-page.js"></script>
 </body>
 </html>

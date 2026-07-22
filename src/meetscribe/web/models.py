@@ -140,9 +140,20 @@ class TranscribeOptions(BaseModel):
 
 
 class GlobalSpeaker(BaseModel):
-    """Enrolled speaker."""
+    """Enrolled speaker with voiceprint quality stats."""
 
     name: str
+    model: str
+    sample_count: int
+    total_duration_ms: int
+    created_at: str
+
+
+class SpeakerSample(BaseModel):
+    """Enrolled sample of a speaker (a wav file in the team's enrolled dir)."""
+
+    filename: str
+    duration_ms: int
 
 
 class ProgressEvent(BaseModel):

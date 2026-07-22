@@ -166,7 +166,7 @@ def create_app() -> FastAPI:
         speakers.router,
         prefix="/api/speakers",
         tags=["speakers"],
-        dependencies=[Depends(get_current_user)],
+        dependencies=[Depends(get_admin_user)],
     )
     app.include_router(
         admin.router,
@@ -211,6 +211,14 @@ def create_app() -> FastAPI:
         if not user:
             return RedirectResponse("/login", status_code=303)
         if not user.is_admin:
+            return RedirectResponse("/", status_code=303)
+        return templates.TemplateResponse(request, "index.html", _shell_context(request))
+
+    @app.get("/speakers", response_class=HTMLResponse)
+    async def speakers_page(request: Request) -> Response:
+        """Render the speakers dashboard (admin only, same shell template)."""
+        user = get_current_user_or_none(request)
+        if user and not user.is_admin:
             return RedirectResponse("/", status_code=303)
         return templates.TemplateResponse(request, "index.html", _shell_context(request))
 

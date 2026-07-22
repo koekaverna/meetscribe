@@ -130,12 +130,12 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - [x] Delete sessions with their files: per-row + bulk delete with checkbox selection (`POST /api/session/bulk-delete`)
 - [x] Extras: lazy session creation (no empty sessions from just opening the app; also fixed a double-`init()` bug that created an orphan session per page load), dead `cleanup_old_sessions`/`SESSION_TTL` removed (TTL purge is incompatible with a permanent archive)
 
-### Participant management (speakers dashboard)
+### Participant management (speakers dashboard) — ✅ done
 
-- [ ] Enrolled speakers list with sample playback
-- [ ] Play / delete individual samples to curate voiceprint quality
-- [ ] Delete / rename speakers
-- [ ] Voiceprint quality indicator (sample count, embedding spread)
+- [x] Enrolled speakers list with sample playback (`/speakers`, admin-only like the admin panel: name, model, sample count, total duration, enrollment date)
+- [x] Play / delete individual samples to curate voiceprint quality — deleting a sample recomputes the voiceprint from the remaining ones; the last sample can't be deleted (delete the speaker instead)
+- [x] Delete / rename speakers — delete now also removes the enrolled samples directory; rename moves it and rejects collisions
+- [x] Voiceprint quality indicator (sample count + total duration tiers). Embedding spread skipped: per-sample embeddings aren't persisted (only the averaged voiceprint), and recomputing them via the API on every dashboard load is too expensive
 
 ### Transcript editing
 
