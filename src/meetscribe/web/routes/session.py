@@ -5,9 +5,16 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..deps import get_current_user, get_session_for_user
-from ..models import BulkDeleteRequest, CreateSessionResponse, SessionListResponse, SessionState
+from ..models import (
+    BulkDeleteRequest,
+    CreateSessionResponse,
+    SessionListResponse,
+    SessionState,
+    SessionStatus,
+)
 from ..services.auth import AuthUser
 from ..services.session import get_session_service
+from .tasks import is_task_running
 
 router = APIRouter()
 
@@ -38,6 +45,11 @@ def list_sessions(
         order=order,
         creator_id=user.id if mine or not user.is_admin else None,
     )
+    # "transcribing" is runtime state overlaid from the in-memory task
+    # registry, never persisted: the DB keeps only workflow progress
+    for s in sessions:
+        if is_task_running(s.id, "transcribe"):
+            s.status = SessionStatus.TRANSCRIBING
     return SessionListResponse(sessions=sessions, total=total, page=page, per_page=per_page)
 
 

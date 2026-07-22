@@ -13,6 +13,7 @@ class SessionStatus(StrEnum):
     CONFIGURED = "configured"
     EXTRACTED = "extracted"
     ENROLLED = "enrolled"
+    TRANSCRIBING = "transcribing"
     TRANSCRIBED = "transcribed"
 
 

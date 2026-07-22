@@ -248,6 +248,7 @@ def test_session_status_declared_in_workflow_order():
         "configured",
         "extracted",
         "enrolled",
+        "transcribing",
         "transcribed",
     ]
 

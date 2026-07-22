@@ -1,6 +1,9 @@
 """Tests for task routes: extraction, enrollment, transcription triggers."""
 
 import io
+import threading
+import time
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -59,6 +62,45 @@ class TestTranscription:
 
         state = auth_client.get(f"/api/session/{session_id}").json()
         assert state["language"] == "en"
+
+
+class TestTranscribingOverlay:
+    """The session list shows "transcribing" while the task runs, from the task registry."""
+
+    def _list_status(self, auth_client: TestClient, session_id: str) -> str:
+        sessions = auth_client.get("/api/session").json()["sessions"]
+        return next(s["status"] for s in sessions if s["id"] == session_id)
+
+    def test_list_shows_transcribing_only_while_running(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        _upload_track(auth_client, session_id, wav_upload_bytes)
+        release = threading.Event()
+
+        def fake_transcribe(*args, **kwargs):
+            release.wait(timeout=5)
+            yield {"transcript": "**[00:00] A:** hi", "segments": []}
+
+        runner = Mock()
+        runner.transcribe = fake_transcribe
+        with patch("meetscribe.web.routes.tasks.get_pipeline_runner", return_value=runner):
+            resp = auth_client.post(
+                f"/api/session/{session_id}/transcribe", json={"language": "ru"}
+            )
+        assert resp.json() == {"status": "started"}
+
+        assert self._list_status(auth_client, session_id) == "transcribing"
+        # The persisted status is untouched by the overlay
+        assert auth_client.get(f"/api/session/{session_id}").json()["status"] == "uploaded"
+
+        release.set()
+        # /tasks/status reports None once done=True, which is set after callbacks
+        for _ in range(100):
+            tasks = auth_client.get(f"/api/session/{session_id}/tasks/status").json()
+            if tasks["transcribe"] is None:
+                break
+            time.sleep(0.05)
+        assert self._list_status(auth_client, session_id) == "transcribed"
 
 
 class TestTranscript:

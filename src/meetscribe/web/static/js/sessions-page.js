@@ -8,6 +8,7 @@ const STATUS_STEP = {
     configured: 2,
     extracted: 4,
     enrolled: 6,
+    transcribing: 6,
     transcribed: 6,
 };
 
@@ -158,6 +159,7 @@ document.addEventListener('alpine:init', () => {
                 configured: 'bg-indigo-100 text-indigo-700',
                 extracted: 'bg-amber-100 text-amber-700',
                 enrolled: 'bg-purple-100 text-purple-700',
+                transcribing: 'bg-sky-100 text-sky-700',
                 transcribed: 'bg-green-100 text-green-700',
             }[status] || 'bg-gray-100 text-gray-700';
         },

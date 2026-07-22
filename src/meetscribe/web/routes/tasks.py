@@ -77,6 +77,12 @@ def _get_task(session_id: str, task_type: str) -> RunningTask | None:
         return _running_tasks.get((session_id, task_type))
 
 
+def is_task_running(session_id: str, task_type: str) -> bool:
+    """Whether a background task of this type is currently running for the session."""
+    task = _get_task(session_id, task_type)
+    return task is not None and not task.done
+
+
 def _register_task(task: RunningTask) -> RunningTask | None:
     """Register a new task. Returns existing running task if one exists, else None."""
     with _tasks_lock:
