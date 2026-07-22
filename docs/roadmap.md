@@ -4,7 +4,7 @@
 
 ## Current State
 
-MeetScribe — self-hosted app (web + desktop) for meeting transcription with speaker diarization. **The CLI is being removed in favor of the app.** No further CLI work: its features move to the app (web + desktop) and, for automation, the REST API. Once the web app covers everything (Phase 3) and the desktop app's first-run setup replaces launch + bootstrap (Phase 4), the argparse CLI is deleted.
+MeetScribe — self-hosted app (web + desktop) for meeting transcription with speaker diarization. **The CLI is being removed in favor of the app.** No further CLI work: its features move to the app (web + desktop) and, for automation, the REST API. Once the web app covers everything (Phase 3) and server-side first-run setup replaces the CLI bootstrap (Phase 4), the argparse CLI is deleted.
 
 **What works:**
 - Pipeline: server-side diarization (Speaches `/v1/audio/diarization`, VBx clustering) → cluster embeddings → local voiceprint matching → transcription
@@ -23,7 +23,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 **Unique positioning:**
 - Self-hosted, privacy-first — data never leaves your infrastructure (no cloud competitor offers this)
-- One app, two surfaces — same FastAPI app served in the browser and wrapped natively via pywebview
+- One app, two surfaces — the same web UI in the browser and embedded in the Electron desktop client (separate repo), which adds dual-channel meeting recording
 - Hybrid identification — enrolled voiceprints + auto-clustering unknown speakers
 - Pluggable backend — Speaches API, swappable models
 
@@ -186,40 +186,47 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ---
 
-## Phase 4: Desktop App — pywebview (v0.7)
+## Phase 4: Desktop App — Electron client (v0.7)
 
-> Native window + in-app recording
+> Thin client + dual-channel recording
 
-**Goal:** Ship a desktop app that wraps the existing web UI in a native window and can **record meeting audio directly**, removing the manual "record elsewhere → upload" step. pywebview (system webview + Python backend) keeps the stack Python-first — no Electron/Node runtime.
+**Goal:** Ship a desktop app that **records meeting audio directly** (mic + system audio as two tracks), embeds the existing web UI and uploads recordings through the regular API — removing the manual "record elsewhere → upload" step. The app is a thin **Electron client in a separate repo ([meetscribe-client](https://github.com/koekaverna/meetscribe-client))** talking to a local or remote server; this repo's stack stays Python-only.
 
-### App shell
+> **Pivot from pywebview (2026-07):** the capture spike resolved the open question against pywebview. System-audio loopback is the make-or-break feature, and the only path that works on all three OSes without user-installed drivers is Chromium's `getDisplayMedia` loopback — which requires controlling the display-media handler, i.e. Electron. System webviews can't do it (WKWebView/WebKitGTK have no system-audio capture; Chromium hides PulseAudio monitor sources from `enumerateDevices`), and native Python capture has no macOS story: CATap — the API the ecosystem converged on (Chromium, OBS-adjacent tools) — has no Python bindings, and ScreenCaptureKit via PyObjC costs the Screen Recording permission plus Sequoia's monthly re-approval nag.
 
-- [ ] pywebview window hosting the embedded FastAPI app (local server lifecycle managed by the app)
-- [ ] Packaging into a single distributable (PyInstaller) per OS
-- [ ] First-run setup: Speaches endpoint, data dir, credentials
-- [ ] System tray + window state (stretch)
+### App shell — ✅ done (client v0.1)
 
-### Audio recording
+- [x] Electron window: 320px control panel + embedded web UI (`WebContentsView`, `persist:meetscribe` partition — login survives restarts); existing cookie auth reused as-is
+- [x] Settings: server URL, mic device, system-audio toggle, keep-local-copies
 
-- [ ] Microphone capture with start/stop/pause and a level meter
-- [ ] System-audio / loopback capture (meeting audio from other participants) — platform-specific (WASAPI loopback on Windows, monitor source on Linux/PulseAudio, ScreenCaptureKit/aggregate device on macOS)
-- [ ] Record → save WAV → feed into the existing extract/diarize/transcribe pipeline
-- [ ] Multi-source capture mapped to tracks (mic = track 1, system audio = track 2) to reuse named-track diarization
-- **Open question:** capture inside the webview via `getUserMedia`/`MediaRecorder` vs. native Python capture (`sounddevice`/`soundcard`). Native gives reliable loopback + device selection; decide during spike.
+### Audio recording — ✅ done (client v0.1)
+
+- [x] Microphone capture with start/stop and a level meter (pause deferred)
+- [x] System-audio loopback on all three OSes via one Chromium code path (`setDisplayMediaRequestHandler` + `audio: 'loopback'`): WASAPI (Windows), CoreAudio tap (macOS 14.2+, ScreenCaptureKit fallback for 13.0–14.1), PulseLoopbackManager (Linux, PulseAudio + PipeWire)
+- [x] Reliability hardening: silence watchdog + hot reconnect (`MediaStreamAudioDestinationNode` swap survives Windows output-device switches), crash recovery via per-recording manifests (3 s chunks streamed to disk), device-loss auto-stop
+- [x] Mic = track 1, system audio = track 2 → uploaded into `POST /api/session/{id}/tracks` (webm/opus ~40 MB/h; server extracts to WAV) — reuses named-track diarization and open-space filtering unchanged
+- [x] Upload retry without duplicate tracks (server session id persisted in the manifest; only missing files re-sent)
+
+### Remaining
+
+- [ ] Real-device capture testing: Windows host, macOS 14.2+ (TCC prompt), Linux desktop (PipeWire) — WSL can't verify capture
+- [ ] Pause/resume, tray icon (stretch)
+- [ ] Distributable builds per OS (electron-builder config ready; macOS signing/notarization open)
+- [ ] "Loopback produces non-silence" smoke check on every Electron bump (the backend already regressed silently once, in 39.0.0-beta.4)
 
 ### CLI removal
 
-> The native launch + first-run setup take over the CLI's last jobs (starting the server, bootstrapping the first admin). The argparse CLI is now deleted — this is the "app transition".
+> Decoupled from the desktop app (a thin client doesn't manage the server). The server itself takes over the CLI's last jobs.
 
-- [ ] First-run setup creates the initial admin (replaces `team`/`user create` bootstrap)
-- [ ] Single launch entry point: desktop binary for users, `uvicorn`/Docker CMD for server deploys (replaces `meetscribe web`/`app`)
+- [ ] Web first-run setup: when no users exist, the web app bootstraps the initial superadmin (replaces `team`/`user create`)
+- [ ] Server entry point: `meetscribe web` shrinks to the only remaining command (or plain `uvicorn`/Docker CMD)
 - [ ] Delete the argparse subcommands (`transcribe`, `enroll`, `extract`, `extract-samples`, `list-speakers`, `delete-speaker`, `team`, `user`, `info`) and their tests
 - [ ] Gut `cli.py` to the launcher only; drop the `[project.scripts]` subcommand surface
 
 ### Files
 
-- New: `desktop/` (pywebview entry, packaging spec), `pipeline/record.py`
-- Modified: `web/app.py` (embeddable server), `cli.py` (gutted to launcher), `pyproject.toml` (entry points)
+- Client lives in a separate repo: `meetscribe-client` (Electron pinned exactly, plain JS, no build step)
+- Modified here: `web/` (first-run bootstrap), `cli.py` (gutted to launcher), `pyproject.toml` (entry points)
 - Removed: argparse subcommands + their tests under `tests/`
 
 ---
@@ -291,7 +298,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 ### Live recording → stream
 
-- [ ] Desktop app / browser `MediaRecorder` → WebSocket
+- [ ] Desktop app / browser `MediaRecorder` → WebSocket (the client already pumps 3 s opus chunks through IPC — redirect the sink to a WebSocket)
 - [ ] Live transcript display in the UI
 - [ ] System audio capture (reuses Phase 4 loopback)
 
@@ -416,7 +423,7 @@ llm:
 | 1 | v0.4 | Foundation & Hardening | ✅ done | Tests, CI, mutation testing, reliability |
 | 2 | v0.5 | Storage & Playback | ✅ done | Segment storage, multi-track sync playback |
 | 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6); next: participant mgmt, transcript editing |
-| 4 | v0.7 | Desktop (pywebview) | planned | Native app + in-app recording; **CLI removed** |
+| 4 | v0.7 | Desktop (Electron client) | in progress | Thin client + dual-channel recording (separate repo, v0.1 done); **CLI removed** |
 | 5 | v0.8 | Search & Analytics | planned | Full-text search, speaker stats, export |
 | 6 | v0.9 | Real-time & Integrations | planned | WebSocket streaming, webhooks, API |
 | 7 | v1.0 | Enterprise | planned | RBAC, metrics, plugins, Helm |
@@ -424,7 +431,7 @@ llm:
 
 ## Intentionally NOT doing
 
-- **Electron desktop app** — desktop is delivered via pywebview (Phase 4): system webview + Python backend, no Node runtime
+- **pywebview / embedded-server desktop** — rejected after the 2026-07 capture spike: system webviews can't record loopback audio, and native Python capture has no viable macOS path (CATap has no Python bindings; ScreenCaptureKit via PyObjC costs Screen Recording permission + Sequoia's monthly nag). Desktop is a thin Electron client in a separate repo; this repo stays Python-only with no Node runtime
 - **Mobile app** — responsive web is sufficient
 - **Video recording/playback** — record/transcribe audio only; no video capture
 - **Training custom ASR models** — pluggable backend already supports model swapping
