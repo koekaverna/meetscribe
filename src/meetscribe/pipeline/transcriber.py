@@ -4,6 +4,7 @@ import io
 import logging
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import httpx
@@ -147,6 +148,7 @@ class Transcriber:
         max_chunk_ms: int,
         no_speech_prob_threshold: float,
         avg_logprob_threshold: float,
+        max_inflight: int | None = None,
     ):
         if not server_urls:
             raise ConfigurationError("At least one transcription server URL is required")
@@ -157,6 +159,10 @@ class Transcriber:
         self.language = language
         self.max_gap_ms = max_gap_ms
         self.max_chunk_ms = max_chunk_ms
+        # Cap on concurrent in-flight requests. Speaches has no cross-request
+        # batching, so concurrency is the only way to use multiple servers (and
+        # each server's threadpool) at once. Default to a few requests per server.
+        self.max_inflight = max_inflight if max_inflight is not None else len(server_urls) * 3
 
     def transcribe_file(
         self,
@@ -222,17 +228,21 @@ class Transcriber:
             raw_frames = wf.readframes(wf.getnframes())
 
         merged = merge_close_segments(segments, self.max_gap_ms, self.max_chunk_ms)
-        results: list[TranscriptSegment] = []
 
         total_ms = sum(s.duration_ms for s in merged)
         pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
 
         frame_size = sample_width * n_channels
 
-        for i, chunk in enumerate(merged):
+        def process_chunk(i: int, chunk: SpeechSegment) -> list[TranscriptSegment]:
+            """Slice, transcribe, and localize a single chunk. Runs in a worker thread.
+
+            Reads only from the shared, immutable ``raw_frames`` / ``segments``,
+            so it is safe to run concurrently.
+            """
             client = self.clients[i % len(self.clients)]
 
-            # Slice audio in memory
+            # Slice audio in memory (read-only view into shared raw_frames)
             start_sample = chunk.start_ms * sample_rate // 1000
             end_sample = chunk.end_ms * sample_rate // 1000
             chunk_frames = raw_frames[start_sample * frame_size : end_sample * frame_size]
@@ -252,11 +262,25 @@ class Transcriber:
                 seg.end_ms += chunk.start_ms
                 # Assign speaker from the diarization chunk
                 seg.speaker = self._find_speaker(seg.start_ms, seg.end_ms, segments)
-                results.append(seg)
+            return transcript_segs
 
-            pbar.update(chunk.duration_ms)
+        # Send chunks concurrently: Speaches handles requests in a threadpool with
+        # no cross-request batching, so parallel I/O is the only way to keep every
+        # server busy. Results are collected by chunk index to stay deterministic.
+        chunk_results: list[list[TranscriptSegment]] = [[] for _ in merged]
+        max_workers = min(len(merged), self.max_inflight)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(merged)
+            }
+            for future in as_completed(futures):
+                i = futures[future]
+                chunk_results[i] = future.result()
+                pbar.update(merged[i].duration_ms)
 
         pbar.close()
+
+        results: list[TranscriptSegment] = [seg for segs in chunk_results for seg in segs]
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         speech_duration_ms = max((s.end_ms for s in segments), default=0)
