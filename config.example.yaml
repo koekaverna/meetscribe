@@ -121,6 +121,12 @@ transcription:
   no_speech_prob_threshold: 0.5
   avg_logprob_threshold: -0.25
 
+  # Concurrent in-flight transcription requests per server. Chunks are
+  # dispatched concurrently across all configured servers; a few requests per
+  # server keep the GPU saturated (speaches serves sync routes from a thread
+  # pool). Raise for more throughput, lower if servers return 429/timeout.
+  max_inflight_per_server: 3
+
 # -----------------------------------------------------------------------------
 # Logging
 # -----------------------------------------------------------------------------

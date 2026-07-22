@@ -177,6 +177,7 @@ class TranscriptionConfig(ValidatedConfig):
     max_chunk_ms: int = 30000
     no_speech_prob_threshold: float = 0.5
     avg_logprob_threshold: float = -0.25
+    max_inflight_per_server: int = 3
 
 
 @dataclass
