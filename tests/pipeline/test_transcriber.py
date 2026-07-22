@@ -220,6 +220,20 @@ class TestTranscriberInit:
                 avg_logprob_threshold=-0.25,
             )
 
+    def test_non_positive_max_inflight_raises(self):
+        with pytest.raises(ConfigurationError, match="max_inflight"):
+            Transcriber(
+                server_urls=["http://a:8000"],
+                language="en",
+                timeout=10.0,
+                model="m",
+                max_gap_ms=500,
+                max_chunk_ms=30000,
+                no_speech_prob_threshold=0.5,
+                avg_logprob_threshold=-0.25,
+                max_inflight=0,
+            )
+
     def test_creates_clients(self):
         t = Transcriber(
             server_urls=["http://a:8000", "http://b:8000"],

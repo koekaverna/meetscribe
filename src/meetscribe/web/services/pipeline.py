@@ -96,6 +96,7 @@ class PipelineRunner:
             max_chunk_ms=self.cfg.transcription.max_chunk_ms,
             no_speech_prob_threshold=self.cfg.transcription.no_speech_prob_threshold,
             avg_logprob_threshold=self.cfg.transcription.avg_logprob_threshold,
+            max_inflight=self.cfg.transcription.max_inflight or None,
         )
 
     def extract_samples(

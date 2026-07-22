@@ -177,6 +177,12 @@ class TranscriptionConfig(ValidatedConfig):
     max_chunk_ms: int = 30000
     no_speech_prob_threshold: float = 0.5
     avg_logprob_threshold: float = -0.25
+    max_inflight: int = 0  # concurrent in-flight requests; 0 = auto (servers * 3)
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.max_inflight < 0:
+            raise ConfigurationError("TranscriptionConfig.max_inflight: must be >= 0 (0 = auto)")
 
 
 @dataclass

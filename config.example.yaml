@@ -90,8 +90,13 @@ embeddings:
 # Speech-to-text via OpenAI-compatible API (speaches).
 transcription:
   # Server list for parallel transcription.
-  # With multiple servers, segments are distributed round-robin.
+  # Chunks are sent concurrently and distributed round-robin across servers.
   servers: ["GPU-1"]
+
+  # Max concurrent in-flight transcription requests (ceiling on worker threads).
+  # Speaches processes requests in a threadpool with no cross-request batching,
+  # so concurrency is what keeps every server busy. 0 = auto (servers * 3).
+  max_inflight: 0
 
   # Transcription model (HuggingFace ID).
   # The server will try to auto-detect the model via /v1/models,
@@ -105,6 +110,8 @@ transcription:
   # HTTP request timeout in seconds per segment.
   # For whole-file transcription, max(timeout, 600) is used automatically.
   timeout: 120
+
+  # (round-robin over servers; concurrency capped by max_inflight above)
 
   # Maximum gap (ms) between segments to merge into one chunk.
   # Small gaps between phrases of the same speaker are merged.
