@@ -73,6 +73,13 @@ class TestValidate:
         with pytest.raises(ConfigurationError, match="No servers configured"):
             cfg.validate()
 
+    def test_negative_max_inflight_raises(self):
+        with pytest.raises(ConfigurationError, match="max_inflight"):
+            TranscriptionConfig(max_inflight=-1)
+
+    def test_zero_max_inflight_is_auto(self):
+        assert TranscriptionConfig(max_inflight=0).max_inflight == 0
+
     def test_diarization_server_not_in_list_raises(self, tmp_path: Path):
         """Unknown diarization server name raises ConfigurationError."""
         data = {

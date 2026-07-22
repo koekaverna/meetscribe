@@ -152,6 +152,8 @@ class Transcriber:
     ):
         if not server_urls:
             raise ConfigurationError("At least one transcription server URL is required")
+        if max_inflight is not None and max_inflight < 1:
+            raise ConfigurationError("max_inflight must be a positive integer")
         self.clients = [
             RemoteTranscriber(url, timeout, model, no_speech_prob_threshold, avg_logprob_threshold)
             for url in server_urls
@@ -273,12 +275,19 @@ class Transcriber:
             futures = {
                 executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(merged)
             }
-            for future in as_completed(futures):
-                i = futures[future]
-                chunk_results[i] = future.result()
-                pbar.update(merged[i].duration_ms)
-
-        pbar.close()
+            try:
+                for future in as_completed(futures):
+                    i = futures[future]
+                    chunk_results[i] = future.result()
+                    pbar.update(merged[i].duration_ms)
+            except Exception:
+                # First failure aborts the run: drop still-queued chunks so the
+                # pool only waits out the ones already running.
+                for f in futures:
+                    f.cancel()
+                raise
+            finally:
+                pbar.close()
 
         results: list[TranscriptSegment] = [seg for segs in chunk_results for seg in segs]
 
