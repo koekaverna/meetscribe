@@ -4,6 +4,7 @@ import io
 import logging
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import httpx
@@ -147,6 +148,7 @@ class Transcriber:
         max_chunk_ms: int,
         no_speech_prob_threshold: float,
         avg_logprob_threshold: float,
+        max_inflight_per_server: int = 3,
     ):
         if not server_urls:
             raise ConfigurationError("At least one transcription server URL is required")
@@ -157,6 +159,10 @@ class Transcriber:
         self.language = language
         self.max_gap_ms = max_gap_ms
         self.max_chunk_ms = max_chunk_ms
+        # Total concurrent in-flight transcription requests. Speaches serves
+        # sync routes from a thread pool, so concurrent requests run in
+        # parallel on the GPU; a few per server let it stay saturated.
+        self.max_inflight = max(1, max_inflight_per_server) * len(self.clients)
 
     def transcribe_file(
         self,
@@ -200,7 +206,8 @@ class Transcriber:
         """Transcribe speech segments from an audio file.
 
         Loads audio into memory, merges close segments into larger chunks,
-        slices each chunk as WAV bytes, and transcribes via remote API.
+        slices each chunk as WAV bytes, and transcribes them concurrently
+        across all configured servers via the remote API.
 
         Args:
             audio_path: Path to the full audio track (16kHz mono WAV).
@@ -222,41 +229,54 @@ class Transcriber:
             raw_frames = wf.readframes(wf.getnframes())
 
         merged = merge_close_segments(segments, self.max_gap_ms, self.max_chunk_ms)
-        results: list[TranscriptSegment] = []
-
-        total_ms = sum(s.duration_ms for s in merged)
-        pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
-
         frame_size = sample_width * n_channels
 
-        for i, chunk in enumerate(merged):
-            client = self.clients[i % len(self.clients)]
-
-            # Slice audio in memory
+        def slice_chunk(chunk: SpeechSegment) -> bytes:
             start_sample = chunk.start_ms * sample_rate // 1000
             end_sample = chunk.end_ms * sample_rate // 1000
             chunk_frames = raw_frames[start_sample * frame_size : end_sample * frame_size]
-
             buf = io.BytesIO()
             with wave.open(buf, "wb") as wf:
                 wf.setnchannels(n_channels)
                 wf.setsampwidth(sample_width)
                 wf.setframerate(sample_rate)
                 wf.writeframes(chunk_frames)
+            return buf.getvalue()
 
-            transcript_segs = client.transcribe_bytes(buf.getvalue(), self.language)
-
+        def transcribe_one(i: int, chunk: SpeechSegment) -> list[TranscriptSegment]:
+            client = self.clients[i % len(self.clients)]
+            transcript_segs = client.transcribe_bytes(slice_chunk(chunk), self.language)
             for seg in transcript_segs:
                 # Offset timestamps to absolute position
                 seg.start_ms += chunk.start_ms
                 seg.end_ms += chunk.start_ms
                 # Assign speaker from the diarization chunk
                 seg.speaker = self._find_speaker(seg.start_ms, seg.end_ms, segments)
-                results.append(seg)
+            return transcript_segs
 
-            pbar.update(chunk.duration_ms)
+        total_ms = sum(s.duration_ms for s in merged)
+        pbar = tqdm(total=total_ms, unit="ms", unit_scale=True, desc="  Transcribing", leave=False)
+
+        # Dispatch chunks concurrently across servers. Results are stored by
+        # chunk index so the output order is independent of completion order.
+        max_workers = min(len(merged), self.max_inflight)
+        chunk_results: list[list[TranscriptSegment] | None] = [None] * len(merged)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            future_to_idx = {
+                pool.submit(transcribe_one, i, chunk): i for i, chunk in enumerate(merged)
+            }
+            for future in as_completed(future_to_idx):
+                i = future_to_idx[future]
+                chunk_results[i] = future.result()
+                pbar.update(merged[i].duration_ms)
 
         pbar.close()
+
+        results: list[TranscriptSegment] = []
+        for chunk_segs in chunk_results:
+            if chunk_segs:
+                results.extend(chunk_segs)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
         speech_duration_ms = max((s.end_ms for s in segments), default=0)
@@ -271,6 +291,7 @@ class Transcriber:
                 "speech_duration_ms": speech_duration_ms,
                 "elapsed_ms": round(elapsed_ms),
                 "speech_rtf": round(speech_rtf, 2),
+                "workers": max_workers,
             },
         )
         return results
