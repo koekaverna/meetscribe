@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MeetScribe</title>
-    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
     <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Alpine.js -->
@@ -16,9 +16,6 @@
     {% include "partials/tailwind_config.html" %}
     <style>
         [x-cloak] { display: none !important; }
-        .step-active { @apply bg-primary-600 text-white; }
-        .step-complete { @apply bg-green-500 text-white; }
-        .step-pending { @apply bg-gray-200 text-gray-600; }
         .drag-ghost { opacity: 0.5; }
         .drag-chosen { opacity: 0.8; }
         /* Material Design ripple effect */
@@ -133,10 +130,10 @@
         </footer>
     </div>
 
-    <script src="/static/js/shell.js"></script>
-    <script src="/static/js/workflow-page.js"></script>
-    <script src="/static/js/sessions-page.js"></script>
-    <script src="/static/js/speakers-page.js"></script>
-    <script src="/static/js/admin-page.js"></script>
+    <script src="{{ static_url('js/shell.js') }}"></script>
+    <script src="{{ static_url('js/workflow-page.js') }}"></script>
+    <script src="{{ static_url('js/sessions-page.js') }}"></script>
+    <script src="{{ static_url('js/speakers-page.js') }}"></script>
+    <script src="{{ static_url('js/admin-page.js') }}"></script>
 </body>
 </html>

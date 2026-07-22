@@ -18,6 +18,7 @@ from meetscribe.config import get_config
 from meetscribe.database import close_all_db, init_db
 from meetscribe.log import StructuredFormatter, apply_log_level
 
+from .assets import STATIC_DIR, static_url
 from .deps import CSRF_COOKIE_NAME, get_admin_user, get_current_user, get_current_user_or_none
 from .routes import admin, auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
@@ -29,7 +30,6 @@ CSRF_FORM_FIELD = "csrf_token"
 # Package directories
 WEB_DIR = Path(__file__).parent
 TEMPLATES_DIR = WEB_DIR / "templates"
-STATIC_DIR = WEB_DIR / "static"
 
 # Paths that don't require authentication
 PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
@@ -93,7 +93,21 @@ def create_app() -> FastAPI:
     # Make csrf_token() available in all templates
     templates.env.globals["csrf_token"] = csrf_token_for_request
     templates.env.globals["csrf_field_name"] = CSRF_FORM_FIELD
+    templates.env.globals["static_url"] = static_url
     app.state.templates = templates
+
+    @app.middleware("http")
+    async def cache_control_middleware(
+        request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        """Long-cache versioned static assets; force HTML revalidation."""
+        response: Response = await call_next(request)
+        if request.url.path.startswith("/static"):
+            if "v" in request.query_params:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     @app.middleware("http")
     async def csrf_cookie_middleware(
