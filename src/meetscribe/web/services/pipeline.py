@@ -295,7 +295,16 @@ class PipelineRunner:
                 # Diarize track (auto-diarize, or an open-space mic filtered to its speaker)
                 segments = diarization.diarize(track_path)
                 if filter_to_speaker and speaker_name:
+                    found = sorted({s.speaker for s in segments if s.speaker})
                     segments = filter_segments_by_speaker(segments, speaker_name)
+                    if not segments and found:
+                        # A silent skip here hides a mistyped name: the track has
+                        # voices, just none labeled with the assigned speaker.
+                        raise ValueError(
+                            f"Track {track_num}: open-space speaker '{speaker_name}' does not"
+                            f" match any voice in the track (found: {', '.join(found)})."
+                            " Check the assigned name in the Configure step."
+                        )
                 if not segments:
                     yield {
                         "step": step,

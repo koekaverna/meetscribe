@@ -33,7 +33,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
                 <p class="text-lg font-medium text-green-600">Extraction Complete!</p>
-                <p class="text-gray-600" x-text="'Found ' + (session?.samples?.length || 0) + ' audio samples'"></p>
+                <p class="text-gray-600" x-text="session?.samples?.length
+                    ? `Found ${session.samples.length} samples of new speakers`
+                    : 'No new speakers to enroll — all voices matched enrolled speakers or were too short'"></p>
             </div>
         </div>
 

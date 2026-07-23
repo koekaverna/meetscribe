@@ -1,11 +1,15 @@
-"""Enrolled speakers routes (team-scoped; admin-only, gated at router include)."""
+"""Enrolled speakers routes (team-scoped).
+
+The name list is available to any team member (the workflow needs it for
+suggestions and open-space assignment); mutations and sample access are
+admin-only."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from meetscribe.errors import SpeachesAPIError
 
-from ..deps import get_current_user
+from ..deps import get_admin_user, get_current_user
 from ..models import GlobalSpeaker, SpeakerRename, SpeakerSample
 from ..services.auth import AuthUser
 from ..services.pipeline import (
@@ -26,7 +30,7 @@ def list_speakers(user: AuthUser = Depends(get_current_user)) -> list[GlobalSpea
     return list_team_speakers(user.team_name)
 
 
-@router.patch("/{name}")
+@router.patch("/{name}", dependencies=[Depends(get_admin_user)])
 def rename_speaker(
     name: str, data: SpeakerRename, user: AuthUser = Depends(get_current_user)
 ) -> dict[str, str]:
@@ -42,7 +46,7 @@ def rename_speaker(
     return {"status": "renamed"}
 
 
-@router.delete("/{name}")
+@router.delete("/{name}", dependencies=[Depends(get_admin_user)])
 def delete_speaker(name: str, user: AuthUser = Depends(get_current_user)) -> dict[str, str]:
     """Remove a speaker from the user's team."""
     if not remove_team_speaker(name, user.team_name):
@@ -50,7 +54,9 @@ def delete_speaker(name: str, user: AuthUser = Depends(get_current_user)) -> dic
     return {"status": "deleted"}
 
 
-@router.get("/{name}/samples", response_model=list[SpeakerSample])
+@router.get(
+    "/{name}/samples", response_model=list[SpeakerSample], dependencies=[Depends(get_admin_user)]
+)
 def list_samples(name: str, user: AuthUser = Depends(get_current_user)) -> list[SpeakerSample]:
     """List enrolled samples of a speaker."""
     try:
@@ -59,7 +65,7 @@ def list_samples(name: str, user: AuthUser = Depends(get_current_user)) -> list[
         raise HTTPException(status_code=404, detail="Speaker not found")
 
 
-@router.get("/{name}/samples/{filename}/audio")
+@router.get("/{name}/samples/{filename}/audio", dependencies=[Depends(get_admin_user)])
 def get_sample_audio(
     name: str, filename: str, user: AuthUser = Depends(get_current_user)
 ) -> FileResponse:
@@ -71,7 +77,7 @@ def get_sample_audio(
     return FileResponse(path, media_type="audio/wav")
 
 
-@router.delete("/{name}/samples/{filename}")
+@router.delete("/{name}/samples/{filename}", dependencies=[Depends(get_admin_user)])
 def delete_sample(
     name: str, filename: str, user: AuthUser = Depends(get_current_user)
 ) -> dict[str, str]:
