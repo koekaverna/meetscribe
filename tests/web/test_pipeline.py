@@ -90,7 +90,9 @@ class TestTranscribeTrackNum:
 class TestOpenSpaceFilter:
     """Open-space tracks must fail loudly when the assigned name matches no voice."""
 
-    def _run(self, tmp_path: Path, assigned: str, diarized: list[SpeechSegment]) -> list[dict]:
+    def _run(
+        self, tmp_path: Path, assigned: str, diarized: list[SpeechSegment]
+    ) -> tuple[list[dict], MagicMock]:
         track = _make_wav(tmp_path / "track1.wav")
 
         mock_diarization = MagicMock()
@@ -109,7 +111,8 @@ class TestOpenSpaceFilter:
             patch.object(runner, "_create_diarization", return_value=mock_diarization),
             patch.object(runner, "_create_transcriber", return_value=mock_transcriber),
         ):
-            return list(runner.transcribe([track], {1: assigned}, track_open_space={1: True}))
+            results = list(runner.transcribe([track], {1: assigned}, track_open_space={1: True}))
+        return results, mock_transcriber
 
     def test_mismatched_name_raises_with_found_speakers(self, tmp_path: Path) -> None:
         diarized = [
@@ -123,17 +126,23 @@ class TestOpenSpaceFilter:
         assert "Стародубцев Евгений" in msg
         assert "Unknown-1" in msg
 
-    def test_matching_name_transcribes_track(self, tmp_path: Path) -> None:
+    def test_matching_name_transcribes_only_assigned_segments(self, tmp_path: Path) -> None:
         diarized = [
             SpeechSegment(0, 1000, "Alice"),
             SpeechSegment(1000, 2000, "Unknown-1"),
         ]
-        results = self._run(tmp_path, "Alice", diarized)
+        results, transcriber = self._run(tmp_path, "Alice", diarized)
+
+        # Only Alice's segments reach STT — Unknown-1 is filtered out
+        sent = transcriber.transcribe_segments.call_args.args[1]
+        assert [(s.start_ms, s.speaker) for s in sent] == [(0, "Alice")]
+
         segments = results[-1]["segments"]
         assert len(segments) == 1
         assert segments[0]["speaker"] == "Alice"
 
     def test_track_without_speech_is_skipped_quietly(self, tmp_path: Path) -> None:
-        results = self._run(tmp_path, "Alice", [])
+        results, transcriber = self._run(tmp_path, "Alice", [])
         messages = [r.get("message", "") for r in results]
         assert any("No speech found" in m for m in messages)
+        transcriber.transcribe_segments.assert_not_called()
