@@ -218,10 +218,15 @@ document.addEventListener('alpine:init', () => {
         async loadGlobalSpeakers() {
             try {
                 const response = await authFetch('/api/speakers');
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 this.globalSpeakers = await response.json();
             } catch (error) {
                 console.error('Failed to load speakers:', error);
             }
+        },
+
+        isEnrolledSpeaker(name) {
+            return !!name && this.globalSpeakers.some(s => s.name === name);
         },
 
         canGoToStep(step) {

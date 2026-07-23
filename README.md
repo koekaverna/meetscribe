@@ -6,13 +6,17 @@ Meeting transcription with speaker diarization using remote [speaches](https://g
 
 - **Remote processing**: diarization, speaker embeddings, and transcription via speaches API (OpenAI-compatible)
 - **Web UI**: Browser-based interface with step-by-step workflow
+- **Session archive**: browse, resume, and delete past sessions; users see their own, admins see the whole team's
+- **Speakers dashboard** (admin): enrolled speakers with sample playback, curation, rename, and voiceprint recompute
+- **Admin panel**: user and team management, Speaches server status, disk usage, error log
 - **User authentication**: Login/password auth with team-scoped access
 - **Multi-track processing**: Handle video files with multiple audio tracks or individual audio files
 - **Speaker enrollment**: Register speakers with voice samples for automatic identification
 - **Speaker diarization**: Automatically separate and identify speakers without enrollment
 - **Multi-team support**: Separate speaker databases and sessions per team
-- **Parallel transcription**: Distribute chunks across multiple servers
+- **Concurrent transcription**: chunks are sent to servers in parallel (`transcription.max_inflight`)
 - **Flexible input**: Video files, audio files, directories, or glob patterns
+- **Desktop client**: a separate Electron app records mic + system audio and uploads via the API
 
 ## Installation
 
@@ -102,7 +106,7 @@ Located at `MEETSCRIBE_DATA_DIR/config.yaml` (by default `./data/config.yaml`). 
 - **`servers`** — List of speaches API servers (URL + name)
 - **`diarization`** — Server-side diarization: server, model, timeout
 - **`embeddings`** — Speaker embeddings: server, model, identification thresholds, sample extraction parameters
-- **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging, hallucination filtering
+- **`transcription`** — Speech-to-text: servers, model, language, timeout, segment merging, hallucination filtering, concurrency (`max_inflight`, 0 = auto)
 - **`web`** — Web UI: host, port, session TTL
 
 ## Web UI
@@ -137,10 +141,17 @@ The web UI guides you through a 6-step process:
 5. **Enroll** — Register speakers from samples
 6. **Transcribe** — Generate transcript with speaker attribution
 
+### Pages
+
+- **Sessions** — archive of past sessions with sorting, pagination, and bulk deletion; click a session to resume it at its current step
+- **Speakers** (admin) — enrolled speakers: listen to samples, delete bad ones (the voiceprint is recomputed), rename or remove speakers
+- **Admin** (admin) — users and teams, Speaches server health, disk usage, recent errors
+
 ### Access control
 
 - Each user belongs to a team
-- Sessions are visible only to users in the same team
+- Users see and delete their own sessions; admins see the whole team's
+- Speakers dashboard and admin panel are admin-only; the enrolled-name list is available to the whole team
 - Only admin users can register new users (in their own team)
 - Authentication uses HttpOnly cookies (works with SSE streaming)
 

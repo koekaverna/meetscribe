@@ -285,10 +285,20 @@ class TestDeleteSpeaker:
 
 
 class TestAdminOnly:
-    def test_regular_user_gets_403(self, auth_client: TestClient, web_db) -> None:
+    def test_regular_user_can_list_speakers(self, auth_client: TestClient, web_db) -> None:
+        # The workflow (step 2 suggestions, open-space assignment) needs the names
         _insert_voiceprint(web_db, "Alice")
-        assert auth_client.get("/api/speakers").status_code == 403
+        resp = auth_client.get("/api/speakers")
+        assert resp.status_code == 200
+        assert [s["name"] for s in resp.json()] == ["Alice"]
+
+    def test_regular_user_gets_403_on_mutations_and_samples(
+        self, auth_client: TestClient, web_db
+    ) -> None:
+        _insert_voiceprint(web_db, "Alice")
         assert auth_client.get("/api/speakers/Alice/samples").status_code == 403
+        assert auth_client.get("/api/speakers/Alice/samples/s0.wav/audio").status_code == 403
+        assert auth_client.delete("/api/speakers/Alice/samples/s0.wav").status_code == 403
         assert auth_client.patch("/api/speakers/Alice", json={"name": "X"}).status_code == 403
         assert auth_client.delete("/api/speakers/Alice").status_code == 403
 

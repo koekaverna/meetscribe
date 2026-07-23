@@ -180,7 +180,8 @@ def create_app() -> FastAPI:
         speakers.router,
         prefix="/api/speakers",
         tags=["speakers"],
-        dependencies=[Depends(get_admin_user)],
+        # name list is team-wide (workflow suggestions); admin gates are per-route
+        dependencies=[Depends(get_current_user)],
     )
     app.include_router(
         admin.router,
