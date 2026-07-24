@@ -43,7 +43,7 @@ def login(
         key=COOKIE_NAME,
         value=token,
         httponly=True,
-        samesite="strict",
+        samesite="lax",
         secure=get_secure_cookies(),
         max_age=get_session_ttl_days() * 86400,
         path="/",

@@ -122,7 +122,7 @@ def create_app() -> FastAPI:
                 key=CSRF_COOKIE_NAME,
                 value=token,
                 httponly=False,  # Must be readable by templates
-                samesite="strict",
+                samesite="lax",
                 secure=get_secure_cookies(),
                 path="/",
             )
