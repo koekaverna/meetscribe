@@ -1,8 +1,10 @@
 """Pipeline service wrappers for web UI using remote speaches API."""
 
 import logging
+import queue
 import shutil
 import tempfile
+import threading
 import wave
 from collections.abc import Generator
 from pathlib import Path
@@ -29,7 +31,11 @@ from meetscribe.pipeline import (
     compute_voiceprint,
     enroll_samples,
 )
-from meetscribe.pipeline.models import collect_sample_segments, filter_segments_by_speaker
+from meetscribe.pipeline.models import (
+    SpeechSegment,
+    collect_sample_segments,
+    filter_segments_by_speaker,
+)
 from meetscribe.team import TeamContext, resolve_team
 
 from ..models import GlobalSpeaker, SpeakerSample
@@ -45,6 +51,56 @@ def _make_extractor(cfg: AppConfig) -> EmbeddingExtractor:
         cfg.embeddings.min_duration_ms,
         model=cfg.embeddings.model,
     )
+
+
+def _transcribe_with_progress(
+    transcriber: Transcriber,
+    track_path: Path,
+    segments: list[SpeechSegment],
+    base: dict[str, Any],
+) -> Generator[dict, None, list[TranscriptSegment]]:
+    """Run transcribe_segments on a worker thread, yielding per-chunk progress events.
+
+    Streamed events carry only step/total/progress and deliberately omit
+    ``base["message"]``: the caller already emitted it on the initial progress-0
+    event, and re-sending it would make the UI log the "Transcribing..." line a
+    second time (it re-logs on progress 0/100).
+    """
+    no_more_progress = None
+    percent_queue: queue.Queue[int | None] = queue.Queue()
+    transcribed: list[TranscriptSegment] = []
+    failure: BaseException | None = None
+
+    def transcribe_and_report() -> None:
+        nonlocal failure
+        try:
+            transcribed.extend(
+                transcriber.transcribe_segments(
+                    track_path,
+                    segments,
+                    progress_callback=lambda done, total: percent_queue.put(
+                        round(done / total * 100) if total else 100
+                    ),
+                )
+            )
+        except BaseException as exc:
+            failure = exc
+        finally:
+            percent_queue.put(no_more_progress)
+
+    worker = threading.Thread(target=transcribe_and_report, daemon=True)
+    worker.start()
+
+    last_percent = 0
+    while (percent := percent_queue.get()) is not no_more_progress:
+        if percent != last_percent:
+            last_percent = percent
+            yield {"step": base["step"], "total": base["total"], "progress": percent}
+    worker.join()
+
+    if failure is not None:
+        raise failure
+    return transcribed
 
 
 class PipelineRunner:
@@ -315,14 +371,13 @@ class PipelineRunner:
 
                 step += 1
                 seg_count = len(segments)
-                yield {
+                base = {
                     "step": step,
                     "total": total_steps,
                     "message": f"Track {track_num}: Transcribing {seg_count} segments...",
-                    "progress": 0,
                 }
-
-                segs = transcriber.transcribe_segments(track_path, segments)
+                yield {**base, "progress": 0}
+                segs = yield from _transcribe_with_progress(transcriber, track_path, segments, base)
 
             for seg in segs:
                 seg.track_num = track_num

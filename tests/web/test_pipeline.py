@@ -87,6 +87,43 @@ class TestTranscribeTrackNum:
         assert segments[1]["track_num"] == 2
 
 
+class TestTranscribeProgress:
+    """Diarized transcription must stream honest per-chunk progress, not freeze."""
+
+    def test_progress_events_streamed_per_chunk(self, tmp_path: Path) -> None:
+        track = _make_wav(tmp_path / "track1.wav")
+
+        mock_diarization = MagicMock()
+        mock_diarization.diarize.return_value = [SpeechSegment(0, 1000, "Alice")]
+
+        def fake_transcribe_segments(
+            _path: Path, _segments: list[SpeechSegment], progress_callback: Any = None
+        ) -> list[TranscriptSegment]:
+            # Simulate four chunks finishing one after another.
+            for done in (250, 500, 750, 1000):
+                if progress_callback:
+                    progress_callback(done, 1000)
+            return [TranscriptSegment(0, 1000, "Hello", "Alice")]
+
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe_segments.side_effect = fake_transcribe_segments
+
+        runner = PipelineRunner()
+        runner._cfg = MagicMock()
+        runner._cfg.transcription.language = "en"
+
+        with (
+            patch.object(runner, "_resolve", return_value=MagicMock()),
+            patch.object(runner, "_create_diarization", return_value=mock_diarization),
+            patch.object(runner, "_create_transcriber", return_value=mock_transcriber),
+        ):
+            results = list(runner.transcribe([track], {1: None}))
+
+        progresses = [r["progress"] for r in results if "progress" in r]
+        assert progresses == [0, 25, 50, 75, 100]
+        assert results[-1]["segments"][0]["speaker"] == "Alice"
+
+
 class TestOpenSpaceFilter:
     """Open-space tracks must fail loudly when the assigned name matches no voice."""
 

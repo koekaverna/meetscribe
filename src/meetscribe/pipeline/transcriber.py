@@ -4,6 +4,7 @@ import io
 import logging
 import time
 import wave
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -204,6 +205,7 @@ class Transcriber:
         self,
         audio_path: Path,
         segments: list[SpeechSegment],
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> list[TranscriptSegment]:
         """Transcribe speech segments from an audio file.
 
@@ -213,6 +215,8 @@ class Transcriber:
         Args:
             audio_path: Path to the full audio track (16kHz mono WAV).
             segments: Diarized speech segments with speaker labels.
+            progress_callback: Called ``(completed_ms, total_ms)`` after each
+                chunk finishes, weighted by chunk duration.
 
         Returns:
             List of TranscriptSegment with text, timestamps, and speakers.
@@ -271,6 +275,7 @@ class Transcriber:
         # server busy. Results are collected by chunk index to stay deterministic.
         chunk_results: list[list[TranscriptSegment]] = [[] for _ in merged]
         max_workers = min(len(merged), self.max_inflight)
+        completed_ms = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(process_chunk, i, chunk): i for i, chunk in enumerate(merged)
@@ -280,6 +285,9 @@ class Transcriber:
                     i = futures[future]
                     chunk_results[i] = future.result()
                     pbar.update(merged[i].duration_ms)
+                    if progress_callback is not None:
+                        completed_ms += merged[i].duration_ms
+                        progress_callback(completed_ms, total_ms)
             except Exception:
                 # First failure aborts the run: drop still-queued chunks so the
                 # pool only waits out the ones already running.

@@ -564,7 +564,7 @@ document.addEventListener('alpine:init', () => {
                 }
                 if (data.message) {
                     this.transcriptionStatus = data.message;
-                    if (data.progress === undefined || data.progress === 0 || data.progress === 100) {
+                    if (data.progress === undefined || data.progress === 0) {
                         this.transcriptionLogs.push(data.message);
                     }
                 }

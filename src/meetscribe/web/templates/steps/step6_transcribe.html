@@ -101,10 +101,6 @@
                         :style="'width: ' + (((transcriptionStep - 1) + transcriptionProgress / 100) / transcriptionTotal * 100) + '%'"
                     ></div>
                 </div>
-                <!-- Sub-step progress indicator -->
-                <div x-show="transcriptionProgress > 0 && transcriptionProgress < 100" class="text-xs text-gray-500 text-center">
-                    <span x-text="'Transcribing: ' + transcriptionProgress + '%'"></span>
-                </div>
             </div>
         </div>
 
