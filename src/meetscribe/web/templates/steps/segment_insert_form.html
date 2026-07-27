@@ -9,6 +9,7 @@
     <div class="flex flex-wrap items-center gap-2">
         <select
             x-model="insertSpeaker"
+            aria-label="Speaker"
             class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
         >
             <option value="">Unknown</option>
@@ -22,6 +23,7 @@
             x-model="insertNewName"
             type="text"
             placeholder="Speaker name"
+            aria-label="New speaker name"
             class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
         >
         <span class="text-xs text-gray-400">Time is taken from the gap — adjust via edit afterwards</span>

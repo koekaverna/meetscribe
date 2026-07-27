@@ -969,6 +969,11 @@ document.addEventListener('alpine:init', () => {
                 return true;
             } catch (error) {
                 console.error('Segment edit failed:', error);
+                // authFetch throws 'Not authenticated' while redirecting to /login on 401 —
+                // don't alert then, it's a normal auth redirect, not a network failure
+                if (error.message !== 'Not authenticated') {
+                    alert('Edit failed: network error');
+                }
                 return false;
             } finally {
                 this.segmentBusy = false;
@@ -1048,6 +1053,10 @@ document.addEventListener('alpine:init', () => {
             const speaker = this.insertSpeaker === '__new__'
                 ? this.insertNewName.trim()
                 : this.insertSpeaker;
+            if (this.insertSpeaker === '__new__' && !speaker) {
+                alert('Enter a name for the new speaker');
+                return;
+            }
             const ok = await this._segmentRequest(
                 `/api/session/${this.session.id}/segments`,
                 {
