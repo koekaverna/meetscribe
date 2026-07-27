@@ -1,6 +1,6 @@
 # MeetScribe — Roadmap
 
-> v0.5.6 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
+> v0.5.13 → v1.1 | 8 phases | App (Web + Desktop) · CLI removed at Phase 4
 
 ## Current State
 
@@ -130,7 +130,7 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - [x] Delete sessions with their files: per-row + bulk delete with checkbox selection (`POST /api/session/bulk-delete`)
 - [x] Extras: lazy session creation (no empty sessions from just opening the app; also fixed a double-`init()` bug that created an orphan session per page load), dead `cleanup_old_sessions`/`SESSION_TTL` removed (TTL purge is incompatible with a permanent archive)
 
-### Participant management (speakers dashboard) — ✅ done
+### Participant management (speakers dashboard) — ✅ done (v0.5.7)
 
 - [x] Enrolled speakers list with sample playback (`/speakers`, admin-only like the admin panel: name, model, sample count, total duration, enrollment date)
 - [x] Play / delete individual samples to curate voiceprint quality — deleting a sample recomputes the voiceprint from the remaining ones; the last sample can't be deleted (delete the speaker instead)
@@ -422,7 +422,7 @@ llm:
 |-------|---------|-------|--------|-------------|
 | 1 | v0.4 | Foundation & Hardening | ✅ done | Tests, CI, mutation testing, reliability |
 | 2 | v0.5 | Storage & Playback | ✅ done | Segment storage, multi-track sync playback |
-| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6); next: participant mgmt, transcript editing |
+| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6), speakers dashboard (v0.5.7); next: transcript editing |
 | 4 | v0.7 | Desktop (Electron client) | in progress | Thin client + dual-channel recording (separate repo, v0.1 done); **CLI removed** |
 | 5 | v0.8 | Search & Analytics | planned | Full-text search, speaker stats, export |
 | 6 | v0.9 | Real-time & Integrations | planned | WebSocket streaming, webhooks, API |
