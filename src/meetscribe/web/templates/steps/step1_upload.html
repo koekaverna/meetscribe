@@ -1,8 +1,8 @@
 <!-- Step 1: Upload -->
 <div class="space-y-6">
     <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-800">Upload Audio/Video</h2>
-        <p class="text-gray-600 mt-2">Upload a video file with multiple audio tracks or individual audio files</p>
+        <h2 class="text-2xl font-bold text-gray-800">{{ t('step1.title') }}</h2>
+        <p class="text-gray-600 mt-2">{{ t('step1.subtitle') }}</p>
     </div>
 
     <!-- Drop Zone -->
@@ -25,14 +25,14 @@
         <svg class="mx-auto h-10 w-10 sm:h-16 sm:w-16 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
         </svg>
-        <p class="mt-2 sm:mt-4 text-base sm:text-lg font-medium text-gray-700">Drop files here or click to browse</p>
-        <p class="mt-2 text-sm text-gray-500">Supports MP4, MKV, AVI, MOV, WAV, MP3, FLAC</p>
+        <p class="mt-2 sm:mt-4 text-base sm:text-lg font-medium text-gray-700">{{ t('step1.drop_files') }}</p>
+        <p class="mt-2 text-sm text-gray-500">{{ t('step1.supported_formats') }}</p>
     </div>
 
     <!-- Upload Progress -->
     <div x-show="uploading" class="space-y-2">
         <div class="flex justify-between text-sm text-gray-600">
-            <span>Uploading...</span>
+            <span>{{ t('step1.uploading') }}</span>
             <span x-text="uploadProgress + '%'"></span>
         </div>
         <div class="w-full bg-gray-200 rounded-full h-2">
@@ -42,7 +42,7 @@
 
     <!-- Track List -->
     <div x-show="session && session.tracks && session.tracks.length > 0" class="space-y-3">
-        <h3 class="font-semibold text-gray-700">Uploaded Tracks</h3>
+        <h3 class="font-semibold text-gray-700">{{ t('step1.uploaded_tracks') }}</h3>
         <template x-for="track in (session?.tracks || [])" :key="track.track_num">
             <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl shadow-sm hover:shadow-md transition-shadow">
                 <div class="flex items-center space-x-4">
@@ -52,7 +52,7 @@
                         </svg>
                     </div>
                     <div>
-                        <p class="font-medium text-gray-800" x-text="'Track ' + track.track_num"></p>
+                        <p class="font-medium text-gray-800" x-text="t('step1.track_label', { n: track.track_num })"></p>
                         <p class="text-sm text-gray-500" x-text="track.filename"></p>
                     </div>
                 </div>
@@ -92,7 +92,7 @@
             :class="session && session.tracks && session.tracks.length > 0 ? 'bg-primary-600 hover:bg-primary-700' : 'bg-gray-300 cursor-not-allowed'"
             class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
-            Next: Configure Tracks
+            {{ t('step1.next_configure') }}
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>

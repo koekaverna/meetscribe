@@ -65,7 +65,7 @@ document.addEventListener('alpine:init', () => {
             } catch (error) {
                 if (requestId !== this.samplesRequestId) return;
                 console.error('Failed to load samples:', error);
-                this.actionError = 'Failed to load samples.';
+                this.actionError = t('speakers.samples_load_failed');
             } finally {
                 if (requestId === this.samplesRequestId) this.samplesLoading = false;
             }
@@ -121,7 +121,7 @@ document.addEventListener('alpine:init', () => {
         async removeSample(filename) {
             // Snapshot before awaiting — openSpeaker may change mid-request
             const speaker = this.openSpeaker;
-            if (!confirm(`Delete sample "${filename}"? The voiceprint will be recomputed from the remaining samples.`)) return;
+            if (!confirm(t('speakers.confirm_delete_sample', { filename }))) return;
             this.actionError = '';
             try {
                 const response = await authFetch(
@@ -141,7 +141,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async removeSpeaker(name) {
-            if (!confirm(`Delete speaker "${name}" with all enrolled samples? This cannot be undone.`)) return;
+            if (!confirm(t('speakers.confirm_delete_speaker', { name }))) return;
             this.actionError = '';
             try {
                 const response = await authFetch(
@@ -154,7 +154,7 @@ document.addEventListener('alpine:init', () => {
                 await this.load();
             } catch (error) {
                 console.error('Failed to delete speaker:', error);
-                this.actionError = 'Failed to delete speaker.';
+                this.actionError = t('speakers.speaker_delete_failed');
             }
         },
 
@@ -205,14 +205,31 @@ document.addEventListener('alpine:init', () => {
             }[this.quality(s)];
         },
 
+        // Translated tier label for the visible tooltip (quality() returns logic keys)
+        qualityLabel(s) {
+            return {
+                good: t('speakers.quality_good'),
+                fair: t('speakers.quality_fair'),
+                low: t('speakers.quality_low'),
+            }[this.quality(s)];
+        },
+
+        qualityTitle(s) {
+            return t('speakers.quality_title', { tier: this.qualityLabel(s) });
+        },
+
         qualityStats(s) {
-            const samples = s.sample_count === 1 ? 'sample' : 'samples';
+            const samples = s.sample_count === 1
+                ? t('speakers.sample_singular')
+                : t('speakers.sample_plural');
             return `${s.sample_count} ${samples} · ${this.formatDuration(s.total_duration_ms)}`;
         },
 
         formatDuration(ms) {
             const s = Math.round(ms / 1000);
-            return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+            return s >= 60
+                ? t('speakers.duration_min_sec', { m: Math.floor(s / 60), s: s % 60 })
+                : t('speakers.duration_sec', { s });
         },
 
         formatDate(t) {

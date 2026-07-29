@@ -36,7 +36,7 @@ document.addEventListener('alpine:init', () => {
             const response = await authFetch(url, options);
             if (!response.ok) {
                 const data = await response.json().catch(() => ({}));
-                throw new Error(data.detail || `HTTP ${response.status}`);
+                throw new Error(data.detail || t('admin.error_http', { status: response.status }));
             }
             return response;
         },
@@ -108,8 +108,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteUser(u) {
-            const msg = `Delete user "${u.username}"?\n\n`
-                + 'Their sessions will remain but lose their creator. This cannot be undone.';
+            const msg = t('admin.confirm_delete_user', { name: u.username });
             if (!confirm(msg)) return;
             this.actionError = null;
             try {
@@ -122,8 +121,8 @@ document.addEventListener('alpine:init', () => {
 
         async toggleAdmin(u) {
             const msg = u.is_admin
-                ? `Revoke admin from "${u.username}"?`
-                : `Make "${u.username}" an admin of team "${u.team_name}"?`;
+                ? t('admin.confirm_revoke_admin', { name: u.username })
+                : t('admin.confirm_make_admin', { name: u.username, team: u.team_name });
             if (!confirm(msg)) return;
             this.actionError = null;
             try {
@@ -141,8 +140,8 @@ document.addEventListener('alpine:init', () => {
         async resetPassword(u) {
             const self = u.username === this.currentUser;
             const password = prompt(self
-                ? 'New password for your own account (min 8 chars). You will be logged out:'
-                : `New password for "${u.username}" (min 8 chars):`);
+                ? t('admin.prompt_reset_password_self')
+                : t('admin.prompt_reset_password', { name: u.username }));
             if (password === null) return;
             this.actionError = null;
             try {
@@ -156,7 +155,7 @@ document.addEventListener('alpine:init', () => {
                     window.location.href = '/login';
                     return;
                 }
-                alert(`Password for "${u.username}" changed. Their sessions were logged out.`);
+                alert(t('admin.alert_password_changed', { name: u.username }));
             } catch (error) {
                 this.actionError = error.message;
             }
@@ -189,10 +188,7 @@ document.addEventListener('alpine:init', () => {
 
         async deleteTeam(t) {
             // Voiceprints cascade on team delete; users/sessions block it server-side
-            const msg = `Delete team "${t.name}"?\n\n`
-                + `This PERMANENTLY deletes all its voiceprints (${t.voiceprint_count}) `
-                + 'and enrolled speaker samples. This cannot be undone.\n\n'
-                + 'Teams that still have users or sessions cannot be deleted.';
+            const msg = t('admin.confirm_delete_team', { name: t.name, count: t.voiceprint_count });
             if (!confirm(msg)) return;
             this.actionError = null;
             try {

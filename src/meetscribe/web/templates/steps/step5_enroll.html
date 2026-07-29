@@ -1,8 +1,8 @@
 <!-- Step 5: Enroll Speakers -->
 <div class="space-y-6">
     <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-800">Enroll Speakers</h2>
-        <p class="text-gray-600 mt-2">Create voiceprints for identified speakers</p>
+        <h2 class="text-2xl font-bold text-gray-800">{{ t('step5.title') }}</h2>
+        <p class="text-gray-600 mt-2">{{ t('step5.subtitle') }}</p>
     </div>
 
     <!-- Speakers to Enroll -->
@@ -18,8 +18,7 @@
                         </div>
                         <div>
                             <p class="font-medium text-gray-800" x-text="speaker.name"></p>
-                            <p class="text-sm text-gray-500">
-                                <span x-text="getSpeakerSampleCount(speaker.id)"></span> samples assigned
+                            <p class="text-sm text-gray-500" x-text="t('step5.samples_assigned', { n: getSpeakerSampleCount(speaker.id) })">
                             </p>
                         </div>
                     </div>
@@ -28,13 +27,13 @@
                             x-show="getSpeakerSampleCount(speaker.id) > 0"
                             class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium"
                         >
-                            Ready
+                            {{ t('step5.ready') }}
                         </span>
                         <span
                             x-show="getSpeakerSampleCount(speaker.id) === 0"
                             class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm font-medium"
                         >
-                            No samples
+                            {{ t('step5.no_samples') }}
                         </span>
                     </div>
                 </div>
@@ -42,7 +41,7 @@
         </template>
 
         <div x-show="!session?.speakers || session.speakers.length === 0" class="text-center py-8 text-gray-500">
-            <p>No speakers to enroll. Go back and organize samples first.</p>
+            <p>{{ t('step5.no_speakers_to_enroll') }}</p>
         </div>
     </div>
 
@@ -65,8 +64,8 @@
                 <svg class="mx-auto h-20 w-20 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                 </svg>
-                <p class="text-lg font-medium text-green-600">Enrollment Complete!</p>
-                <p class="text-gray-600">Speakers have been enrolled and are ready for transcription.</p>
+                <p class="text-lg font-medium text-green-600">{{ t('step5.enrollment_complete') }}</p>
+                <p class="text-gray-600">{{ t('step5.enrollment_complete_desc') }}</p>
             </div>
         </div>
 
@@ -86,7 +85,7 @@
                 <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path>
                 </svg>
-                Enroll Speakers
+                {{ t('step5.enroll_speakers') }}
             </button>
         </div>
 
@@ -103,13 +102,13 @@
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
             </svg>
-            Back
+            {{ t('step5.back') }}
         </button>
         <button
             @click="nextStep()"
             class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
-            Next: Transcribe
+            {{ t('step5.next_transcribe') }}
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>

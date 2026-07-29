@@ -1,18 +1,51 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_lang() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MeetScribe — {% block title %}Login{% endblock %}</title>
+    <script>window.__I18N__ = {{ i18n_catalog()|tojson }}; window.__LANG__ = "{{ current_lang() }}";</script>
     <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
     <script src="https://cdn.tailwindcss.com"></script>
     {% include "partials/tailwind_config.html" %}
+    <script>
+        // Minimal language switch for pages without shell.js (login).
+        function getCookie(name) {
+            const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+            return match ? decodeURIComponent(match[1]) : null;
+        }
+        window.setLang = async function (lang) {
+            if (lang === window.__LANG__) return;
+            const form = new URLSearchParams();
+            form.set('lang', lang);
+            form.set('csrf_token', getCookie('meetscribe_csrf') || '');
+            try {
+                await fetch('/api/lang', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: form.toString(),
+                });
+            } finally {
+                window.location.reload();
+            }
+        };
+    </script>
 </head>
 <body class="bg-gray-100 min-h-[100dvh] flex items-center justify-center">
     <div class="w-full max-w-md">
+        <div class="flex justify-center mb-4">
+            <div class="flex items-center text-xs font-medium border border-gray-200 rounded-lg overflow-hidden bg-white" title="{{ t('nav.language') }}">
+                <button type="button" onclick="setLang('en')"
+                    class="px-3 py-1.5 transition-colors {{ 'bg-gray-800 text-white' if current_lang() == 'en' else 'text-gray-500 hover:bg-gray-100' }}"
+                >EN</button>
+                <button type="button" onclick="setLang('ru')"
+                    class="px-3 py-1.5 transition-colors {{ 'bg-gray-800 text-white' if current_lang() == 'ru' else 'text-gray-500 hover:bg-gray-100' }}"
+                >RU</button>
+            </div>
+        </div>
         <div class="text-center mb-8">
             <h1 class="text-3xl font-bold text-gray-800">MeetScribe</h1>
-            <p class="text-gray-500 mt-1">Meeting transcription with speaker diarization</p>
+            <p class="text-gray-500 mt-1">{{ t('shell.subtitle') }}</p>
         </div>
 
         <div class="bg-white rounded-xl shadow-md p-8">

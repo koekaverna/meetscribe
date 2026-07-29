@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ current_lang() }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MeetScribe</title>
+    <script>window.__I18N__ = {{ i18n_catalog()|tojson }}; window.__LANG__ = "{{ current_lang() }}";</script>
     <link rel="icon" type="image/svg+xml" href="{{ static_url('favicon.svg') }}">
     <!-- TailwindCSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -57,7 +58,7 @@
             <div class="flex items-center justify-between">
                 <div class="min-w-0">
                     <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">MeetScribe</h1>
-                    <p class="text-gray-600 text-sm sm:text-base mt-1">Meeting transcription with speaker diarization</p>
+                    <p class="text-gray-600 text-sm sm:text-base mt-1">{{ t('shell.subtitle') }}</p>
                 </div>
                 <!-- User actions -->
                 <div class="flex items-center gap-1 sm:gap-2 shrink-0">
@@ -65,53 +66,64 @@
                         @click="navigate('/sessions')"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
                         :class="activePage === 'sessions' && 'bg-gray-100 text-gray-800'"
-                        title="Session archive"
+                        title="{{ t('nav.sessions_title') }}"
                     >
                         <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path>
                         </svg>
-                        <span class="hidden sm:inline">Sessions</span>
+                        <span class="hidden sm:inline">{{ t('nav.sessions') }}</span>
                     </button>
                     {% if is_admin %}
                     <button
                         @click="navigate('/speakers')"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
                         :class="activePage === 'speakers' && 'bg-gray-100 text-gray-800'"
-                        title="Enrolled speakers"
+                        title="{{ t('nav.speakers_title') }}"
                     >
                         <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
                         </svg>
-                        <span class="hidden sm:inline">Speakers</span>
+                        <span class="hidden sm:inline">{{ t('nav.speakers') }}</span>
                     </button>
                     <button
                         @click="navigate('/admin')"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
                         :class="activePage === 'admin' && 'bg-gray-100 text-gray-800'"
-                        title="Admin panel"
+                        title="{{ t('nav.admin_title') }}"
                     >
                         <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         </svg>
-                        <span class="hidden sm:inline">Admin</span>
+                        <span class="hidden sm:inline">{{ t('nav.admin') }}</span>
                     </button>
                     {% endif %}
                     <button
-                        @click="if(confirm('Start a new session? Current progress will be lost.')) newWorkflowSession()"
+                        @click="if(confirm(t('shell.confirm_new_session'))) newWorkflowSession()"
                         class="px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                        title="Start new session"
+                        title="{{ t('nav.new_title') }}"
                     >
                         <svg class="inline-block w-5 h-5 sm:mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                         </svg>
-                        <span class="hidden sm:inline">New</span>
+                        <span class="hidden sm:inline">{{ t('nav.new') }}</span>
                     </button>
+                    <!-- Language switch -->
+                    <div class="flex items-center text-xs font-medium border border-gray-200 rounded-lg overflow-hidden" title="{{ t('nav.language') }}">
+                        <button type="button" @click="setLang('en')"
+                            class="px-2 py-1.5 transition-colors"
+                            :class="window.__LANG__ === 'en' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'"
+                        >EN</button>
+                        <button type="button" @click="setLang('ru')"
+                            class="px-2 py-1.5 transition-colors"
+                            :class="window.__LANG__ === 'ru' ? 'bg-gray-800 text-white' : 'text-gray-500 hover:bg-gray-100'"
+                        >RU</button>
+                    </div>
                     <form method="POST" action="/auth/logout" class="inline">
                         <input type="hidden" name="{{ csrf_field_name }}" value="{{ csrf_token(request) }}">
                         <button type="submit"
                             class="px-3 py-2 text-sm text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Sign out"
+                            title="{{ t('nav.sign_out') }}"
                         >
                             <svg class="inline-block w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
@@ -126,7 +138,7 @@
 
         <!-- Footer -->
         <footer class="mt-4 sm:mt-8 text-center text-gray-500 text-xs sm:text-sm">
-            <p>MeetScribe - Meeting transcription with speaker diarization</p>
+            <p>{{ t('shell.footer') }}</p>
         </footer>
     </div>
 

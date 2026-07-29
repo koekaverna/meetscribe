@@ -1,0 +1,23 @@
+{
+  "login.title": "Login",
+  "login.heading": "Sign In",
+  "login.username": "Username",
+  "login.password": "Password",
+  "login.submit": "Sign In",
+  "login.contact_admin": "Contact your admin to create an account.",
+  "notfound.heading": "Session not found",
+  "notfound.description": "This session doesn't exist or you don't have access to it.",
+  "notfound.start_new": "Start New Session",
+  "workflow.step_upload": "Upload",
+  "workflow.step_configure": "Configure",
+  "workflow.step_extract": "Extract",
+  "workflow.step_samples": "Samples",
+  "workflow.step_enroll": "Enroll",
+  "workflow.step_transcribe": "Transcribe",
+  "workflow.upload_failed": "Upload failed",
+  "workflow.network_error": "Network error",
+  "workflow.upload_failed_reason": "Upload failed: {reason}",
+  "workflow.log_error": "Error: {message}",
+  "workflow.confirm_delete_speaker_bin": "Delete this speaker bin? Samples will be moved to unassigned.",
+  "workflow.confirm_delete_sample": "Delete this sample?"
+}

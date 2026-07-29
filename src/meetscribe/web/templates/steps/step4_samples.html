@@ -1,8 +1,8 @@
 <!-- Step 4: Organize Samples -->
 <div class="space-y-6">
     <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-800">Organize Speaker Samples</h2>
-        <p class="text-gray-600 mt-2">Drag samples to speaker bins to organize them for enrollment</p>
+        <h2 class="text-2xl font-bold text-gray-800">{{ t('step4.title') }}</h2>
+        <p class="text-gray-600 mt-2">{{ t('step4.subtitle') }}</p>
     </div>
 
     <!-- Add Speaker Button / Input -->
@@ -16,7 +16,7 @@
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
             </svg>
-            Add Speaker
+            {{ t('step4.add_speaker') }}
         </button>
 
         <!-- Input form with autocomplete -->
@@ -29,7 +29,7 @@
                     @input="filterSpeakers()"
                     @keydown.enter.prevent="confirmAddSpeaker()"
                     @keydown.escape="cancelAddSpeaker()"
-                    placeholder="Speaker name..."
+                    :placeholder="t('step4.speaker_name_placeholder')"
                     class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 w-48"
                 >
                 <!-- Dropdown suggestions -->
@@ -52,13 +52,13 @@
                 @click="confirmAddSpeaker()"
                 class="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
             >
-                Add
+                {{ t('step4.add') }}
             </button>
             <button
                 @click="cancelAddSpeaker()"
                 class="px-3 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
             >
-                Cancel
+                {{ t('step4.cancel') }}
             </button>
         </div>
     </div>
@@ -69,8 +69,8 @@
         <div class="w-full sm:w-1/3 sm:flex-shrink-0">
             <div class="bg-gray-100 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-4">
-                    <h3 class="font-semibold text-gray-700">Unassigned Samples</h3>
-                    <span class="text-sm text-gray-500" x-text="unassignedSamples.length + ' samples'"></span>
+                    <h3 class="font-semibold text-gray-700">{{ t('samples.unassigned_samples') }}</h3>
+                    <span class="text-sm text-gray-500" x-text="t('samples.samples_count', { n: unassignedSamples.length })"></span>
                 </div>
                 <div
                     class="speaker-bin space-y-2 min-h-[100px] max-h-[500px] overflow-y-auto p-2 border-2 border-dashed border-gray-300 rounded-lg"
@@ -111,7 +111,7 @@
                         </div>
                     </template>
                     <div x-show="unassignedSamples.length === 0" class="text-center py-8 text-gray-400">
-                        <p>No unassigned samples</p>
+                        <p>{{ t('samples.no_unassigned_samples') }}</p>
                     </div>
                 </div>
             </div>
@@ -132,7 +132,7 @@
                             >
                         </div>
                         <div class="flex items-center space-x-2 flex-shrink-0">
-                            <span class="text-sm text-blue-600" x-text="getSpeakerSamples(speaker.id).length + ' samples'"></span>
+                            <span class="text-sm text-blue-600" x-text="t('samples.samples_count', { n: getSpeakerSamples(speaker.id).length })"></span>
                             <button
                                 @click="deleteSpeakerBin(speaker.id)"
                                 class="text-blue-400 hover:text-red-500 transition-colors"
@@ -182,14 +182,14 @@
                             </div>
                         </template>
                         <div x-show="getSpeakerSamples(speaker.id).length === 0" class="text-center py-6 text-blue-400">
-                            <p>Drop samples here</p>
+                            <p>{{ t('samples.drop_samples_here') }}</p>
                         </div>
                     </div>
                 </div>
             </template>
             <!-- Empty state when no speakers -->
             <div x-show="!session?.speakers?.length" class="w-full text-center py-12 text-gray-400 border-2 border-dashed border-gray-300 rounded-xl">
-                <p>Click "Add Speaker" to create speaker bins</p>
+                <p>{{ t('step4.no_speakers_hint') }}</p>
             </div>
         </div>
     </div>
@@ -229,7 +229,7 @@
                 <button
                     @click="seekSample(-5)"
                     class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors text-xs font-medium"
-                    title="Rewind 5s"
+                    :title="t('step4.rewind_5s')"
                 >
                     -5s
                 </button>
@@ -248,7 +248,7 @@
                 <button
                     @click="seekSample(5)"
                     class="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors text-xs font-medium"
-                    title="Forward 5s"
+                    :title="t('step4.forward_5s')"
                 >
                     +5s
                 </button>
@@ -299,13 +299,13 @@
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
             </svg>
-            Back
+            {{ t('step4.back') }}
         </button>
         <button
             @click="nextStep()"
             class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium bg-primary-600 hover:bg-primary-700 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
-            Next: Enroll Speakers
+            {{ t('step4.next_enroll') }}
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>

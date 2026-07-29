@@ -1,6 +1,6 @@
 [project]
 name = "meetscribe"
-version = "0.5.13"
+version = "0.5.14"
 description = "Meeting transcription with speaker diarization using remote speaches API"
 readme = "README.md"
 license = "MIT"

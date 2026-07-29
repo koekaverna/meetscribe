@@ -12,6 +12,43 @@ async function authFetch(url, options = {}) {
     return response;
 }
 
+// Read a cookie value by name (null if absent).
+function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+// Global translation helper for JS/Alpine. Reads the catalog injected in <head>
+// (window.__I18N__). Missing key -> returns the key. Interpolates {name} tokens
+// from `params` (named braces, same as the Python-side t()).
+window.t = function (key, params) {
+    const catalog = window.__I18N__ || {};
+    let text = Object.prototype.hasOwnProperty.call(catalog, key) ? catalog[key] : key;
+    if (params) {
+        text = text.replace(/\{(\w+)\}/g, (m, name) =>
+            Object.prototype.hasOwnProperty.call(params, name) ? params[name] : m
+        );
+    }
+    return text;
+};
+
+// Persist the UI language (cookie + users.lang) then reload to re-render.
+window.setLang = async function (lang) {
+    if (lang === window.__LANG__) return;
+    const form = new URLSearchParams();
+    form.set('lang', lang);
+    form.set('csrf_token', getCookie('meetscribe_csrf') || '');
+    try {
+        await fetch('/api/lang', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form.toString(),
+        });
+    } finally {
+        window.location.reload();
+    }
+};
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('shell', () => ({
         // Named distinctively: shell methods are called from page-component scopes,

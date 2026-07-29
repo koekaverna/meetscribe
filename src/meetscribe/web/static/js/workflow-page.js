@@ -72,16 +72,26 @@ document.addEventListener('alpine:init', () => {
         _enrollmentES: null,
         _transcriptionES: null,
 
+        // Step names are resolved to the active language in init() via _buildSteps()
+        // (window.t is a global from shell.js, guaranteed loaded before this component).
+        // Each step keeps its i18n `key` so names can be recomputed on language change.
         steps: [
-            { name: 'Upload' },
-            { name: 'Configure' },
-            { name: 'Extract' },
-            { name: 'Samples' },
-            { name: 'Enroll' },
-            { name: 'Transcribe' }
+            { key: 'workflow.step_upload', name: 'Upload' },
+            { key: 'workflow.step_configure', name: 'Configure' },
+            { key: 'workflow.step_extract', name: 'Extract' },
+            { key: 'workflow.step_samples', name: 'Samples' },
+            { key: 'workflow.step_enroll', name: 'Enroll' },
+            { key: 'workflow.step_transcribe', name: 'Transcribe' }
         ],
 
+        _buildSteps() {
+            this.steps = this.steps.map(s => ({ ...s, name: t(s.key) }));
+        },
+
         async init() {
+            // Resolve step display names in the active language.
+            this._buildSteps();
+
             // Check URL for existing session
             const params = new URLSearchParams(window.location.search);
             const sessionId = params.get('session');
@@ -381,12 +391,12 @@ document.addEventListener('alpine:init', () => {
                         if (xhr.status >= 200 && xhr.status < 300) {
                             resolve();
                         } else {
-                            reject(new Error(xhr.responseText || 'Upload failed'));
+                            reject(new Error(xhr.responseText || t('workflow.upload_failed')));
                         }
                     });
 
                     xhr.addEventListener('error', () => {
-                        reject(new Error('Network error'));
+                        reject(new Error(t('workflow.network_error')));
                     });
 
                     xhr.open('POST', `/api/session/${this.session.id}/tracks`);
@@ -397,7 +407,7 @@ document.addEventListener('alpine:init', () => {
                 this.uploadProgress = 100;
             } catch (error) {
                 console.error('Upload failed:', error);
-                alert('Upload failed: ' + error.message);
+                alert(t('workflow.upload_failed_reason', { reason: error.message }));
             } finally {
                 this.uploading = false;
             }
@@ -467,7 +477,7 @@ document.addEventListener('alpine:init', () => {
                     eventSource.close();
                     this._extractionES = null;
                     this.extracting = false;
-                    this.extractionLogs.push(`Error: ${data.error}`);
+                    this.extractionLogs.push(t('workflow.log_error', { message: data.error }));
                     return;
                 }
                 if (data.step) {
@@ -508,7 +518,7 @@ document.addEventListener('alpine:init', () => {
                     eventSource.close();
                     this._enrollmentES = null;
                     this.enrolling = false;
-                    this.enrollmentLogs.push(`Error: ${data.error}`);
+                    this.enrollmentLogs.push(t('workflow.log_error', { message: data.error }));
                     return;
                 }
                 if (data.message) {
@@ -548,7 +558,7 @@ document.addEventListener('alpine:init', () => {
                     eventSource.close();
                     this._transcriptionES = null;
                     this.transcribing = false;
-                    this.transcriptionLogs.push(`Error: ${data.error}`);
+                    this.transcriptionLogs.push(t('workflow.log_error', { message: data.error }));
                     return;
                 }
                 if (data.step) {
@@ -714,7 +724,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteSpeakerBin(speakerId) {
-            if (!confirm('Delete this speaker bin? Samples will be moved to unassigned.')) return;
+            if (!confirm(t('workflow.confirm_delete_speaker_bin'))) return;
 
             if (!this.session?.id) return;
 
@@ -731,7 +741,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteSample(sampleId) {
-            if (!confirm('Delete this sample?')) return;
+            if (!confirm(t('workflow.confirm_delete_sample'))) return;
 
             if (!this.session?.id) return;
 

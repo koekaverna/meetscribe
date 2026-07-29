@@ -1,0 +1,15 @@
+{
+  "shell.subtitle": "Транскрибация встреч с диаризацией спикеров",
+  "shell.confirm_new_session": "Начать новую сессию? Текущий прогресс будет потерян.",
+  "shell.footer": "MeetScribe - Транскрибация встреч с диаризацией спикеров",
+  "nav.sessions": "Сессии",
+  "nav.sessions_title": "Архив сессий",
+  "nav.speakers": "Спикеры",
+  "nav.speakers_title": "Зарегистрированные спикеры",
+  "nav.admin": "Админка",
+  "nav.admin_title": "Админ-панель",
+  "nav.new": "Новая",
+  "nav.new_title": "Начать новую сессию",
+  "nav.sign_out": "Выйти",
+  "nav.language": "Язык"
+}
