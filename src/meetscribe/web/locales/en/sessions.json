@@ -11,6 +11,7 @@
   "sessions.retry": "Retry",
   "sessions.delete_session_title": "Delete session",
   "sessions.track_count_one": "{n} track",
+  "sessions.track_count_few": "{n} tracks",
   "sessions.track_count_other": "{n} tracks",
   "sessions.empty_title": "No sessions yet",
   "sessions.empty_hint": "Start a new meeting from the workflow",

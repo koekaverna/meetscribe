@@ -1,8 +1,24 @@
 """End-to-end tests for the i18n layer: locale resolution, catalog rendering, toggle."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from meetscribe.web import i18n
+
+
+@pytest.fixture(autouse=True)
+def _reset_lang():
+    """Keep the module-level contextvar from leaking the active lang across tests."""
+    yield
+    i18n.set_current_lang(i18n.DEFAULT)
+
+
+class _FakeRequest:
+    """Minimal stand-in for resolve_lang() — only cookies/headers are read."""
+
+    def __init__(self, accept_language: str) -> None:
+        self.cookies: dict[str, str] = {}
+        self.headers = {"accept-language": accept_language}
 
 
 def _csrf_token(client: TestClient) -> str:
@@ -86,3 +102,14 @@ class TestLangToggle:
         client.get("/login")  # seed csrf cookie
         resp = client.post("/api/lang", data={"lang": "ru", "csrf_token": "bad"})
         assert resp.status_code == 403
+
+
+class TestAcceptLanguage:
+    def test_highest_q_wins(self) -> None:
+        assert i18n.resolve_lang(_FakeRequest("en;q=0.1, ru;q=1")) == "ru"
+
+    def test_zero_q_ignored(self) -> None:
+        assert i18n.resolve_lang(_FakeRequest("ru;q=0, en")) == "en"
+
+    def test_unsupported_falls_back_to_default(self) -> None:
+        assert i18n.resolve_lang(_FakeRequest("fr-FR, de;q=0.8")) == "en"

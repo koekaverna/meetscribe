@@ -28,8 +28,9 @@
   "speakers.quality_good": "good",
   "speakers.quality_fair": "fair",
   "speakers.quality_low": "poor",
-  "speakers.sample_singular": "sample",
-  "speakers.sample_plural": "samples",
+  "speakers.sample_one": "sample",
+  "speakers.sample_few": "samples",
+  "speakers.sample_other": "samples",
   "speakers.duration_min_sec": "{m}m {s}s",
   "speakers.duration_sec": "{s}s"
 }

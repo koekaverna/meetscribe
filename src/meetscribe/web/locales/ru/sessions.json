@@ -11,6 +11,7 @@
   "sessions.retry": "Повторить",
   "sessions.delete_session_title": "Удалить сессию",
   "sessions.track_count_one": "{n} дорожка",
+  "sessions.track_count_few": "{n} дорожки",
   "sessions.track_count_other": "{n} дорожек",
   "sessions.empty_title": "Пока нет сессий",
   "sessions.empty_hint": "Начните новую встречу из воркфлоу",

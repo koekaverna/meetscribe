@@ -186,13 +186,13 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        async deleteTeam(t) {
+        async deleteTeam(team) {
             // Voiceprints cascade on team delete; users/sessions block it server-side
-            const msg = t('admin.confirm_delete_team', { name: t.name, count: t.voiceprint_count });
+            const msg = t('admin.confirm_delete_team', { name: team.name, count: team.voiceprint_count });
             if (!confirm(msg)) return;
             this.actionError = null;
             try {
-                await this._send(`/api/admin/teams/${encodeURIComponent(t.name)}`, { method: 'DELETE' });
+                await this._send(`/api/admin/teams/${encodeURIComponent(team.name)}`, { method: 'DELETE' });
                 await this.loadTeams();
             } catch (error) {
                 this.actionError = error.message;

@@ -219,9 +219,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         qualityStats(s) {
-            const samples = s.sample_count === 1
-                ? t('speakers.sample_singular')
-                : t('speakers.sample_plural');
+            const samples = t(`speakers.sample_${plural(s.sample_count)}`);
             return `${s.sample_count} ${samples} · ${this.formatDuration(s.total_duration_ms)}`;
         },
 

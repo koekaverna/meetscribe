@@ -49,6 +49,16 @@ window.setLang = async function (lang) {
     }
 };
 
+// Plural-form suffix for the active language: 'one' | 'few' | 'other'.
+// en: one/other. ru: CLDR one/few/many (many maps to 'other').
+window.plural = function (n) {
+    if (window.__LANG__ !== 'ru') return n === 1 ? 'one' : 'other';
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'one';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'few';
+    return 'other';
+};
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('shell', () => ({
         // Named distinctively: shell methods are called from page-component scopes,

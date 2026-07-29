@@ -25,7 +25,7 @@
   "admin.teams": "Команды",
   "admin.count_users": "польз.",
   "admin.count_sessions": "сессий",
-  "admin.count_voiceprints": "voiceprints",
+  "admin.count_voiceprints": "отпечатков",
   "admin.delete_team": "Удалить команду",
   "admin.team_name_placeholder": "Название команды",
   "admin.team_description_placeholder": "Описание (необязательно)",
@@ -39,5 +39,5 @@
   "admin.prompt_reset_password_self": "Новый пароль для вашей учётной записи (мин. 8 символов). Вы будете разлогинены:",
   "admin.prompt_reset_password": "Новый пароль для «{name}» (мин. 8 символов):",
   "admin.alert_password_changed": "Пароль для «{name}» изменён. Его сессии были завершены.",
-  "admin.confirm_delete_team": "Удалить команду «{name}»?\n\nЭто БЕЗВОЗВРАТНО удалит все её voiceprints ({count}) и семплы зарегистрированных спикеров. Это действие необратимо.\n\nКоманды, у которых остались пользователи или сессии, удалить нельзя."
+  "admin.confirm_delete_team": "Удалить команду «{name}»?\n\nЭто БЕЗВОЗВРАТНО удалит все её голосовые отпечатки ({count}) и семплы зарегистрированных спикеров. Это действие необратимо.\n\nКоманды, у которых остались пользователи или сессии, удалить нельзя."
 }

@@ -175,8 +175,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         trackLabel(count) {
-            const key = count === 1 ? 'sessions.track_count_one' : 'sessions.track_count_other';
-            return t(key, { n: count });
+            return t(`sessions.track_count_${plural(count)}`, { n: count });
         },
 
         formatDate(t) {

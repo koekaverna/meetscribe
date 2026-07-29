@@ -28,8 +28,9 @@
   "speakers.quality_good": "хорошее",
   "speakers.quality_fair": "среднее",
   "speakers.quality_low": "низкое",
-  "speakers.sample_singular": "семпл",
-  "speakers.sample_plural": "семплов",
+  "speakers.sample_one": "семпл",
+  "speakers.sample_few": "семпла",
+  "speakers.sample_other": "семплов",
   "speakers.duration_min_sec": "{m}м {s}с",
   "speakers.duration_sec": "{s}с"
 }

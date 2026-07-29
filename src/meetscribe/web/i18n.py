@@ -70,12 +70,25 @@ def resolve_lang(request: object) -> str:
     headers = getattr(request, "headers", {}) or {}
     accept = headers.get("accept-language", "") if headers else ""
     if accept:
-        # Rough parse: honour the first tag whose primary subtag we support.
+        # Pick the supported tag with the highest q-weight; q=0 means "not acceptable".
+        best_lang, best_q = None, 0.0
         for part in accept.split(","):
-            tag = part.split(";", 1)[0].strip().lower()
-            primary = tag.split("-", 1)[0]
-            if primary in SUPPORTED:
-                return primary
+            fields = part.split(";")
+            primary = fields[0].strip().lower().split("-", 1)[0]
+            if primary not in SUPPORTED:
+                continue
+            q = 1.0
+            for field in fields[1:]:
+                field = field.strip()
+                if field.startswith("q="):
+                    try:
+                        q = float(field[2:])
+                    except ValueError:
+                        q = 0.0
+            if q > best_q:
+                best_lang, best_q = primary, q
+        if best_lang:
+            return best_lang
 
     return DEFAULT
 
