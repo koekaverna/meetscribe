@@ -1,0 +1,15 @@
+{
+  "shell.subtitle": "Meeting transcription with speaker diarization",
+  "shell.confirm_new_session": "Start a new session? Current progress will be lost.",
+  "shell.footer": "MeetScribe - Meeting transcription with speaker diarization",
+  "nav.sessions": "Sessions",
+  "nav.sessions_title": "Session archive",
+  "nav.speakers": "Speakers",
+  "nav.speakers_title": "Enrolled speakers",
+  "nav.admin": "Admin",
+  "nav.admin_title": "Admin panel",
+  "nav.new": "New",
+  "nav.new_title": "Start new session",
+  "nav.sign_out": "Sign out",
+  "nav.language": "Language"
+}

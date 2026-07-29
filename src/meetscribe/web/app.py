@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,7 +19,21 @@ from meetscribe.database import close_all_db, init_db
 from meetscribe.log import StructuredFormatter, apply_log_level
 
 from .assets import STATIC_DIR, static_url
-from .deps import CSRF_COOKIE_NAME, get_admin_user, get_current_user, get_current_user_or_none
+from .deps import (
+    CSRF_COOKIE_NAME,
+    get_admin_user,
+    get_current_user,
+    get_current_user_or_none,
+    verify_csrf,
+)
+from .i18n import (
+    SUPPORTED,
+    current_lang,
+    i18n_catalog,
+    resolve_lang,
+    set_current_lang,
+    t,
+)
 from .routes import admin, auth, samples, session, speakers, tasks, tracks
 from .routes.tasks import shutdown_threads
 from .services.auth import get_secure_cookies
@@ -94,7 +108,20 @@ def create_app() -> FastAPI:
     templates.env.globals["csrf_token"] = csrf_token_for_request
     templates.env.globals["csrf_field_name"] = CSRF_FORM_FIELD
     templates.env.globals["static_url"] = static_url
+    # i18n globals: t() translates, current_lang() reflects the active language,
+    # i18n_catalog() is injected into the page for JS-side t().
+    templates.env.globals["t"] = t
+    templates.env.globals["current_lang"] = current_lang
+    templates.env.globals["i18n_catalog"] = i18n_catalog
     app.state.templates = templates
+
+    @app.middleware("http")
+    async def i18n_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Resolve and pin the active language before templates render."""
+        lang = resolve_lang(request)
+        set_current_lang(lang)
+        request.state.lang = lang
+        return await call_next(request)
 
     @app.middleware("http")
     async def cache_control_middleware(
@@ -250,6 +277,24 @@ def create_app() -> FastAPI:
         }
         template_name = step_templates.get(step_num, "steps/step1_upload.html")
         return templates.TemplateResponse(request, template_name)
+
+    @app.post("/api/lang", dependencies=[Depends(verify_csrf)])
+    async def set_lang(lang: str = Form(...)) -> Response:
+        """Set the UI language via cookie (read back by resolve_lang on each request)."""
+        if lang not in SUPPORTED:
+            raise HTTPException(status_code=400, detail="Unsupported language")
+
+        response = Response(status_code=204)
+        response.set_cookie(
+            key="lang",
+            value=lang,
+            path="/",
+            max_age=31536000,
+            httponly=False,
+            samesite="lax",
+            secure=get_secure_cookies(),
+        )
+        return response
 
     @app.get("/health")
     async def health() -> dict[str, str]:

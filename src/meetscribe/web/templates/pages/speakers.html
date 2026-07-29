@@ -1,15 +1,15 @@
 <!-- Enrolled speakers dashboard -->
 <div class="space-y-6">
-    <h2 class="text-2xl font-bold text-gray-800">Speakers</h2>
+    <h2 class="text-2xl font-bold text-gray-800">{{ t('speakers.title') }}</h2>
 
     <!-- Error states -->
     <div x-show="loadError" x-cloak class="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center justify-between">
-        <span>Failed to load speakers.</span>
-        <button @click="load()" class="font-medium underline hover:no-underline">Retry</button>
+        <span>{{ t('speakers.load_error') }}</span>
+        <button @click="load()" class="font-medium underline hover:no-underline">{{ t('speakers.retry') }}</button>
     </div>
     <div x-show="actionError" x-cloak class="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center justify-between">
         <span x-text="actionError"></span>
-        <button @click="actionError = ''" class="font-medium underline hover:no-underline">Dismiss</button>
+        <button @click="actionError = ''" class="font-medium underline hover:no-underline">{{ t('speakers.dismiss') }}</button>
     </div>
 
     <!-- Speaker list -->
@@ -26,19 +26,19 @@
                                 <input
                                     x-model="renameValue"
                                     x-init="$el.focus()"
-                                    aria-label="New speaker name"
+                                    :aria-label="t('speakers.rename_input_label')"
                                     @keydown.escape="renameTarget = null"
                                     class="px-2 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 >
-                                <button type="submit" class="text-sm text-primary-600 font-medium hover:underline">Save</button>
-                                <button type="button" @click="renameTarget = null" class="text-sm text-gray-500 hover:underline">Cancel</button>
+                                <button type="submit" class="text-sm text-primary-600 font-medium hover:underline" x-text="t('speakers.save')"></button>
+                                <button type="button" @click="renameTarget = null" class="text-sm text-gray-500 hover:underline" x-text="t('speakers.cancel')"></button>
                             </form>
                         </template>
                         <!-- Voiceprint quality: sample count + total duration -->
                         <span
                             class="px-2 py-0.5 rounded-full text-xs font-medium shrink-0"
                             :class="qualityBadge(s)"
-                            :title="'Voiceprint quality: ' + quality(s)"
+                            :title="qualityTitle(s)"
                             x-text="qualityStats(s)"
                         ></span>
                     </div>
@@ -46,11 +46,11 @@
                         <button
                             @click="toggleSamples(s.name)"
                             class="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-                            x-text="openSpeaker === s.name ? 'Hide samples' : 'Samples'"
+                            x-text="openSpeaker === s.name ? t('speakers.hide_samples') : t('speakers.samples')"
                         ></button>
                         <button
                             @click="startRename(s.name)"
-                            title="Rename speaker"
+                            :title="t('speakers.rename_speaker')"
                             class="p-2 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors"
                         >
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,7 +59,7 @@
                         </button>
                         <button
                             @click="removeSpeaker(s.name)"
-                            title="Delete speaker"
+                            :title="t('speakers.delete_speaker')"
                             class="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
                         >
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -70,16 +70,16 @@
                 </div>
                 <p class="mt-1 text-xs text-gray-400 truncate">
                     <span x-text="s.model"></span>
-                    <span> · enrolled </span><span x-text="formatDate(s.created_at)"></span>
+                    <span x-text="' · ' + t('speakers.enrolled') + ' '"></span><span x-text="formatDate(s.created_at)"></span>
                 </p>
 
                 <!-- Samples -->
                 <div x-show="openSpeaker === s.name" x-cloak class="mt-3 space-y-2">
-                    <p x-show="samplesLoading" class="text-sm text-gray-500">Loading samples...</p>
-                    <p x-show="!samplesLoading && samples.length === 0" class="text-sm text-gray-500">No samples on disk for this speaker.</p>
+                    <p x-show="samplesLoading" class="text-sm text-gray-500" x-text="t('speakers.samples_loading')"></p>
+                    <p x-show="!samplesLoading && samples.length === 0" class="text-sm text-gray-500" x-text="t('speakers.samples_empty')"></p>
                     <!-- Shared speed and volume for all sample players -->
                     <div x-show="samples.length > 0" class="flex items-center gap-1">
-                        <span class="text-xs text-gray-500 mr-1">Speed</span>
+                        <span class="text-xs text-gray-500 mr-1" x-text="t('speakers.speed')"></span>
                         <template x-for="rate in [1, 1.5, 2]" :key="rate">
                             <button
                                 @click="setPlaybackSpeed(rate)"
@@ -89,7 +89,7 @@
                             ></button>
                         </template>
                         <div class="flex items-center gap-1.5 ml-2 border-l border-gray-200 pl-2">
-                            <button @click="toggleMute()" class="p-1 text-gray-500 hover:text-gray-800 rounded transition-colors" :title="muted ? 'Unmute' : 'Mute'">
+                            <button @click="toggleMute()" class="p-1 text-gray-500 hover:text-gray-800 rounded transition-colors" :title="muted ? t('speakers.unmute') : t('speakers.mute')">
                                 <svg x-show="!muted" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M12 6L8 10H5a1 1 0 00-1 1v2a1 1 0 001 1h3l4 4V6z"></path>
                                 </svg>
@@ -101,7 +101,7 @@
                                 type="range" min="0" max="1" step="0.05"
                                 x-model.number="volume"
                                 @input="applyVolume()"
-                                aria-label="Volume for all samples"
+                                :aria-label="t('speakers.volume_label')"
                                 class="w-24 h-1.5 accent-primary-600 cursor-pointer"
                             >
                         </div>
@@ -113,7 +113,7 @@
                             <span class="text-xs text-gray-400 truncate hidden sm:inline" x-text="sm.filename"></span>
                             <button
                                 @click="removeSample(sm.filename)"
-                                title="Delete sample"
+                                :title="t('speakers.delete_sample')"
                                 class="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors shrink-0"
                             >
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -132,7 +132,7 @@
         <svg class="mx-auto h-12 w-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
         </svg>
-        <p class="mt-4 text-lg font-medium text-gray-600">No enrolled speakers</p>
-        <p class="mt-1 text-sm text-gray-500">Enroll speakers from the workflow to see them here</p>
+        <p class="mt-4 text-lg font-medium text-gray-600">{{ t('speakers.empty_title') }}</p>
+        <p class="mt-1 text-sm text-gray-500">{{ t('speakers.empty_hint') }}</p>
     </div>
 </div>

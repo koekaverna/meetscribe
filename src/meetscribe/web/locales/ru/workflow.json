@@ -1,0 +1,23 @@
+{
+  "login.title": "Вход",
+  "login.heading": "Войти",
+  "login.username": "Имя пользователя",
+  "login.password": "Пароль",
+  "login.submit": "Войти",
+  "login.contact_admin": "Обратитесь к администратору для создания учётной записи.",
+  "notfound.heading": "Сессия не найдена",
+  "notfound.description": "Эта сессия не существует или у вас нет к ней доступа.",
+  "notfound.start_new": "Начать новую сессию",
+  "workflow.step_upload": "Загрузка",
+  "workflow.step_configure": "Настройка",
+  "workflow.step_extract": "Извлечение",
+  "workflow.step_samples": "Семплы",
+  "workflow.step_enroll": "Регистрация",
+  "workflow.step_transcribe": "Транскрибация",
+  "workflow.upload_failed": "Ошибка загрузки",
+  "workflow.network_error": "Ошибка сети",
+  "workflow.upload_failed_reason": "Ошибка загрузки: {reason}",
+  "workflow.log_error": "Ошибка: {message}",
+  "workflow.confirm_delete_speaker_bin": "Удалить этого спикера? Семплы будут перемещены в нераспределённые.",
+  "workflow.confirm_delete_sample": "Удалить этот семпл?"
+}

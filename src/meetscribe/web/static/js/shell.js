@@ -12,6 +12,53 @@ async function authFetch(url, options = {}) {
     return response;
 }
 
+// Read a cookie value by name (null if absent).
+function getCookie(name) {
+    const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+}
+
+// Global translation helper for JS/Alpine. Reads the catalog injected in <head>
+// (window.__I18N__). Missing key -> returns the key. Interpolates {name} tokens
+// from `params` (named braces, same as the Python-side t()).
+window.t = function (key, params) {
+    const catalog = window.__I18N__ || {};
+    let text = Object.prototype.hasOwnProperty.call(catalog, key) ? catalog[key] : key;
+    if (params) {
+        text = text.replace(/\{(\w+)\}/g, (m, name) =>
+            Object.prototype.hasOwnProperty.call(params, name) ? params[name] : m
+        );
+    }
+    return text;
+};
+
+// Persist the UI language (cookie + users.lang) then reload to re-render.
+window.setLang = async function (lang) {
+    if (lang === window.__LANG__) return;
+    const form = new URLSearchParams();
+    form.set('lang', lang);
+    form.set('csrf_token', getCookie('meetscribe_csrf') || '');
+    try {
+        await fetch('/api/lang', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: form.toString(),
+        });
+    } finally {
+        window.location.reload();
+    }
+};
+
+// Plural-form suffix for the active language: 'one' | 'few' | 'other'.
+// en: one/other. ru: CLDR one/few/many (many maps to 'other').
+window.plural = function (n) {
+    if (window.__LANG__ !== 'ru') return n === 1 ? 'one' : 'other';
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return 'one';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'few';
+    return 'other';
+};
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('shell', () => ({
         // Named distinctively: shell methods are called from page-component scopes,

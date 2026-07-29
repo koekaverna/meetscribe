@@ -114,7 +114,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async removeSession(id) {
-            if (!confirm('Delete this session and all its files? This cannot be undone.')) return;
+            if (!confirm(t('sessions.confirm_delete_one'))) return;
             try {
                 const response = await authFetch(`/api/session/${id}`, { method: 'DELETE' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -136,8 +136,10 @@ document.addEventListener('alpine:init', () => {
 
         async removeSelected() {
             const count = this.selected.length;
-            const plural = count === 1 ? 'session' : 'sessions';
-            if (!confirm(`Delete ${count} ${plural} with all their files? This cannot be undone.`)) return;
+            const message = count === 1
+                ? t('sessions.confirm_delete_one')
+                : t('sessions.confirm_delete_many', { n: count });
+            if (!confirm(message)) return;
             try {
                 const response = await authFetch('/api/session/bulk-delete', {
                     method: 'POST',
@@ -162,6 +164,18 @@ document.addEventListener('alpine:init', () => {
                 transcribing: 'bg-sky-100 text-sky-700',
                 transcribed: 'bg-green-100 text-green-700',
             }[status] || 'bg-gray-100 text-gray-700';
+        },
+
+        statusLabel(status) {
+            const KNOWN = [
+                'created', 'uploaded', 'configured', 'extracted',
+                'enrolled', 'transcribing', 'transcribed',
+            ];
+            return KNOWN.includes(status) ? t(`sessions.status_${status}`) : status;
+        },
+
+        trackLabel(count) {
+            return t(`sessions.track_count_${plural(count)}`, { n: count });
         },
 
         formatDate(t) {

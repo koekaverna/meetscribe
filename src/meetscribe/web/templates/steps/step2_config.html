@@ -1,23 +1,23 @@
 <!-- Step 2: Configure Tracks -->
 <div class="space-y-6">
     <div class="text-center">
-        <h2 class="text-2xl font-bold text-gray-800">Configure Tracks</h2>
-        <p class="text-gray-600 mt-2">Assign speakers to tracks or enable automatic diarization</p>
+        <h2 class="text-2xl font-bold text-gray-800">{{ t('step2.title') }}</h2>
+        <p class="text-gray-600 mt-2">{{ t('step2.subtitle') }}</p>
     </div>
 
     <!-- Global Speakers -->
     <div class="bg-blue-50 rounded-xl p-4">
         <div class="flex items-center justify-between mb-3">
-            <h3 class="font-semibold text-blue-800">Enrolled Speakers</h3>
+            <h3 class="font-semibold text-blue-800">{{ t('step2.enrolled_speakers') }}</h3>
             <button
                 @click="loadGlobalSpeakers()"
                 class="text-blue-600 hover:text-blue-800 text-sm"
             >
-                Refresh
+                {{ t('step2.refresh') }}
             </button>
         </div>
         <div x-show="globalSpeakers.length === 0" class="text-blue-600 text-sm">
-            No speakers enrolled yet. You can enroll speakers after extracting samples.
+            {{ t('step2.no_speakers') }}
         </div>
         <div x-show="globalSpeakers.length > 0" class="flex flex-wrap gap-2">
             <template x-for="speaker in globalSpeakers" :key="speaker.name">
@@ -46,7 +46,7 @@
                                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                     <path d="M8 5v14l11-7z"/>
                                 </svg>
-                                Play preview
+                                {{ t('step2.play_preview') }}
                             </button>
                         </div>
                     </div>
@@ -60,12 +60,12 @@
                                 @change="updateTrackConfig(track.track_num, track.speaker_name, $event.target.checked)"
                                 class="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500"
                             >
-                            <span class="text-sm text-gray-700">Auto-diarize</span>
+                            <span class="text-sm text-gray-700">{{ t('step2.auto_diarize') }}</span>
                         </label>
 
                         <!-- Speaker Name (free text; open space locks it to enrolled speakers) -->
                         <div class="flex items-center">
-                            <span class="text-sm text-gray-500 mr-2">or assign:</span>
+                            <span class="text-sm text-gray-500 mr-2">{{ t('step2.or_assign') }}</span>
                             <div class="relative">
                                 <input
                                     x-show="!track.open_space"
@@ -73,7 +73,7 @@
                                     :value="track.speaker_name || ''"
                                     @blur="updateTrackConfig(track.track_num, $event.target.value || null, false)"
                                     @keyup.enter="$event.target.blur()"
-                                    placeholder="Speaker name"
+                                    placeholder="{{ t('step2.speaker_name_placeholder') }}"
                                     :disabled="track.diarize"
                                     :class="track.diarize ? 'bg-gray-100 text-gray-400' : 'bg-white'"
                                     class="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
@@ -85,7 +85,7 @@
                                     @change="updateTrackConfig(track.track_num, $event.target.value || null, false, true)"
                                     class="w-40 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
-                                    <option value="" disabled>Select enrolled speaker</option>
+                                    <option value="" disabled>{{ t('step2.select_enrolled_speaker') }}</option>
                                     <template x-for="speaker in globalSpeakers" :key="speaker.name">
                                         <option :value="speaker.name" x-text="speaker.name"></option>
                                     </template>
@@ -105,13 +105,13 @@
                             @change="updateTrackConfig(track.track_num, track.speaker_name, false, $event.target.checked)"
                             class="w-5 h-5 text-primary-600 border-gray-300 rounded focus:ring-primary-500 disabled:opacity-40"
                         >
-                        <span class="text-sm text-gray-700">Open space — keep only this speaker's voice</span>
+                        <span class="text-sm text-gray-700">{{ t('step2.open_space_label') }}</span>
                     </label>
                     <p x-show="isEnrolledSpeaker(track.speaker_name) || track.open_space" class="text-xs text-gray-500 mt-1 ml-7">
-                        Diarizes the mic track and drops other people's voices it picked up.
+                        {{ t('step2.open_space_hint') }}
                     </p>
                     <p x-show="!isEnrolledSpeaker(track.speaker_name) && !track.open_space" class="text-xs text-red-600 mt-1 ml-7">
-                        Open space needs an enrolled speaker — the voice filter matches by the enrolled name. Pick a name from the suggestions.
+                        {{ t('step2.open_space_needs_enrolled') }}
                     </p>
                 </div>
             </div>
@@ -137,13 +137,13 @@
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
             </svg>
-            Back
+            {{ t('step2.back') }}
         </button>
         <button
             @click="nextStep()"
             class="px-4 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base text-white font-medium bg-primary-600 rounded-xl hover:bg-primary-700 shadow-md hover:shadow-lg transition-all duration-200 ripple"
         >
-            <span x-text="needsDiarization() ? 'Next: Extract Samples' : 'Next: Transcribe'"></span>
+            <span x-text="needsDiarization() ? t('step2.next_extract') : t('step2.next_transcribe')"></span>
             <svg class="inline-block w-4 h-4 sm:w-5 sm:h-5 ml-1 sm:ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
             </svg>
