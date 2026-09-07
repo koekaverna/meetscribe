@@ -124,6 +124,16 @@ class TestPatchSegment:
         resp = auth_client.patch(f"/api/session/{sid}/segments/999999", json={"text": "x"})
         assert resp.status_code == 404
 
+    def test_patch_strips_text_and_rejects_whitespace_only(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, ids = seeded_session
+        url = f"/api/session/{sid}/segments/{ids[0]}"
+        assert auth_client.patch(url, json={"text": "   "}).status_code == 422
+        assert auth_client.patch(url, json={"speaker": "  "}).status_code == 422
+        assert auth_client.patch(url, json={"text": "  trimmed  "}).status_code == 200
+        assert _segments(sid)[0]["text"] == "trimmed"
+
 
 class TestPatchTiming:
     def test_updates_times_and_transcript(
