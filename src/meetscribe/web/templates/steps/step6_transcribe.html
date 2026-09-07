@@ -159,9 +159,9 @@
         <div x-show="session?.segments?.length > 0" x-ref="segmentList" class="bg-gray-50 rounded-xl p-2 sm:p-4 max-h-[32rem] overflow-y-auto space-y-0.5">
             <!-- Insert before the first segment -->
             <div>
-                <button @click="startInsertSegment(null)" :disabled="segmentBusy" title="Insert segment at start" class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50">
+                <button @click="startInsertSegment(null)" :disabled="segmentBusy" class="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-primary-600 transition-colors disabled:opacity-50">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
-                    <span>Insert at start</span>
+                    <span>{{ t('step6.insert_at_start') }}</span>
                 </button>
                 <div x-show="insertOpen && insertAfterId === null" x-cloak>
                     {% include "steps/segment_insert_form.html" %}
@@ -200,37 +200,37 @@
                                     x-model="editSegmentSpeaker"
                                     class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
-                                    <option value="">Unknown</option>
+                                    <option value="">{{ t('step6.unknown_speaker') }}</option>
                                     <template x-for="name in sessionSpeakers" :key="name">
                                         <option :value="name" x-text="name"></option>
                                     </template>
-                                    <option value="__new__">New speaker&hellip;</option>
+                                    <option value="__new__">{{ t('step6.new_speaker') }}</option>
                                 </select>
                                 <input
                                     x-show="editSegmentSpeaker === '__new__'"
                                     x-model="editSegmentNewName"
                                     type="text"
-                                    placeholder="Speaker name"
+                                    placeholder="{{ t('step6.speaker_name') }}"
                                     class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                 <input
                                     x-model="editSegmentStart"
                                     type="text"
-                                    title="Start (M:SS.mmm)"
+                                    title="{{ t('step6.time_start') }}"
                                     class="w-20 px-2 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                 <span class="text-gray-400 text-xs">&ndash;</span>
                                 <input
                                     x-model="editSegmentEnd"
                                     type="text"
-                                    title="End (M:SS.mmm)"
+                                    title="{{ t('step6.time_end') }}"
                                     class="w-20 px-2 py-1.5 text-sm font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                             </div>
                             <div class="flex flex-wrap gap-2">
-                                <button @click="saveSegmentEdit(seg)" :disabled="segmentBusy" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">Save</button>
-                                <button @click="splitSegmentAtCursor(seg)" :disabled="segmentBusy" title="Split this segment at the text cursor" class="px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 disabled:opacity-50">Split at cursor</button>
-                                <button @click="cancelEditSegment()" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">Cancel</button>
+                                <button @click="saveSegmentEdit(seg)" :disabled="segmentBusy" class="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">{{ t('step6.save') }}</button>
+                                <button @click="splitSegmentAtCursor(seg)" :disabled="segmentBusy" title="{{ t('step6.split_at_cursor_title') }}" class="px-3 py-1.5 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 disabled:opacity-50">{{ t('step6.split_at_cursor') }}</button>
+                                <button @click="cancelEditSegment()" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">{{ t('step6.cancel') }}</button>
                             </div>
                         </div>
                         <!-- Insert-after form -->
@@ -240,16 +240,16 @@
                     </div>
                     <!-- Edit actions -->
                     <div x-show="editingSegmentId !== seg.id" class="shrink-0 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 transition-opacity">
-                        <button @click.stop="startInsertSegment(seg.id)" :disabled="segmentBusy" title="Insert segment after" class="p-1 text-gray-400 hover:text-primary-600 rounded disabled:opacity-50">
+                        <button @click.stop="startInsertSegment(seg.id)" :disabled="segmentBusy" title="{{ t('step6.insert_after') }}" class="p-1 text-gray-400 hover:text-primary-600 rounded disabled:opacity-50">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
                         </button>
-                        <button @click.stop="startEditSegment(seg)" title="Edit segment" class="p-1 text-gray-400 hover:text-primary-600 rounded">
+                        <button @click.stop="startEditSegment(seg)" title="{{ t('step6.edit_segment') }}" class="p-1 text-gray-400 hover:text-primary-600 rounded">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         </button>
-                        <button x-show="idx < (session?.segments?.length || 0) - 1" @click.stop="mergeSegmentWithNext(seg)" :disabled="segmentBusy" title="Merge with next segment" class="p-1 text-gray-400 hover:text-primary-600 rounded disabled:opacity-50">
+                        <button x-show="idx < (session?.segments?.length || 0) - 1" @click.stop="mergeSegmentWithNext(seg)" :disabled="segmentBusy" title="{{ t('step6.merge_next') }}" class="p-1 text-gray-400 hover:text-primary-600 rounded disabled:opacity-50">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7"/></svg>
                         </button>
-                        <button @click.stop="deleteSegment(seg)" :disabled="segmentBusy" title="Delete segment" class="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-50">
+                        <button @click.stop="deleteSegment(seg)" :disabled="segmentBusy" title="{{ t('step6.delete_segment') }}" class="p-1 text-gray-400 hover:text-red-600 rounded disabled:opacity-50">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                         </button>
                     </div>

@@ -959,7 +959,7 @@ document.addEventListener('alpine:init', () => {
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
                     const detail = typeof err.detail === 'string' ? err.detail : response.statusText;
-                    alert('Edit failed: ' + detail);
+                    alert(t('step6.edit_failed', { reason: detail }));
                     return false;
                 }
                 await this.loadSession();
@@ -972,7 +972,7 @@ document.addEventListener('alpine:init', () => {
                 // authFetch throws 'Not authenticated' while redirecting to /login on 401 —
                 // don't alert then, it's a normal auth redirect, not a network failure
                 if (error.message !== 'Not authenticated') {
-                    alert('Edit failed: network error');
+                    alert(t('step6.edit_failed', { reason: t('workflow.network_error') }));
                 }
                 return false;
             } finally {
@@ -999,12 +999,12 @@ document.addEventListener('alpine:init', () => {
         async saveSegmentEdit(seg) {
             if (this.parseSegTime(this.editSegmentStart) === null
                 || this.parseSegTime(this.editSegmentEnd) === null) {
-                alert('Invalid time — use M:SS.mmm');
+                alert(t('step6.invalid_time'));
                 return;
             }
             const patch = this._editedSegmentPatch(seg);
             if (patch.text !== undefined && !patch.text.trim()) {
-                alert('Segment text cannot be empty');
+                alert(t('step6.empty_text'));
                 return;
             }
             if (Object.keys(patch).length === 0) {
@@ -1023,7 +1023,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async deleteSegment(seg) {
-            if (!confirm('Delete this segment?')) return;
+            if (!confirm(t('step6.confirm_delete_segment'))) return;
             await this._segmentRequest(
                 `/api/session/${this.session.id}/segments/${seg.id}`,
                 { method: 'DELETE' }
@@ -1047,14 +1047,14 @@ document.addEventListener('alpine:init', () => {
         async saveInsertSegment() {
             const text = this.insertText.trim();
             if (!text) {
-                alert('Segment text cannot be empty');
+                alert(t('step6.empty_text'));
                 return;
             }
             const speaker = this.insertSpeaker === '__new__'
                 ? this.insertNewName.trim()
                 : this.insertSpeaker;
             if (this.insertSpeaker === '__new__' && !speaker) {
-                alert('Enter a name for the new speaker');
+                alert(t('step6.new_speaker_name_required'));
                 return;
             }
             const ok = await this._segmentRequest(
@@ -1084,14 +1084,14 @@ document.addEventListener('alpine:init', () => {
             if (!textarea) return;
             if (this.parseSegTime(this.editSegmentStart) === null
                 || this.parseSegTime(this.editSegmentEnd) === null) {
-                alert('Invalid time — use M:SS.mmm');
+                alert(t('step6.invalid_time'));
                 return;
             }
             const offset = textarea.selectionStart;
             // Persist pending edits first so the offset refers to the stored text
             const patch = this._editedSegmentPatch(seg);
             if (patch.text !== undefined && !patch.text.trim()) {
-                alert('Segment text cannot be empty');
+                alert(t('step6.empty_text'));
                 return;
             }
             if (Object.keys(patch).length > 0) {
