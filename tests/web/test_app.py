@@ -1,5 +1,8 @@
 """Tests for FastAPI app: middleware, CSRF, auth, health, and page routes."""
 
+import tempfile
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,6 +12,12 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
+
+
+class TestTempDir:
+    def test_app_routes_python_temp_files_to_tmp_dir(self, app, tmp_path: Path) -> None:
+        assert Path(tempfile.gettempdir()) == tmp_path / "tmp"
+        assert (tmp_path / "tmp").is_dir()
 
 
 class TestAuthMiddleware:

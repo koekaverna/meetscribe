@@ -2,6 +2,7 @@
 
 import logging
 import secrets
+import tempfile
 import zlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -111,6 +112,9 @@ def create_app() -> FastAPI:
         root.addHandler(file_handler)
 
     apply_log_level(get_config().log_level)
+
+    config.TMP_DIR.mkdir(parents=True, exist_ok=True)
+    tempfile.tempdir = str(config.TMP_DIR)
 
     # Initialize DB and services
     init_db(config.DB_PATH)
