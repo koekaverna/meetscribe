@@ -85,6 +85,13 @@ class TestShellLocale:
         html = auth_client.get("/").text
         assert "Meeting transcription with speaker diarization" in html
 
+    def test_step6_editing_controls_russian(self, auth_client: TestClient) -> None:
+        auth_client.cookies.set("lang", "ru")
+        html = auth_client.get("/step/6").text
+        assert "Вставить в начало" in html
+        assert "Текст пропущенной фразы" in html
+        assert "Insert at start" not in html
+
 
 class TestLangToggle:
     def test_sets_cookie(self, client: TestClient) -> None:

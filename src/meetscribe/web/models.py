@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SessionStatus(StrEnum):
@@ -51,6 +51,8 @@ class Sample(BaseModel):
 class TranscriptSegmentModel(BaseModel):
     """Structured transcript segment for playback."""
 
+    # DB row id (session_segments PK); lets the frontend address segments for editing
+    id: int | None = None
     track_num: int
     start_ms: int
     end_ms: int
@@ -132,6 +134,33 @@ class SampleMove(BaseModel):
     """Request to move a sample to a speaker bin."""
 
     speaker_id: str | None
+
+
+class SegmentPatch(BaseModel):
+    """Partial update of a transcript segment (text, speaker and/or timing)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    text: str | None = Field(None, min_length=1)
+    speaker: str | None = Field(None, min_length=1)
+    start_ms: int | None = Field(None, ge=0)
+    end_ms: int | None = Field(None, ge=0)
+
+
+class SegmentSplit(BaseModel):
+    """Request to split a segment at a character offset in its text."""
+
+    offset: int
+
+
+class SegmentInsert(BaseModel):
+    """Request to insert a segment after an existing one (or first, when after_id is None)."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    after_id: int | None = None
+    text: str = Field(..., min_length=1)
+    speaker: str | None = Field(None, min_length=1)
 
 
 class TranscribeOptions(BaseModel):

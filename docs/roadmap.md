@@ -137,15 +137,16 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 - [x] Delete / rename speakers — delete now also removes the enrolled samples directory; rename moves it and rejects collisions
 - [x] Voiceprint quality indicator (sample count + total duration tiers). Embedding spread skipped: per-sample embeddings aren't persisted (only the averaged voiceprint), and recomputing them via the API on every dashboard load is too expensive
 
-### Transcript editing
+### Transcript editing — ✅ done
 
-- [ ] Inline text editing per segment
-- [ ] Speaker reassignment per segment
-- [ ] Delete segment
-- [ ] Merge adjacent segments
-- [ ] Split segment
-- [ ] Regenerate markdown after edits
-- [ ] Speaker color coding in the viewer
+- [x] Inline text editing per segment (edit form in the step 6 viewer)
+- [x] Speaker reassignment per segment (existing, new, or Unknown — explicit null clears it)
+- [x] Delete segment
+- [x] Merge adjacent segments (full time span survives prior timing edits)
+- [x] Split segment at the cursor (time divided proportionally; too-short segments rejected)
+- [x] Regenerate markdown after edits (transcript re-rendered from segments on every change)
+- [x] Speaker color coding in the viewer
+- [x] Extras: insert missed phrases into gaps ("+" between segments / at start), start–end timing edit with exact-ms round-trip (`M:SS.mmm`)
 
 ### Frontend architecture (page-scoped lifecycle) — ✅ done (v0.5.5)
 
@@ -182,7 +183,8 @@ MeetScribe — self-hosted app (web + desktop) for meeting transcription with sp
 
 - Shipped (v0.5.5): `migrations/004_session_creator.sql`, `web/static/js/{shell,workflow-page,sessions-page}.js` (replaces `app.js`), `web/templates/pages/sessions.html`; session list API lives in `web/routes/session.py` (no separate dashboard router needed)
 - Shipped (v0.5.6): `migrations/005_superadmin.sql`, `web/routes/admin.py`, `web/static/js/admin-page.js`, `web/templates/pages/admin.html`; `register.html` + `/auth/register` removed
-- Remaining: `web/routes/transcript.py`, `cli.py` (interim "moved to app" notices only)
+- Shipped (transcript editing): `web/routes/segments.py`, `web/templates/steps/segment_insert_form.html` (no separate `transcript.py` needed — editing lives on the segments API)
+- Remaining: `cli.py` (interim "moved to app" notices only)
 
 ---
 
@@ -422,7 +424,7 @@ llm:
 |-------|---------|-------|--------|-------------|
 | 1 | v0.4 | Foundation & Hardening | ✅ done | Tests, CI, mutation testing, reliability |
 | 2 | v0.5 | Storage & Playback | ✅ done | Segment storage, multi-track sync playback |
-| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6), speakers dashboard (v0.5.7); next: transcript editing |
+| 3 | v0.6 | Web UI Maturity | in progress | ✅ Session list + frontend architecture (v0.5.5), admin panel (v0.5.6), speakers dashboard (v0.5.7), transcript editing; next: CLI retirement prep |
 | 4 | v0.7 | Desktop (Electron client) | in progress | Thin client + dual-channel recording (separate repo, v0.1 done); **CLI removed** |
 | 5 | v0.8 | Search & Analytics | planned | Full-text search, speaker stats, export |
 | 6 | v0.9 | Real-time & Integrations | planned | WebSocket streaming, webhooks, API |

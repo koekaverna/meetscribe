@@ -1,6 +1,20 @@
 // MeetScribe Web UI - workflow page component (6-step transcription flow).
 // Mounted by the shell via x-if + keyed x-for; reads ?session=&step= from the URL.
 
+// Full class names (not fragments) so the Tailwind CDN compiler picks them up.
+const SPEAKER_COLORS = [
+    'text-blue-700',
+    'text-emerald-700',
+    'text-purple-700',
+    'text-rose-700',
+    'text-amber-700',
+    'text-cyan-700',
+    'text-indigo-700',
+    'text-orange-700',
+    'text-teal-700',
+    'text-fuchsia-700',
+];
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('workflowPage', () => ({
         // State
@@ -57,6 +71,20 @@ document.addEventListener('alpine:init', () => {
         sampleDuration: 0,
         sampleCurrentTime: 0,
         currentSampleInfo: null,
+
+        // Transcript editing state
+        editingSegmentId: null,
+        editSegmentText: '',
+        editSegmentSpeaker: '',
+        editSegmentNewName: '',
+        editSegmentStart: '',
+        editSegmentEnd: '',
+        segmentBusy: false,
+        insertAfterId: null,
+        insertOpen: false,
+        insertText: '',
+        insertSpeaker: '',
+        insertNewName: '',
 
         // Transcript player state
         playerPlaying: false,
@@ -874,6 +902,221 @@ document.addEventListener('alpine:init', () => {
                 console.error('Transcription failed:', error);
                 this.transcribing = false;
             }
+        },
+
+        // --- Transcript Editing Methods ---
+
+        speakerColor(name) {
+            if (!name) return 'text-gray-700';
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+            }
+            return SPEAKER_COLORS[hash % SPEAKER_COLORS.length];
+        },
+
+        get sessionSpeakers() {
+            const names = (this.session?.segments || []).map(s => s.speaker).filter(Boolean);
+            return [...new Set(names)].sort();
+        },
+
+        startEditSegment(seg) {
+            this.editingSegmentId = seg.id;
+            this.editSegmentText = seg.text;
+            this.editSegmentSpeaker = seg.speaker || '';
+            this.editSegmentNewName = '';
+            this.editSegmentStart = this.formatSegTime(seg.start_ms);
+            this.editSegmentEnd = this.formatSegTime(seg.end_ms);
+            this.insertOpen = false;
+        },
+
+        // Exact ms so a text-only save round-trips the timing unchanged
+        formatSegTime(ms) {
+            const m = Math.floor(ms / 60000);
+            const s = Math.floor((ms % 60000) / 1000);
+            const millis = ms % 1000;
+            const base = `${m}:${String(s).padStart(2, '0')}`;
+            return millis ? `${base}.${String(millis).padStart(3, '0')}` : base;
+        },
+
+        // "M:SS", "M:SS.s" or bare seconds; null if unparseable
+        parseSegTime(str) {
+            const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(str.trim());
+            if (!m) return null;
+            const secs = parseFloat(m[2]);
+            if (m[1] !== undefined && secs >= 60) return null;
+            return Math.round((parseInt(m[1] || '0') * 60 + secs) * 1000);
+        },
+
+        cancelEditSegment() {
+            this.editingSegmentId = null;
+        },
+
+        async _segmentRequest(url, options = {}) {
+            this.segmentBusy = true;
+            try {
+                const response = await authFetch(url, options);
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    const detail = typeof err.detail === 'string' ? err.detail : response.statusText;
+                    alert(t('step6.edit_failed', { reason: detail }));
+                    return false;
+                }
+                await this.loadSession();
+                // Indices shifted — let the next timeupdate recompute the active segment
+                this.activeSegmentIdx = -1;
+                this.activeTrackNum = null;
+                return true;
+            } catch (error) {
+                console.error('Segment edit failed:', error);
+                // authFetch throws 'Not authenticated' while redirecting to /login on 401 —
+                // don't alert then, it's a normal auth redirect, not a network failure
+                if (error.message !== 'Not authenticated') {
+                    alert(t('step6.edit_failed', { reason: t('workflow.network_error') }));
+                }
+                return false;
+            } finally {
+                this.segmentBusy = false;
+            }
+        },
+
+        _editedSegmentPatch(seg) {
+            const patch = {};
+            if (this.editSegmentText !== seg.text) patch.text = this.editSegmentText;
+            const speaker = this.editSegmentSpeaker === '__new__'
+                ? this.editSegmentNewName.trim()
+                : this.editSegmentSpeaker;
+            // "" (Unknown) clears the speaker; a blank new-speaker name is a no-op
+            const newNameBlank = this.editSegmentSpeaker === '__new__' && !speaker;
+            if (!newNameBlank && speaker !== (seg.speaker || '')) patch.speaker = speaker || null;
+            const startMs = this.parseSegTime(this.editSegmentStart);
+            const endMs = this.parseSegTime(this.editSegmentEnd);
+            if (startMs !== null && startMs !== seg.start_ms) patch.start_ms = startMs;
+            if (endMs !== null && endMs !== seg.end_ms) patch.end_ms = endMs;
+            return patch;
+        },
+
+        async saveSegmentEdit(seg) {
+            if (this.parseSegTime(this.editSegmentStart) === null
+                || this.parseSegTime(this.editSegmentEnd) === null) {
+                alert(t('step6.invalid_time'));
+                return;
+            }
+            const patch = this._editedSegmentPatch(seg);
+            if (patch.text !== undefined && !patch.text.trim()) {
+                alert(t('step6.empty_text'));
+                return;
+            }
+            if (Object.keys(patch).length === 0) {
+                this.editingSegmentId = null;
+                return;
+            }
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(patch)
+                }
+            );
+            if (ok) this.editingSegmentId = null;
+        },
+
+        async deleteSegment(seg) {
+            if (!confirm(t('step6.confirm_delete_segment'))) return;
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}`,
+                { method: 'DELETE' }
+            );
+        },
+
+        // afterId === null inserts before the first segment
+        startInsertSegment(afterId) {
+            this.insertOpen = true;
+            this.insertAfterId = afterId;
+            this.insertText = '';
+            this.insertSpeaker = '';
+            this.insertNewName = '';
+            this.editingSegmentId = null;
+        },
+
+        cancelInsertSegment() {
+            this.insertOpen = false;
+        },
+
+        async saveInsertSegment() {
+            const text = this.insertText.trim();
+            if (!text) {
+                alert(t('step6.empty_text'));
+                return;
+            }
+            const speaker = this.insertSpeaker === '__new__'
+                ? this.insertNewName.trim()
+                : this.insertSpeaker;
+            if (this.insertSpeaker === '__new__' && !speaker) {
+                alert(t('step6.new_speaker_name_required'));
+                return;
+            }
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        after_id: this.insertAfterId,
+                        text,
+                        speaker: speaker || null
+                    })
+                }
+            );
+            if (ok) this.insertOpen = false;
+        },
+
+        async mergeSegmentWithNext(seg) {
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}/merge-next`,
+                { method: 'POST' }
+            );
+        },
+
+        async splitSegmentAtCursor(seg) {
+            const textarea = document.getElementById('seg-edit-' + seg.id);
+            if (!textarea) return;
+            if (this.parseSegTime(this.editSegmentStart) === null
+                || this.parseSegTime(this.editSegmentEnd) === null) {
+                alert(t('step6.invalid_time'));
+                return;
+            }
+            // Persist pending edits first so the offset refers to the stored text
+            const patch = this._editedSegmentPatch(seg);
+            if (patch.text !== undefined && !patch.text.trim()) {
+                alert(t('step6.empty_text'));
+                return;
+            }
+            const strippedLeadingWhitespace = patch.text !== undefined
+                ? patch.text.length - patch.text.trimStart().length
+                : 0;
+            const offset = textarea.selectionStart - strippedLeadingWhitespace;
+            if (Object.keys(patch).length > 0) {
+                const saved = await this._segmentRequest(
+                    `/api/session/${this.session.id}/segments/${seg.id}`,
+                    {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(patch)
+                    }
+                );
+                if (!saved) return;
+            }
+            const ok = await this._segmentRequest(
+                `/api/session/${this.session.id}/segments/${seg.id}/split`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ offset })
+                }
+            );
+            if (ok) this.editingSegmentId = null;
         },
 
         // --- Transcript Player Methods ---

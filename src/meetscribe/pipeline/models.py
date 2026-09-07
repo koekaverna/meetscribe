@@ -27,6 +27,15 @@ class TranscriptSegment:
     track_num: int | None = None
 
 
+def format_transcript_markdown(segments: list[TranscriptSegment]) -> str:
+    """Render segments as a markdown dialogue: `**[MM:SS] Speaker:** text`."""
+    return "\n\n".join(
+        f"**[{s.start_ms // 60000:02d}:{(s.start_ms // 1000) % 60:02d}] "
+        f"{s.speaker or 'Unknown'}:** {s.text}"
+        for s in segments
+    )
+
+
 def merge_close_segments(
     segments: list[SpeechSegment],
     max_gap_ms: int,
