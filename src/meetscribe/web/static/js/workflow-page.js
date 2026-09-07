@@ -1087,13 +1087,16 @@ document.addEventListener('alpine:init', () => {
                 alert(t('step6.invalid_time'));
                 return;
             }
-            const offset = textarea.selectionStart;
             // Persist pending edits first so the offset refers to the stored text
             const patch = this._editedSegmentPatch(seg);
             if (patch.text !== undefined && !patch.text.trim()) {
                 alert(t('step6.empty_text'));
                 return;
             }
+            const strippedLeadingWhitespace = patch.text !== undefined
+                ? patch.text.length - patch.text.trimStart().length
+                : 0;
+            const offset = textarea.selectionStart - strippedLeadingWhitespace;
             if (Object.keys(patch).length > 0) {
                 const saved = await this._segmentRequest(
                     `/api/session/${this.session.id}/segments/${seg.id}`,

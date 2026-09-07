@@ -68,6 +68,7 @@
   "step6.merge_next": "Объединить со следующим",
   "step6.delete_segment": "Удалить сегмент",
   "step6.insert_placeholder": "Текст пропущенной фразы",
+  "step6.segment_text": "Текст сегмента",
   "step6.insert_time_hint": "Время берётся из паузы до следующего сегмента — поправьте через редактирование",
   "step6.insert": "Вставить",
   "step6.edit_failed": "Не удалось сохранить: {reason}",

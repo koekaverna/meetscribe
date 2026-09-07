@@ -193,11 +193,13 @@
                                 :id="'seg-edit-' + seg.id"
                                 x-model="editSegmentText"
                                 rows="3"
+                                aria-label="{{ t('step6.segment_text') }}"
                                 class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                             ></textarea>
                             <div class="flex flex-wrap items-center gap-2">
                                 <select
                                     x-model="editSegmentSpeaker"
+                                    aria-label="{{ t('step6.speaker') }}"
                                     class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >
                                     <option value="">{{ t('step6.unknown_speaker') }}</option>
@@ -210,6 +212,7 @@
                                     x-show="editSegmentSpeaker === '__new__'"
                                     x-model="editSegmentNewName"
                                     type="text"
+                                    aria-label="{{ t('step6.speaker_name') }}"
                                     placeholder="{{ t('step6.speaker_name') }}"
                                     class="px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
                                 >

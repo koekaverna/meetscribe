@@ -68,6 +68,7 @@
   "step6.merge_next": "Merge with next segment",
   "step6.delete_segment": "Delete segment",
   "step6.insert_placeholder": "Text of the missed phrase",
+  "step6.segment_text": "Segment text",
   "step6.insert_time_hint": "Time is taken from the gap — adjust via edit afterwards",
   "step6.insert": "Insert",
   "step6.edit_failed": "Edit failed: {reason}",
