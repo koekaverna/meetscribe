@@ -2,6 +2,7 @@
 
 import logging
 import secrets
+import zlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import RequestResponseEndpoint
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from meetscribe import config
 from meetscribe.config import get_config
@@ -47,6 +49,50 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 
 # Paths that don't require authentication
 PUBLIC_PREFIXES = ("/auth", "/static", "/login", "/health")
+
+
+class GunzipRequests:
+    """Stream-decompress request bodies sent with Content-Encoding: gzip.
+
+    Content-Length is dropped from the scope: it describes the compressed body,
+    and Starlette would stop reading at that many decompressed bytes.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        headers = dict(scope.get("headers", []))
+        if scope["type"] != "http" or headers.get(b"content-encoding", b"").lower() != b"gzip":
+            await self.app(scope, receive, send)
+            return
+
+        scope = dict(
+            scope,
+            headers=[
+                (k, v)
+                for k, v in scope["headers"]
+                if k not in (b"content-encoding", b"content-length")
+            ],
+        )
+        unpack = zlib.decompressobj(16 + zlib.MAX_WBITS)
+
+        async def receive_unpacked() -> Message:
+            message = await receive()
+            if message["type"] != "http.request":
+                return message
+            more_body = message.get("more_body", False)
+            try:
+                body = unpack.decompress(message.get("body", b""))
+                if not more_body:
+                    body += unpack.flush()
+                    if not unpack.eof:
+                        raise zlib.error("truncated gzip stream")
+            except zlib.error as e:
+                raise HTTPException(status_code=400, detail="Invalid gzip body") from e
+            return {"type": "http.request", "body": body, "more_body": more_body}
+
+        await self.app(scope, receive_unpacked, send)
 
 
 def create_app() -> FastAPI:
@@ -174,6 +220,8 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", status_code=303)
 
         return await call_next(request)
+
+    app.add_middleware(GunzipRequests)
 
     # Auth routes (no auth required)
     app.include_router(auth.router, prefix="/auth", tags=["auth"])

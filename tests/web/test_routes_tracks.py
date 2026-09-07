@@ -1,10 +1,13 @@
 """Tests for track routes."""
 
+import asyncio
+import gzip
 import io
 
 import pytest
 from fastapi.testclient import TestClient
 
+from meetscribe.web.app import GunzipRequests
 from meetscribe.web.services.session import get_session_service
 
 
@@ -167,3 +170,84 @@ class TestDelete:
     def test_nonexistent_track_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.delete(f"/api/session/{session_id}/tracks/999")
         assert resp.status_code == 404
+
+
+def _multipart_wav(name: str, payload: bytes) -> tuple[bytes, str]:
+    boundary = "meetscribe-test-boundary"
+    body = (
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="files"; filename="{name}"\r\n'
+            "Content-Type: audio/wav\r\n\r\n"
+        ).encode()
+        + payload
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    return body, f"multipart/form-data; boundary={boundary}"
+
+
+class TestGzipUpload:
+    def test_gzipped_body_is_stored_byte_for_byte(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        body, content_type = _multipart_wav("test.wav", wav_upload_bytes)
+        resp = auth_client.post(
+            f"/api/session/{session_id}/tracks",
+            content=gzip.compress(body),
+            headers={"Content-Type": content_type, "Content-Encoding": "gzip"},
+        )
+        assert resp.status_code == 200, resp.text
+        path = get_session_service().get_track_path(session_id, 1)
+        assert path is not None
+        assert path.read_bytes() == wav_upload_bytes
+
+    def test_corrupt_gzip_returns_400(self, auth_client: TestClient, session_id: str) -> None:
+        body, content_type = _multipart_wav("test.wav", b"x")
+        resp = auth_client.post(
+            f"/api/session/{session_id}/tracks",
+            content=b"definitely not gzip",
+            headers={"Content-Type": content_type, "Content-Encoding": "gzip"},
+        )
+        assert resp.status_code == 400
+
+    def test_truncated_gzip_returns_400(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        body, content_type = _multipart_wav("test.wav", wav_upload_bytes)
+        resp = auth_client.post(
+            f"/api/session/{session_id}/tracks",
+            content=gzip.compress(body)[:-8],
+            headers={"Content-Type": content_type, "Content-Encoding": "gzip"},
+        )
+        assert resp.status_code == 400
+
+    def test_chunked_body_is_reassembled_without_content_length(self) -> None:
+        payload = bytes(range(256)) * 1000
+        gz = gzip.compress(payload)
+        chunks = [gz[:10], gz[10:100], gz[100:]]
+        messages = [
+            {"type": "http.request", "body": chunk, "more_body": i < len(chunks) - 1}
+            for i, chunk in enumerate(chunks)
+        ]
+        seen: list[bytes] = []
+        inner_headers: list[tuple[bytes, bytes]] = []
+
+        async def inner_app(scope, receive, send) -> None:
+            inner_headers.extend(scope["headers"])
+            while True:
+                message = await receive()
+                seen.append(message["body"])
+                if not message["more_body"]:
+                    return
+
+        async def receive():
+            return messages.pop(0)
+
+        scope = {
+            "type": "http",
+            "headers": [(b"content-encoding", b"gzip"), (b"content-length", str(len(gz)).encode())],
+        }
+        asyncio.run(GunzipRequests(inner_app)(scope, receive, None))  # type: ignore[arg-type]
+
+        assert b"".join(seen) == payload
+        assert dict(inner_headers) == {}
