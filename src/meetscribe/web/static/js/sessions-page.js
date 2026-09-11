@@ -1,17 +1,6 @@
 // MeetScribe Web UI - session archive page.
 // Opens a session in the workflow at the step matching its status.
 
-const STATUS_STEP = {
-    created: 1,
-    uploaded: 2,
-    // configured -> 2, not 3: only step 2's nextStep() knows whether diarization is needed
-    configured: 2,
-    extracted: 4,
-    enrolled: 6,
-    transcribing: 6,
-    transcribed: 6,
-};
-
 document.addEventListener('alpine:init', () => {
     Alpine.data('sessionsPage', () => ({
         sessions: [],
@@ -110,7 +99,7 @@ document.addEventListener('alpine:init', () => {
                 return;
             }
             // openWorkflow lives on the shell — resolves up the Alpine scope chain
-            this.openWorkflow(s.id, STATUS_STEP[s.status] || 1);
+            this.openWorkflow(s.id);
         },
 
         async removeSession(id) {

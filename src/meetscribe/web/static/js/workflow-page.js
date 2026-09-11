@@ -15,6 +15,17 @@ const SPEAKER_COLORS = [
     'text-fuchsia-700',
 ];
 
+const STATUS_STEP = {
+    created: 1,
+    uploaded: 2,
+    // configured -> 2, not 3: only step 2's nextStep() knows whether diarization is needed
+    configured: 2,
+    extracted: 4,
+    enrolled: 6,
+    transcribing: 6,
+    transcribed: 6,
+};
+
 document.addEventListener('alpine:init', () => {
     Alpine.data('workflowPage', () => ({
         // State
@@ -123,7 +134,7 @@ document.addEventListener('alpine:init', () => {
             // Check URL for existing session
             const params = new URLSearchParams(window.location.search);
             const sessionId = params.get('session');
-            const step = parseInt(params.get('step')) || 1;
+            const requestedStep = parseInt(params.get('step'));
 
             if (sessionId) {
                 // Restore existing session
@@ -138,6 +149,7 @@ document.addEventListener('alpine:init', () => {
                     await this._checkRunningTasks();
 
                     // Restore step (with validation)
+                    const step = requestedStep || this._resumeStep();
                     if (step >= 1 && step <= 6) {
                         this.currentStep = step;
                         if (step === 4) {
@@ -152,6 +164,15 @@ document.addEventListener('alpine:init', () => {
             // No ?session= — don't create one yet: uploadFiles() creates it lazily,
             // so merely opening the app doesn't leave an empty session behind.
             await this.loadGlobalSpeakers();
+        },
+
+        // Step to land on when the URL names a session but no step:
+        // the running task's step, else the furthest step the status allows.
+        _resumeStep() {
+            if (this.extracting) return 3;
+            if (this.enrolling) return 5;
+            if (this.transcribing) return 6;
+            return STATUS_STEP[this.session?.status] || 1;
         },
 
         async _checkRunningTasks() {
@@ -322,6 +343,22 @@ document.addEventListener('alpine:init', () => {
                     this.$nextTick(() => this.initSortables());
                 }
             }
+        },
+
+        // Green tick in the stepper: passed steps, plus steps whose work is
+        // already done even when the user has navigated back before them.
+        stepDone(step) {
+            if (step < this.currentStep) return true;
+            const status = this.session?.status;
+            switch (step) {
+                case 1: return this.session?.tracks?.length > 0;
+                case 2: return !!status && status !== 'created' && status !== 'uploaded';
+                case 3: return this.extractionComplete;
+                case 4:
+                case 5: return this.enrollmentComplete;
+                case 6: return this.transcriptionComplete;
+            }
+            return false;
         },
 
         needsDiarization() {
