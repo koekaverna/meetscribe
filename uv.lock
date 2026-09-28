@@ -508,7 +508,7 @@ wheels = [
 
 [[package]]
 name = "meetscribe"
-version = "0.5.19"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorama" },
