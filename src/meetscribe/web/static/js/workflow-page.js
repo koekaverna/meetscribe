@@ -1109,6 +1109,23 @@ document.addEventListener('alpine:init', () => {
             if (ok) this.insertOpen = false;
         },
 
+        // Chunks the server failed to transcribe: nothing to restore, only to report
+        get failedChunks() {
+            return (this.session?.dropped_segments || []).filter(d => d.reason === 'failed');
+        },
+
+        // Segments removed by the hallucination filter or as joint duplicates
+        get filteredSegments() {
+            return (this.session?.dropped_segments || []).filter(d => d.reason !== 'failed');
+        },
+
+        async restoreDroppedSegment(dropped) {
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/dropped-segments/${dropped.id}/restore`,
+                { method: 'POST' }
+            );
+        },
+
         async mergeSegmentWithNext(seg) {
             await this._segmentRequest(
                 `/api/session/${this.session.id}/segments/${seg.id}/merge-next`,

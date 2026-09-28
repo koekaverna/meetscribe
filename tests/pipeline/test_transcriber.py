@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from meetscribe.errors import ConfigurationError
-from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
+from meetscribe.pipeline.models import SpeechSegment, TranscriptionResult, TranscriptSegment
 from meetscribe.pipeline.transcriber import RemoteTranscriber, Transcriber
 from tests.conftest import make_wav_file
 
@@ -161,8 +161,79 @@ class TestHallucinationFiltering:
         with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
             result = rt.transcribe_bytes(b"data", "ru")
 
-        assert len(result) == 1
-        assert result[0].text == "Real speech"
+        assert [(s.text, s.drop_reason) for s in result] == [
+            ("Real speech", None),
+            ("Редактор субтитров", "blocklist"),
+        ]
+        assert result[1].no_speech_prob == 0.75
+        assert result[1].avg_logprob == -0.3
+
+    def _reasons(self, rt, segments):
+        mock_resp = self._mock_response(
+            [{"start": float(i), "end": i + 1.0, **seg} for i, seg in enumerate(segments)]
+        )
+        with patch("meetscribe.pipeline.transcriber.httpx.post", return_value=mock_resp):
+            return [s.drop_reason for s in rt.transcribe_bytes(b"data", "ru")]
+
+    def test_legacy_rule_drops_short_segment(self):
+        reasons = self._reasons(
+            self._make_rt(),
+            [{"text": "Ну вот так", "no_speech_prob": 0.75, "avg_logprob": -0.3}],
+        )
+        assert reasons == ["legacy"]
+
+    def test_legacy_rule_word_limit(self):
+        """The legacy rule applies up to 5 words inclusive, not beyond."""
+        metrics = {"no_speech_prob": 0.75, "avg_logprob": -0.3}
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": "раз два три четыре пять", **metrics},
+                {"text": "раз два три четыре пять шесть", **metrics},
+            ],
+        )
+        assert reasons == ["legacy", None]
+
+    def test_logprob_floor_drops_any_length(self):
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": "это длинная фраза из целых семи слов", "avg_logprob": -1.0},
+                {"text": "это длинная фраза из целых семи слов", "avg_logprob": -0.99},
+            ],
+        )
+        assert reasons == ["logprob", None]
+
+    def test_blocklist_ignores_case_and_punctuation(self):
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": "ПРОДОЛЖЕНИЕ СЛЕДУЕТ...", "no_speech_prob": 0.01, "avg_logprob": -0.1},
+                {"text": "Субтитры сделал DimaTorzok", "avg_logprob": -0.1},
+                {"text": "[смех]", "avg_logprob": -0.1},
+            ],
+        )
+        assert reasons == ["blocklist", "blocklist", "blocklist"]
+
+    def test_blocklist_matches_whole_words_only(self):
+        reasons = self._reasons(
+            self._make_rt(),
+            [{"text": "Корректоры уже всё проверили", "avg_logprob": -0.1}],
+        )
+        assert reasons == [None]
+
+    def test_blocklist_keeps_phrase_inside_long_segment(self):
+        """A phrase with more than 8 extra words around it is real speech."""
+        eight_extra = "Спасибо за внимание коллеги на этом у меня всё на сегодня"
+        nine_extra = eight_extra + " точно"
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": eight_extra, "avg_logprob": -0.1},
+                {"text": nine_extra, "avg_logprob": -0.1},
+            ],
+        )
+        assert reasons == ["blocklist", None]
 
     def test_keeps_segment_below_threshold(self):
         rt = self._make_rt()
@@ -273,8 +344,32 @@ class TestTranscribeFile:
 
         result = t.transcribe_file(audio, speaker="Alice")
 
-        assert len(result) == 2
-        assert all(s.speaker == "Alice" for s in result)
+        assert len(result.segments) == 2
+        assert all(s.speaker == "Alice" for s in result.segments)
+
+    def test_separates_dropped_segments(self, tmp_path: Path):
+        audio = make_wav_file(tmp_path / "test.wav", duration_s=2.0)
+        t = Transcriber(
+            server_urls=["http://a:8000"],
+            language="en",
+            timeout=10.0,
+            model="m",
+            max_gap_ms=500,
+            max_chunk_ms=30000,
+            no_speech_prob_threshold=0.5,
+            avg_logprob_threshold=-0.25,
+        )
+        t.clients[0] = MagicMock()
+        t.clients[0].transcribe.return_value = [
+            TranscriptSegment(start_ms=0, end_ms=500, text="Hello"),
+            TranscriptSegment(start_ms=500, end_ms=1000, text="КОНЕЦ", drop_reason="blocklist"),
+        ]
+        t.clients[0].timeout = 10.0
+
+        result = t.transcribe_file(audio, speaker="Alice")
+
+        assert [s.text for s in result.segments] == ["Hello"]
+        assert [(s.text, s.speaker) for s in result.dropped] == [("КОНЕЦ", "Alice")]
 
     def test_uses_longer_timeout(self, tmp_path: Path):
         audio = make_wav_file(tmp_path / "test.wav", duration_s=1.0)
@@ -322,7 +417,7 @@ class TestTranscribeSegments:
         )
         t.clients = [mock_client]
 
-        results = t.transcribe_segments(audio, diarized)
+        results = t.transcribe_segments(audio, diarized).segments
 
         assert len(results) == 1
         assert results[0].start_ms == 1000  # 0 + 1000 offset
@@ -341,7 +436,7 @@ class TestTranscribeSegments:
             no_speech_prob_threshold=0.5,
             avg_logprob_threshold=-0.25,
         )
-        assert t.transcribe_segments(audio, []) == []
+        assert t.transcribe_segments(audio, []) == TranscriptionResult()
 
     def test_wav_slicing_math(self, tmp_path: Path):
         """Verify that audio is sliced at correct sample boundaries."""

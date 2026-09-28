@@ -88,6 +88,21 @@ def merge_segment_with_next(
     return {"status": "merged"}
 
 
+@router.post("/{session_id}/dropped-segments/{dropped_id}/restore")
+def restore_dropped_segment(
+    session_id: str, dropped_id: int, user: AuthUser = Depends(get_current_user)
+) -> dict[str, str]:
+    """Return a filtered-out segment to the transcript."""
+    _require_transcribed(session_id, user)
+    try:
+        restored = get_session_service().restore_dropped_segment(session_id, dropped_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not restored:
+        raise HTTPException(status_code=404, detail="Dropped segment not found")
+    return {"status": "restored"}
+
+
 @router.post("/{session_id}/segments/{segment_id}/split")
 def split_segment(
     session_id: str,

@@ -439,7 +439,7 @@ def start_transcription(
         raise HTTPException(status_code=400, detail="No tracks found")
 
     runner = get_pipeline_runner(state.team_name)
-    transcript_data: dict = {"transcript": None, "segments": None}
+    transcript_data: dict = {"transcript": None, "segments": None, "dropped": None}
 
     def transcription_gen() -> Generator[dict, None, None]:
         for item in runner.transcribe(
@@ -453,13 +453,19 @@ def start_transcription(
                 transcript_data["transcript"] = item["transcript"]
             if "segments" in item:
                 transcript_data["segments"] = item["segments"]
+            if "dropped" in item:
+                transcript_data["dropped"] = item["dropped"]
+                # Stored in the DB and served with the session, not over SSE
+                item = {k: v for k, v in item.items() if k != "dropped"}
             yield item
 
     def on_complete() -> None:
         if transcript_data["transcript"]:
             service.set_transcript(session_id, transcript_data["transcript"])
         if transcript_data["segments"]:
-            service.save_segments(session_id, transcript_data["segments"])
+            service.save_segments(
+                session_id, transcript_data["segments"], transcript_data["dropped"]
+            )
 
     def on_error(error_msg: str) -> None:
         logger.error("Transcription failed", extra={"session_id": session_id, "error": error_msg})

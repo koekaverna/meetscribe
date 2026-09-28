@@ -65,4 +65,10 @@ class SpeachesAPIError(PipelineError):
         """Whether this error is likely transient and worth retrying."""
         if self.status_code is None:
             return True  # connection/timeout errors
-        return self.status_code >= 500 or self.status_code == 429
+        # 499: the proxy/server dropped the request mid-flight (client closed
+        # request) — nothing wrong with the payload, a resend normally succeeds.
+        return self.status_code >= 500 or self.status_code in (429, 499)
+
+
+class ClipsEndpointUnavailable(SpeachesAPIError):
+    """The server has no track + clips transcription endpoint (older server)."""

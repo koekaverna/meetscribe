@@ -11,6 +11,8 @@ import yaml
 from dotenv import load_dotenv
 
 from .errors import ConfigurationError
+from .pipeline.hallucination import DEFAULT_HALLUCINATION_PHRASES
+from .pipeline.transcriber import SEGMENT_MODE_CHUNKS, SEGMENT_MODES
 
 load_dotenv()
 
@@ -177,12 +179,34 @@ class TranscriptionConfig(ValidatedConfig):
     max_chunk_ms: int = 30000
     no_speech_prob_threshold: float = 0.5
     avg_logprob_threshold: float = -0.25
+    legacy_filter_max_words: int = 5
+    hallucination_logprob_threshold: float = -1.0
+    hallucination_phrases: list[str] = field(
+        default_factory=lambda: list(DEFAULT_HALLUCINATION_PHRASES)
+    )
+    hallucination_phrase_max_extra_words: int = 8
+    chunk_padding_ms: int = 200
+    min_chunk_ms: int = 1000
+    dedup_similarity: float = 0.9
+    dedup_min_words: int = 4
+    segment_mode: str = SEGMENT_MODE_CHUNKS
     max_inflight: int = 0  # concurrent in-flight requests; 0 = auto (servers * 3)
 
     def __post_init__(self) -> None:
         super().__post_init__()
+        if self.segment_mode not in SEGMENT_MODES:
+            raise ConfigurationError(
+                f"TranscriptionConfig.segment_mode: must be one of: {', '.join(SEGMENT_MODES)}"
+            )
         if self.max_inflight < 0:
             raise ConfigurationError("TranscriptionConfig.max_inflight: must be >= 0 (0 = auto)")
+        for name in ("chunk_padding_ms", "min_chunk_ms", "legacy_filter_max_words"):
+            if getattr(self, name) < 0:
+                raise ConfigurationError(f"TranscriptionConfig.{name}: must be >= 0")
+        if not all(isinstance(p, str) for p in self.hallucination_phrases):
+            raise ConfigurationError(
+                "TranscriptionConfig.hallucination_phrases: expected a list of strings"
+            )
 
 
 @dataclass
@@ -251,15 +275,24 @@ class AppConfig:
                 raise ConfigurationError(f"Transcription server '{name}' not found in servers list")
 
 
+_TOP_LEVEL_KEYS = {"servers", "diarization", "embeddings", "transcription", "web", "log_level"}
+
+
 def _build_section[T: ValidatedConfig](cls: type[T], raw: dict | None) -> T:
-    """Instantiate a config dataclass, ignoring unknown YAML keys."""
+    """Instantiate a config dataclass. Unknown YAML keys are an error.
+
+    A silently ignored key is a setting that looks applied but is not — a typo
+    or a key placed in the wrong section must stop the app at startup.
+    """
     if not raw:
         return cls()
     known = set(get_type_hints(cls))
     unknown = raw.keys() - known
     if unknown:
-        _logger.warning("%s: ignoring unknown keys: %s", cls.__name__, ", ".join(sorted(unknown)))
-    return cls(**{k: v for k, v in raw.items() if k in known})
+        raise ConfigurationError(
+            f"{cls.__name__}: unknown keys: {', '.join(sorted(map(str, unknown)))}"
+        )
+    return cls(**raw)
 
 
 def load_config(config_path: Path) -> AppConfig:
@@ -290,6 +323,12 @@ def load_config(config_path: Path) -> AppConfig:
         raise ConfigurationError(f"Empty config file: {config_path}")
     if not isinstance(data, dict):
         raise ConfigurationError(f"Config root must be a mapping, got {type(data).__name__}")
+
+    unknown_sections = data.keys() - _TOP_LEVEL_KEYS
+    if unknown_sections:
+        raise ConfigurationError(
+            f"Config: unknown keys: {', '.join(sorted(map(str, unknown_sections)))}"
+        )
 
     for section in ("diarization", "embeddings", "transcription", "web"):
         if section in data and not isinstance(data[section], dict):

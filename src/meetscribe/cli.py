@@ -462,17 +462,7 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
 
     # Create pipeline components
     diarization = _create_diarization(cfg, team_ctx)
-    transcriber = Transcriber(
-        cfg.get_transcription_urls(),
-        language=language,
-        timeout=cfg.transcription.timeout,
-        model=cfg.transcription.model,
-        max_gap_ms=cfg.transcription.max_gap_ms,
-        max_chunk_ms=cfg.transcription.max_chunk_ms,
-        no_speech_prob_threshold=cfg.transcription.no_speech_prob_threshold,
-        avg_logprob_threshold=cfg.transcription.avg_logprob_threshold,
-        max_inflight=cfg.transcription.max_inflight or None,
-    )
+    transcriber = Transcriber.from_config(cfg.transcription, cfg.get_transcription_urls(), language)
 
     with tempfile.TemporaryDirectory(dir=config.TMP_DIR) as tmp:
         work_dir = Path(tmp)
@@ -517,9 +507,11 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
                 if speaker_name:
                     # Named track: transcribe whole file, assign speaker
                     with substep("Transcription (named track)", "\u270d\ufe0f"):
-                        segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
-                        ok(f"{len(segs)} transcribed segments")
-                    all_segments.extend(segs)
+                        result = transcriber.transcribe_file(track_path, speaker=speaker_name)
+                        ok(f"{len(result.segments)} transcribed segments")
+                        if result.dropped:
+                            warn(f"{len(result.dropped)} segments filtered out (see log)")
+                    all_segments.extend(result.segments)
                 else:
                     # Diarize track: server-side segmentation + local speaker matching
                     with substep("Speaker diarization", "\U0001f465"):
@@ -540,9 +532,16 @@ def cmd_transcribe(args: argparse.Namespace, extra_args: list[str], team_ctx: Te
 
                     # Transcribe diarized segments
                     with substep("Transcription", "\u270d\ufe0f"):
-                        segs = transcriber.transcribe_segments(track_path, segments)
-                        ok(f"{len(segs)} transcribed segments")
-                    all_segments.extend(segs)
+                        result = transcriber.transcribe_segments(track_path, segments)
+                        ok(f"{len(result.segments)} transcribed segments")
+                        if result.dropped:
+                            warn(f"{len(result.dropped)} segments filtered out (see log)")
+                        if result.failed_chunks:
+                            warn(
+                                f"{len(result.failed_chunks)} chunk(s) failed to transcribe"
+                                " and are missing from the transcript"
+                            )
+                    all_segments.extend(result.segments)
 
         # Save
         with step(2, 2, "Writing output", "\U0001f4be"):

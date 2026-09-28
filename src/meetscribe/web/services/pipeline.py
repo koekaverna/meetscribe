@@ -26,17 +26,18 @@ from meetscribe.pipeline import (
     DiarizationPipeline,
     EmbeddingExtractor,
     Transcriber,
-    TranscriptSegment,
     audio,
     compute_voiceprint,
     enroll_samples,
 )
 from meetscribe.pipeline.models import (
     SpeechSegment,
+    TranscriptionResult,
     collect_sample_segments,
     filter_segments_by_speaker,
     format_transcript_markdown,
 )
+from meetscribe.pipeline.transcriber import failed_chunk_placeholders
 from meetscribe.team import TeamContext, resolve_team
 
 from ..models import GlobalSpeaker, SpeakerSample
@@ -59,7 +60,7 @@ def _transcribe_with_progress(
     track_path: Path,
     segments: list[SpeechSegment],
     base: dict[str, Any],
-) -> Generator[dict, None, list[TranscriptSegment]]:
+) -> Generator[dict, None, TranscriptionResult]:
     """Run transcribe_segments on a worker thread, yielding per-chunk progress events.
 
     Streamed events carry only step/total/progress and deliberately omit
@@ -69,13 +70,13 @@ def _transcribe_with_progress(
     """
     no_more_progress = None
     percent_queue: queue.Queue[int | None] = queue.Queue()
-    transcribed: list[TranscriptSegment] = []
+    transcribed: list[TranscriptionResult] = []
     failure: BaseException | None = None
 
     def transcribe_and_report() -> None:
         nonlocal failure
         try:
-            transcribed.extend(
+            transcribed.append(
                 transcriber.transcribe_segments(
                     track_path,
                     segments,
@@ -101,7 +102,7 @@ def _transcribe_with_progress(
 
     if failure is not None:
         raise failure
-    return transcribed
+    return transcribed[0]
 
 
 class PipelineRunner:
@@ -144,16 +145,8 @@ class PipelineRunner:
 
     def _create_transcriber(self, language: str) -> Transcriber:
         """Create a transcriber with remote servers."""
-        return Transcriber(
-            self.cfg.get_transcription_urls(),
-            language=language,
-            timeout=self.cfg.transcription.timeout,
-            model=self.cfg.transcription.model,
-            max_gap_ms=self.cfg.transcription.max_gap_ms,
-            max_chunk_ms=self.cfg.transcription.max_chunk_ms,
-            no_speech_prob_threshold=self.cfg.transcription.no_speech_prob_threshold,
-            avg_logprob_threshold=self.cfg.transcription.avg_logprob_threshold,
-            max_inflight=self.cfg.transcription.max_inflight or None,
+        return Transcriber.from_config(
+            self.cfg.transcription, self.cfg.get_transcription_urls(), language
         )
 
     def extract_samples(
@@ -332,6 +325,8 @@ class PipelineRunner:
 
         step = 1
         all_segments = []
+        all_dropped = []
+        failed_chunks = 0
 
         for track_idx, track_path in enumerate(track_paths):
             track_num = track_idx + 1
@@ -347,7 +342,7 @@ class PipelineRunner:
 
             if speaker_name and not filter_to_speaker:
                 # Named track: transcribe whole file with speaker
-                segs = transcriber.transcribe_file(track_path, speaker=speaker_name)
+                result = transcriber.transcribe_file(track_path, speaker=speaker_name)
             else:
                 # Diarize track (auto-diarize, or an open-space mic filtered to its speaker)
                 segments = diarization.diarize(track_path)
@@ -378,17 +373,32 @@ class PipelineRunner:
                     "message": f"Track {track_num}: Transcribing {seg_count} segments...",
                 }
                 yield {**base, "progress": 0}
-                segs = yield from _transcribe_with_progress(transcriber, track_path, segments, base)
+                result = yield from _transcribe_with_progress(
+                    transcriber, track_path, segments, base
+                )
+                if result.failed_chunks:
+                    failed_chunks += len(result.failed_chunks)
+                    yield {
+                        "step": step,
+                        "total": total_steps,
+                        "message": (
+                            f"Track {track_num}: WARNING — {len(result.failed_chunks)}"
+                            " chunk(s) failed to transcribe and are missing from the transcript"
+                        ),
+                    }
 
-            for seg in segs:
+            dropped = result.dropped + failed_chunk_placeholders(result)
+            for seg in result.segments + dropped:
                 seg.track_num = track_num
-            all_segments.extend(segs)
+            all_segments.extend(result.segments)
+            all_dropped.extend(dropped)
 
         # Merge
         step += 1
         yield {"step": step, "total": total_steps, "message": "Merging transcripts..."}
 
         all_segments.sort(key=lambda x: x.start_ms)
+        all_dropped.sort(key=lambda x: x.start_ms)
         dialogue = format_transcript_markdown(all_segments)
 
         yield {
@@ -397,6 +407,7 @@ class PipelineRunner:
             "message": "Done",
             "transcript": dialogue,
             "segment_count": len(all_segments),
+            "failed_chunks": failed_chunks,
             "segments": [
                 {
                     "track_num": s.track_num or 1,
@@ -406,6 +417,19 @@ class PipelineRunner:
                     "text": s.text,
                 }
                 for s in all_segments
+            ],
+            "dropped": [
+                {
+                    "track_num": s.track_num or 1,
+                    "start_ms": s.start_ms,
+                    "end_ms": s.end_ms,
+                    "speaker": s.speaker,
+                    "text": s.text,
+                    "reason": s.drop_reason,
+                    "no_speech_prob": s.no_speech_prob,
+                    "avg_logprob": s.avg_logprob,
+                }
+                for s in all_dropped
             ],
         }
 

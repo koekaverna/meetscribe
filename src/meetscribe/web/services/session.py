@@ -11,6 +11,7 @@ from meetscribe.database import get_db, get_team
 from meetscribe.pipeline.models import TranscriptSegment, format_transcript_markdown
 
 from ..models import (
+    DroppedSegmentModel,
     Sample,
     SessionState,
     SessionStatus,
@@ -127,6 +128,24 @@ class SessionService:
             ).fetchall()
         ]
 
+        dropped_segments = [
+            DroppedSegmentModel(
+                id=seg["id"],
+                track_num=seg["track_num"],
+                start_ms=seg["start_ms"],
+                end_ms=seg["end_ms"],
+                speaker=seg["speaker"],
+                text=seg["text"],
+                reason=seg["reason"],
+                no_speech_prob=seg["no_speech_prob"],
+                avg_logprob=seg["avg_logprob"],
+            )
+            for seg in conn.execute(
+                "SELECT * FROM session_dropped_segments WHERE session_id = ? ORDER BY start_ms, id",
+                (session_id,),
+            ).fetchall()
+        ]
+
         return SessionState(
             id=row["id"],
             status=SessionStatus(row["status"]),
@@ -137,6 +156,7 @@ class SessionService:
             samples=samples,
             transcript=row["transcript"],
             segments=segments,
+            dropped_segments=dropped_segments,
             language=row["language"],
         )
 
@@ -801,12 +821,85 @@ class SessionService:
             conn.rollback()
             raise
 
-    def save_segments(self, session_id: str, segments: list[dict]) -> None:
-        """Save structured transcript segments."""
+    def restore_dropped_segment(self, session_id: str, dropped_id: int) -> bool:
+        """Move a dropped segment back into the transcript, placed by its start time.
+
+        Returns False if the dropped segment doesn't exist. Raises ValueError
+        for an entry without text (a chunk that failed to transcribe).
+        """
+        conn = get_db()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            dropped = conn.execute(
+                "SELECT * FROM session_dropped_segments WHERE session_id = ? AND id = ?",
+                (session_id, dropped_id),
+            ).fetchone()
+            if not dropped:
+                conn.rollback()
+                return False
+            if not dropped["text"]:
+                raise ValueError("Nothing to restore: the chunk was not transcribed")
+            prev = conn.execute(
+                "SELECT sort_order FROM session_segments "
+                "WHERE session_id = ? AND start_ms <= ? "
+                "ORDER BY sort_order DESC, id DESC LIMIT 1",
+                (session_id, dropped["start_ms"]),
+            ).fetchone()
+            start = dropped["start_ms"]
+            end = dropped["end_ms"] if dropped["end_ms"] > start else start + 1000
+            # Same sort_order as prev: _renumber_segments breaks the tie by id,
+            # placing the new (higher-id) row right after it.
+            conn.execute(
+                "INSERT INTO session_segments "
+                "(session_id, track_num, start_ms, end_ms, speaker, text, sort_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    session_id,
+                    dropped["track_num"],
+                    start,
+                    end,
+                    dropped["speaker"],
+                    dropped["text"],
+                    prev["sort_order"] if prev else -1,
+                ),
+            )
+            conn.execute("DELETE FROM session_dropped_segments WHERE id = ?", (dropped_id,))
+            self._renumber_segments(conn, session_id)
+            self._regenerate_transcript(conn, session_id)
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+    def save_segments(
+        self, session_id: str, segments: list[dict], dropped: list[dict] | None = None
+    ) -> None:
+        """Save structured transcript segments and the segments dropped from it."""
         conn = get_db()
         try:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("DELETE FROM session_segments WHERE session_id = ?", (session_id,))
+            conn.execute("DELETE FROM session_dropped_segments WHERE session_id = ?", (session_id,))
+            conn.executemany(
+                "INSERT INTO session_dropped_segments "
+                "(session_id, track_num, start_ms, end_ms, speaker, text, reason, "
+                "no_speech_prob, avg_logprob) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    (
+                        session_id,
+                        seg["track_num"],
+                        seg["start_ms"],
+                        seg["end_ms"],
+                        seg.get("speaker"),
+                        seg["text"],
+                        seg["reason"],
+                        seg.get("no_speech_prob"),
+                        seg.get("avg_logprob"),
+                    )
+                    for seg in dropped or []
+                ],
+            )
             rows = [
                 (
                     session_id,

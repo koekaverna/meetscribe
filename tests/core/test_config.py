@@ -67,6 +67,35 @@ class TestLoadConfig:
         assert cfg.web.port == 8080
 
 
+class TestUnknownKeys:
+    """A key the loader does not know must stop the app, not be skipped."""
+
+    def test_unknown_section_key_raises(self, tmp_path: Path):
+        data = {**MINIMAL_CONFIG, "transcription": {"servers": ["gpu1"], "max_gap": 500}}
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        with pytest.raises(ConfigurationError, match="TranscriptionConfig: unknown keys: max_gap"):
+            load_config(p)
+
+    def test_key_in_wrong_section_raises(self, tmp_path: Path):
+        data = {
+            **MINIMAL_CONFIG,
+            "embeddings": {"server": "gpu1", "no_speech_prob_threshold": 0.5},
+        }
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        with pytest.raises(ConfigurationError, match="EmbeddingsConfig: unknown keys"):
+            load_config(p)
+
+    def test_unknown_top_level_key_raises(self, tmp_path: Path):
+        data = {**MINIMAL_CONFIG, "transcripton": {"servers": ["gpu1"]}}
+        p = _write_yaml(tmp_path / "config.yaml", data)
+        with pytest.raises(ConfigurationError, match="Config: unknown keys: transcripton"):
+            load_config(p)
+
+    def test_phrases_must_be_strings(self):
+        with pytest.raises(ConfigurationError, match="hallucination_phrases"):
+            TranscriptionConfig(hallucination_phrases=["ok", 5])
+
+
 class TestValidate:
     def test_empty_servers_raises(self):
         cfg = AppConfig(servers=[])
@@ -375,6 +404,27 @@ class TestDefaultsMatchConfigYaml:
         assert defaults.timeout == d["timeout"]
         assert defaults.max_gap_ms == d["max_gap_ms"]
         assert defaults.max_chunk_ms == d["max_chunk_ms"]
+        assert defaults.segment_mode == d["segment_mode"]
+        assert defaults.min_chunk_ms == d["min_chunk_ms"]
+        assert defaults.chunk_padding_ms == d["chunk_padding_ms"]
+        assert defaults.dedup_similarity == d["dedup_similarity"]
+        assert defaults.dedup_min_words == d["dedup_min_words"]
+        assert defaults.hallucination_phrases == d["hallucination_phrases"]
+        assert (
+            defaults.hallucination_phrase_max_extra_words
+            == d["hallucination_phrase_max_extra_words"]
+        )
+        assert defaults.hallucination_logprob_threshold == d["hallucination_logprob_threshold"]
+        assert defaults.no_speech_prob_threshold == d["no_speech_prob_threshold"]
+        assert defaults.avg_logprob_threshold == d["avg_logprob_threshold"]
+        assert defaults.legacy_filter_max_words == d["legacy_filter_max_words"]
+
+    def test_example_config_loads(self, tmp_path: Path):
+        """Every key of config.example.yaml is known to the loader."""
+        example = Path(__file__).parent.parent.parent / "config.example.yaml"
+        p = tmp_path / "config.yaml"
+        p.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        load_config(p)
 
     def test_web_defaults(self, config_yaml: dict):
         d = config_yaml.get("web", {})

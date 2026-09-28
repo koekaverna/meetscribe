@@ -60,6 +60,22 @@ class TranscriptSegmentModel(BaseModel):
     text: str
 
 
+class DroppedSegmentModel(BaseModel):
+    """Segment removed from the transcript, kept for review and restore."""
+
+    id: int
+    track_num: int
+    start_ms: int
+    end_ms: int
+    speaker: str | None = None
+    # Empty for reason "failed": the chunk was never transcribed
+    text: str
+    # blocklist | logprob | legacy | duplicate | failed
+    reason: str
+    no_speech_prob: float | None = None
+    avg_logprob: float | None = None
+
+
 class SessionState(BaseModel):
     """Complete session state."""
 
@@ -72,6 +88,7 @@ class SessionState(BaseModel):
     samples: list[Sample] = []
     transcript: str | None = None
     segments: list[TranscriptSegmentModel] = []
+    dropped_segments: list[DroppedSegmentModel] = []
     language: str = "ru"
 
 
