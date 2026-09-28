@@ -186,7 +186,7 @@ class TranscriptionConfig(ValidatedConfig):
     )
     hallucination_phrase_max_extra_words: int = 8
     hallucination_drop_captions: bool = True
-    chunk_padding_ms: int = 200
+    chunk_padding_ms: int = 0
     min_chunk_ms: int = 1000
     dedup_similarity: float = 0.9
     dedup_min_words: int = 4

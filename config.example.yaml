@@ -136,9 +136,11 @@ transcription:
   # Whisper is unreliable on sub-second clips. 0 disables.
   min_chunk_ms: 1000
 
-  # Extra audio (ms) sent on each side of a chunk so that the first and the
-  # last word are not cut off. Never reaches into a neighbouring chunk.
-  chunk_padding_ms: 200
+  # Extra audio (ms) sent on each side of a chunk. Never reaches into a
+  # neighbouring chunk. Off by default: on real sessions 200 ms did not
+  # recover cut-off words, changed 3-9% of the text either way and brought
+  # in more hallucinations from the silence around speech.
+  chunk_padding_ms: 0
 
   # A phrase repeated across the joint of two neighbouring chunks is dropped
   # when the word similarity is at least dedup_similarity (0.0 — 1.0) and both
@@ -159,6 +161,7 @@ transcription:
     - "Субтитры подготовлены"
     - "Субтитры сделал"
     - "Субтитры сделаны"
+    - "Субтитры создавал"
     - "Субтитры добавил"
     - "Продолжение следует"
     - "С вами был"

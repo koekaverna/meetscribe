@@ -238,11 +238,12 @@ class TestHallucinationFiltering:
                 {"text": "Увидимся в следующих видео!", **confident},
                 {"text": "Благодарю за внимание!", **confident},
                 {"text": "Субтитры добавил DimaTorzok", **confident},
+                {"text": "Субтитры создавал DimaTorzok", **confident},
                 {"text": "И с вами был Иван Головин.", **confident},
                 {"text": "Ещё хотел спросить про субтитры.", **confident},
             ],
         )
-        assert reasons == ["blocklist"] * 4 + [None]
+        assert reasons == ["blocklist"] * 5 + [None]
 
     def test_blocklist_matches_whole_words_only(self):
         reasons = self._reasons(
