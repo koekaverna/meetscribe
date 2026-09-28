@@ -205,7 +205,11 @@ document.addEventListener('alpine:init', () => {
             if (status === 'enrolled' || status === 'transcribed') {
                 this.enrollmentComplete = true;
             }
-            if (status === 'transcribed' && this.session?.transcript) {
+            // An empty transcript still counts when everything was filtered out:
+            // the dropped segments are there to review and restore
+            const hasResult = this.session?.transcript
+                || (this.session?.dropped_segments || []).length > 0;
+            if (status === 'transcribed' && hasResult) {
                 this.transcriptionComplete = true;
             }
         },

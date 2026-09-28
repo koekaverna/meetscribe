@@ -73,10 +73,12 @@ def merge_close_segments(
 
     for seg in segments[1:]:
         gap = seg.start_ms - cur.end_ms
-        duration = seg.end_ms - cur.start_ms
+        # A segment nested in the current one must not pull the end back
+        end_ms = max(cur.end_ms, seg.end_ms)
+        duration = end_ms - cur.start_ms
 
         if gap <= max_gap_ms and duration <= max_chunk_ms and seg.speaker == cur.speaker:
-            cur.end_ms = seg.end_ms
+            cur.end_ms = end_ms
         else:
             merged.append(cur)
             cur = SpeechSegment(seg.start_ms, seg.end_ms, seg.speaker)

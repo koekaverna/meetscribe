@@ -495,6 +495,9 @@ class Transcriber:
 
         chunks = resolve_speaker_overlaps(segments)
         chunks = split_long_segments(chunks, max_chunk_ms, find_split)
+        # Parts of a split segment come out in a row: put a segment nested in
+        # it back in time order, or the merge would see it after the last part.
+        chunks.sort(key=lambda s: (s.start_ms, s.end_ms))
         chunks = merge_close_segments(chunks, self.max_gap_ms, max_chunk_ms)
         if self.min_chunk_ms > 0:
             chunks = absorb_short_chunks(chunks, self.min_chunk_ms, self.max_gap_ms)

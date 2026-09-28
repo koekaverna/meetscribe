@@ -460,9 +460,10 @@ def start_transcription(
             yield item
 
     def on_complete() -> None:
-        if transcript_data["transcript"]:
-            service.set_transcript(session_id, transcript_data["transcript"])
-        if transcript_data["segments"]:
+        # An empty list is a finished transcription too: every segment may have
+        # been filtered out, and then the dropped ones are all there is to review.
+        if transcript_data["segments"] is not None:
+            service.set_transcript(session_id, transcript_data["transcript"] or "")
             service.save_segments(
                 session_id, transcript_data["segments"], transcript_data["dropped"]
             )

@@ -10,6 +10,23 @@ from meetscribe.pipeline.models import (
 
 
 class TestMergeCloseSegments:
+    def test_nested_segment_does_not_shorten_chunk(self):
+        segs = [
+            SpeechSegment(0, 10000, "Alice"),
+            SpeechSegment(1000, 2000, "Alice"),
+        ]
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert [(s.start_ms, s.end_ms) for s in result] == [(0, 10000)]
+
+    def test_nested_segment_does_not_count_towards_max_chunk(self):
+        segs = [
+            SpeechSegment(0, 29000, "Alice"),
+            SpeechSegment(1000, 2000, "Alice"),
+            SpeechSegment(29200, 30000, "Alice"),
+        ]
+        result = merge_close_segments(segs, max_gap_ms=500, max_chunk_ms=30000)
+        assert [(s.start_ms, s.end_ms) for s in result] == [(0, 30000)]
+
     def test_empty_returns_empty(self):
         assert merge_close_segments([], max_gap_ms=500, max_chunk_ms=30000) == []
 

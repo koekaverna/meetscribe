@@ -103,6 +103,91 @@ class TestTranscribingOverlay:
         assert self._list_status(auth_client, session_id) == "transcribed"
 
 
+class TestTranscriptionResult:
+    """What on_complete stores once the transcription task finishes."""
+
+    DROPPED = {
+        "track_num": 1,
+        "start_ms": 1000,
+        "end_ms": 2000,
+        "speaker": "Alice",
+        "text": "Продолжение следует...",
+        "reason": "blocklist",
+        "no_speech_prob": 0.0,
+        "avg_logprob": -0.3,
+    }
+
+    def _transcribe(self, auth_client: TestClient, session_id: str, final: dict) -> dict:
+        runner = Mock()
+        runner.transcribe = lambda *args, **kwargs: iter([final])
+        with patch("meetscribe.web.routes.tasks.get_pipeline_runner", return_value=runner):
+            resp = auth_client.post(
+                f"/api/session/{session_id}/transcribe", json={"language": "ru"}
+            )
+        assert resp.json() == {"status": "started"}
+        for _ in range(100):
+            tasks = auth_client.get(f"/api/session/{session_id}/tasks/status").json()
+            if tasks["transcribe"] is None:
+                break
+            time.sleep(0.05)
+        return auth_client.get(f"/api/session/{session_id}").json()
+
+    def test_everything_filtered_out_is_still_saved(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        _upload_track(auth_client, session_id, wav_upload_bytes)
+        state = self._transcribe(
+            auth_client,
+            session_id,
+            {"transcript": "", "segments": [], "dropped": [self.DROPPED]},
+        )
+
+        assert state["status"] == "transcribed"
+        assert state["segments"] == []
+        assert [d["text"] for d in state["dropped_segments"]] == ["Продолжение следует..."]
+
+        dropped_id = state["dropped_segments"][0]["id"]
+        resp = auth_client.post(f"/api/session/{session_id}/dropped-segments/{dropped_id}/restore")
+        assert resp.status_code == 200
+        state = auth_client.get(f"/api/session/{session_id}").json()
+        assert [s["text"] for s in state["segments"]] == ["Продолжение следует..."]
+
+    def test_rerun_replaces_earlier_result(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        _upload_track(auth_client, session_id, wav_upload_bytes)
+        segment = {
+            "track_num": 1,
+            "start_ms": 0,
+            "end_ms": 1000,
+            "speaker": "Alice",
+            "text": "Привет",
+        }
+        self._transcribe(
+            auth_client,
+            session_id,
+            {"transcript": "**[00:00] Alice:** Привет", "segments": [segment], "dropped": []},
+        )
+        state = self._transcribe(
+            auth_client, session_id, {"transcript": "", "segments": [], "dropped": []}
+        )
+
+        assert state["segments"] == []
+        assert not state["transcript"]
+
+    def test_dropped_list_is_not_streamed(
+        self, auth_client: TestClient, session_id: str, wav_upload_bytes: bytes
+    ) -> None:
+        _upload_track(auth_client, session_id, wav_upload_bytes)
+        self._transcribe(
+            auth_client,
+            session_id,
+            {"transcript": "", "segments": [], "dropped": [self.DROPPED]},
+        )
+        stream = auth_client.get(f"/api/session/{session_id}/transcribe/stream")
+        assert "Продолжение следует" not in stream.text
+
+
 class TestTranscript:
     def test_missing_transcript_returns_404(self, auth_client: TestClient, session_id: str) -> None:
         resp = auth_client.get(f"/api/session/{session_id}/transcript")

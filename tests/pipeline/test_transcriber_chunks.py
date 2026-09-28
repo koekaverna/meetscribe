@@ -225,6 +225,23 @@ class TestChunkBoundaries:
         assert sum(sent) == 8000
         assert max(sent) <= 5000
 
+    def test_segment_nested_in_same_speaker_keeps_bounds(self, tmp_path: Path):
+        _, sent = self._run(
+            tmp_path,
+            [SpeechSegment(0, 6000, "Alice"), SpeechSegment(1000, 2000, "Alice")],
+            [],
+        )
+        assert sent == [6000]
+
+    def test_segment_nested_in_split_segment(self, tmp_path: Path):
+        """A nested segment after a split must not invert or shorten a chunk."""
+        t = make_transcriber(max_chunk_ms=5000)
+        chunks = t.plan_chunks(
+            [SpeechSegment(0, 9000, "Alice"), SpeechSegment(1000, 2000, "Alice")],
+            lambda lo, hi: lo,
+        )
+        assert [(c.start_ms, c.end_ms) for c in chunks] == [(0, 4000), (4000, 9000)]
+
     def test_overlap_is_not_sent_twice(self, tmp_path: Path):
         _, sent = self._run(
             tmp_path, [SpeechSegment(0, 5000, "Alice"), SpeechSegment(4000, 7000, "Bob")], []
