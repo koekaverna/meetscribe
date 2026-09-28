@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from meetscribe.pipeline.models import SpeechSegment, TranscriptSegment
+from meetscribe.pipeline.models import SpeechSegment, TranscriptionResult, TranscriptSegment
 from meetscribe.web.services.pipeline import PipelineRunner
 
 
@@ -35,8 +35,8 @@ class TestTranscribeTrackNum:
 
         mock_transcriber = MagicMock()
         mock_transcriber.transcribe_file.side_effect = [
-            [TranscriptSegment(0, 1000, "Hello", "Alice")],
-            [TranscriptSegment(500, 2000, "Hi", "Bob")],
+            TranscriptionResult([TranscriptSegment(0, 1000, "Hello", "Alice")]),
+            TranscriptionResult([TranscriptSegment(500, 2000, "Hi", "Bob")]),
         ]
 
         mock_diarization = MagicMock()
@@ -45,8 +45,8 @@ class TestTranscribeTrackNum:
             [SpeechSegment(500, 2000, "Bob")],
         ]
         mock_transcriber.transcribe_segments.side_effect = [
-            [TranscriptSegment(0, 1000, "Hello", "Alice")],
-            [TranscriptSegment(500, 2000, "Hi", "Bob")],
+            TranscriptionResult([TranscriptSegment(0, 1000, "Hello", "Alice")]),
+            TranscriptionResult([TranscriptSegment(500, 2000, "Hi", "Bob")]),
         ]
 
         mock_team_ctx = MagicMock()
@@ -98,12 +98,12 @@ class TestTranscribeProgress:
 
         def fake_transcribe_segments(
             _path: Path, _segments: list[SpeechSegment], progress_callback: Any = None
-        ) -> list[TranscriptSegment]:
+        ) -> TranscriptionResult:
             # Simulate four chunks finishing one after another.
             for done in (250, 500, 750, 1000):
                 if progress_callback:
                     progress_callback(done, 1000)
-            return [TranscriptSegment(0, 1000, "Hello", "Alice")]
+            return TranscriptionResult([TranscriptSegment(0, 1000, "Hello", "Alice")])
 
         mock_transcriber = MagicMock()
         mock_transcriber.transcribe_segments.side_effect = fake_transcribe_segments
@@ -135,9 +135,9 @@ class TestOpenSpaceFilter:
         mock_diarization = MagicMock()
         mock_diarization.diarize.return_value = diarized
         mock_transcriber = MagicMock()
-        mock_transcriber.transcribe_segments.return_value = [
-            TranscriptSegment(0, 1000, "Hello", assigned)
-        ]
+        mock_transcriber.transcribe_segments.return_value = TranscriptionResult(
+            [TranscriptSegment(0, 1000, "Hello", assigned)]
+        )
 
         runner = PipelineRunner()
         runner._cfg = MagicMock()
@@ -183,3 +183,69 @@ class TestOpenSpaceFilter:
         messages = [r.get("message", "") for r in results]
         assert any("No speech found" in m for m in messages)
         transcriber.transcribe_segments.assert_not_called()
+
+
+class TestDroppedAndFailed:
+    """Dropped segments and failed chunks must reach the final event."""
+
+    def test_final_event_carries_dropped_and_failed(self, tmp_path: Path) -> None:
+        track = _make_wav(tmp_path / "track1.wav")
+
+        mock_diarization = MagicMock()
+        mock_diarization.diarize.return_value = [SpeechSegment(0, 3000, "Alice")]
+        mock_transcriber = MagicMock()
+        mock_transcriber.transcribe_segments.return_value = TranscriptionResult(
+            segments=[TranscriptSegment(0, 1000, "Hello", "Alice")],
+            dropped=[
+                TranscriptSegment(
+                    1000,
+                    1500,
+                    "Продолжение следует",
+                    "Alice",
+                    drop_reason="blocklist",
+                    no_speech_prob=0.1,
+                    avg_logprob=-0.4,
+                )
+            ],
+            failed_chunks=[SpeechSegment(2000, 3000, "Alice")],
+        )
+
+        runner = PipelineRunner()
+        runner._cfg = MagicMock()
+        runner._cfg.transcription.language = "en"
+
+        with (
+            patch.object(runner, "_resolve", return_value=MagicMock()),
+            patch.object(runner, "_create_diarization", return_value=mock_diarization),
+            patch.object(runner, "_create_transcriber", return_value=mock_transcriber),
+        ):
+            results = list(runner.transcribe([track], {1: None}))
+
+        final = results[-1]
+        assert final["failed_chunks"] == 1
+        assert [s["text"] for s in final["segments"]] == ["Hello"]
+        assert final["dropped"] == [
+            {
+                "track_num": 1,
+                "start_ms": 1000,
+                "end_ms": 1500,
+                "speaker": "Alice",
+                "text": "Продолжение следует",
+                "reason": "blocklist",
+                "no_speech_prob": 0.1,
+                "avg_logprob": -0.4,
+            },
+            {
+                "track_num": 1,
+                "start_ms": 2000,
+                "end_ms": 3000,
+                "speaker": "Alice",
+                "text": "",
+                "reason": "failed",
+                "no_speech_prob": None,
+                "avg_logprob": None,
+            },
+        ]
+        warnings = [r["message"] for r in results if "WARNING" in r.get("message", "")]
+        assert len(warnings) == 1
+        assert "1 chunk(s) failed" in warnings[0]

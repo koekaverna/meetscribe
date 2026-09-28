@@ -260,6 +260,36 @@
             </template>
         </div>
 
+        <!-- Failed chunks warning -->
+        <div x-show="failedChunks.length > 0" x-cloak class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <p class="font-semibold" x-text="t('step6.failed_chunks_warning', { n: failedChunks.length })"></p>
+            <p class="mt-1">{{ t('step6.failed_chunks_hint') }}</p>
+            <ul class="mt-2 space-y-0.5 font-mono text-xs">
+                <template x-for="chunk in failedChunks" :key="chunk.id">
+                    <li x-text="'[' + formatPlayerTime(chunk.start_ms / 1000) + ' – ' + formatPlayerTime(chunk.end_ms / 1000) + '] ' + (chunk.speaker || t('step6.unknown_speaker'))"></li>
+                </template>
+            </ul>
+        </div>
+
+        <!-- Filtered-out segments: review and restore -->
+        <details x-show="filteredSegments.length > 0" x-cloak class="bg-gray-50 rounded-xl p-2 sm:p-4">
+            <summary class="cursor-pointer text-sm font-medium text-gray-600" x-text="t('step6.dropped_title', { n: filteredSegments.length })"></summary>
+            <p class="mt-2 text-xs text-gray-500">{{ t('step6.dropped_hint') }}</p>
+            <div class="mt-2 max-h-64 overflow-y-auto space-y-0.5">
+                <template x-for="dropped in filteredSegments" :key="dropped.id">
+                    <div class="flex items-start gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-100 text-sm leading-relaxed">
+                        <div class="min-w-0 flex-1">
+                            <span class="text-gray-400 text-xs font-mono" x-text="'[' + formatPlayerTime(dropped.start_ms / 1000) + ']'"></span>
+                            <span class="font-semibold" :class="speakerColor(dropped.speaker)" x-text="(dropped.speaker || t('step6.unknown_speaker')) + ':'"></span>
+                            <span class="text-gray-500" x-text="dropped.text"></span>
+                            <span class="ml-1 px-1.5 py-0.5 text-xs text-gray-500 bg-gray-200 rounded" x-text="t('step6.dropped_reason_' + dropped.reason)"></span>
+                        </div>
+                        <button @click="restoreDroppedSegment(dropped)" :disabled="segmentBusy" class="shrink-0 px-2 py-1 text-xs font-medium text-primary-700 bg-primary-50 rounded-lg hover:bg-primary-100 disabled:opacity-50">{{ t('step6.restore_segment') }}</button>
+                    </div>
+                </template>
+            </div>
+        </details>
+
         <!-- Fallback: markdown for sessions without segments -->
         <div x-show="!(session?.segments?.length > 0) && session?.transcript" class="bg-gray-50 rounded-xl p-6 max-h-96 overflow-y-auto prose prose-sm max-w-none text-gray-800" x-html="marked.parse(session?.transcript || '')"></div>
 

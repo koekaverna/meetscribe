@@ -122,11 +122,76 @@ transcription:
   # 30000 ms = 30 seconds.
   max_chunk_ms: 30000
 
-  # Hallucination filtering: segments are dropped when BOTH conditions are met:
-  #   no_speech_prob >= threshold AND avg_logprob <= threshold.
-  # Set no_speech_prob_threshold to 1.0 to disable filtering.
+  # How diarized speech is sent to the server:
+  #   chunks — one request per chunk, audio sliced on the client.
+  #   clips  — one request per track: the track is uploaded once together with
+  #            the list of clips. Needs a server with
+  #            /v1/audio/transcriptions/clips; on older servers falls back to
+  #            chunks. Uses only the first server of the list.
+  # Named tracks are always sent as a whole file.
+  segment_mode: chunks
+
+  # Short segments (under min_chunk_ms) are attached to the neighbouring chunk
+  # of the same speaker when the pause between them is within max_gap_ms.
+  # Whisper is unreliable on sub-second clips. 0 disables.
+  min_chunk_ms: 1000
+
+  # Extra audio (ms) sent on each side of a chunk. Never reaches into a
+  # neighbouring chunk. Off by default: on real sessions 200 ms did not
+  # recover cut-off words, changed 3-9% of the text either way and brought
+  # in more hallucinations from the silence around speech.
+  chunk_padding_ms: 0
+
+  # A phrase repeated across the joint of two neighbouring chunks is dropped
+  # when the word similarity is at least dedup_similarity (0.0 — 1.0) and both
+  # phrases have at least dedup_min_words words. dedup_similarity: 0 disables.
+  dedup_similarity: 0.9
+  dedup_min_words: 4
+
+  # --- Hallucination filtering ---
+  # A segment is dropped when ANY rule matches. Dropped segments are logged
+  # with the reason and, in the web UI, kept for review and restore.
+  #
+  # 1. blocklist: the text contains one of hallucination_phrases and is at most
+  #    hallucination_phrase_max_extra_words words longer than the phrase.
+  #    Matching ignores case and punctuation.
+  hallucination_phrases:
+    - "Редактор субтитров"
+    - "Корректор"
+    - "Субтитры подготовлены"
+    - "Субтитры сделал"
+    - "Субтитры сделаны"
+    - "Субтитры создавал"
+    - "Субтитры добавил"
+    - "Продолжение следует"
+    - "С вами был"
+    - "Спасибо за просмотр"
+    - "Спасибо за внимание"
+    - "Благодарю за внимание"
+    - "Подписывайтесь"
+    - "Увидимся в следующем видео"
+    - "Увидимся в следующих видео"
+    - "До новых встреч"
+    - "Добро пожаловать"
+    - "Фондю любит тебя"
+    - "КОНЕЦ"
+    - "СПОКОЙНАЯ МУЗЫКА"
+    - "СМЕХ"
+  hallucination_phrase_max_extra_words: 8
+
+  # 2. caption: Cyrillic text written in capitals only, 5 letters or more:
+  #    a sound caption like "ДИНАМИЧНАЯ МУЗЫКА".
+  hallucination_drop_captions: true
+
+  # 3. logprob: avg_logprob <= threshold, whatever the segment length.
+  hallucination_logprob_threshold: -1.0
+
+  # 4. legacy: no_speech_prob >= threshold AND avg_logprob <= threshold,
+  #    only for segments of up to legacy_filter_max_words words.
+  #    Set no_speech_prob_threshold to 1.0 to disable this rule.
   no_speech_prob_threshold: 0.5
   avg_logprob_threshold: -0.25
+  legacy_filter_max_words: 5
 
 # -----------------------------------------------------------------------------
 # Logging

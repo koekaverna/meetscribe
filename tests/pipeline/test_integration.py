@@ -75,9 +75,9 @@ class TestTranscriberTranscribeSegments:
 
         results = transcriber.transcribe_segments(audio, diarized_segments)
 
-        assert len(results) >= 1
+        assert len(results.segments) >= 1
         # First result should have offset applied (chunk starts at 1000ms)
-        first = results[0]
+        first = results.segments[0]
         assert first.start_ms == 1000  # 0 + 1000 offset
         assert first.end_ms == 1500  # 500 + 1000 offset
         assert first.speaker == "Alice"

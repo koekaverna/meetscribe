@@ -205,7 +205,11 @@ document.addEventListener('alpine:init', () => {
             if (status === 'enrolled' || status === 'transcribed') {
                 this.enrollmentComplete = true;
             }
-            if (status === 'transcribed' && this.session?.transcript) {
+            // An empty transcript still counts when everything was filtered out:
+            // the dropped segments are there to review and restore
+            const hasResult = this.session?.transcript
+                || (this.session?.dropped_segments || []).length > 0;
+            if (status === 'transcribed' && hasResult) {
                 this.transcriptionComplete = true;
             }
         },
@@ -1107,6 +1111,23 @@ document.addEventListener('alpine:init', () => {
                 }
             );
             if (ok) this.insertOpen = false;
+        },
+
+        // Chunks the server failed to transcribe: nothing to restore, only to report
+        get failedChunks() {
+            return (this.session?.dropped_segments || []).filter(d => d.reason === 'failed');
+        },
+
+        // Segments removed by the hallucination filter or as joint duplicates
+        get filteredSegments() {
+            return (this.session?.dropped_segments || []).filter(d => d.reason !== 'failed');
+        },
+
+        async restoreDroppedSegment(dropped) {
+            await this._segmentRequest(
+                `/api/session/${this.session.id}/dropped-segments/${dropped.id}/restore`,
+                { method: 'POST' }
+            );
         },
 
         async mergeSegmentWithNext(seg) {

@@ -447,3 +447,85 @@ class TestAccessControl:
         resp = auth_client.patch(f"/api/session/{sid}/segments/{ids[0]}", json={"text": "edited"})
         assert resp.status_code == 200
         assert _segments(sid)[0]["text"] == "edited"
+
+
+def _seed_dropped(session_id: str, dropped: list[tuple]) -> list[int]:
+    """Add dropped segments: (track_num, start_ms, end_ms, speaker, text, reason)."""
+    conn = get_db()
+    conn.executemany(
+        "INSERT INTO session_dropped_segments "
+        "(session_id, track_num, start_ms, end_ms, speaker, text, reason) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [(session_id, *seg) for seg in dropped],
+    )
+    conn.commit()
+    rows = conn.execute(
+        "SELECT id FROM session_dropped_segments WHERE session_id = ? ORDER BY id",
+        (session_id,),
+    ).fetchall()
+    return [row["id"] for row in rows]
+
+
+class TestRestoreDroppedSegment:
+    def test_session_state_exposes_dropped_segments(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        _seed_dropped(sid, [(1, 6000, 7000, "Bob", "угу", "legacy")])
+        dropped = auth_client.get(f"/api/session/{sid}").json()["dropped_segments"]
+        assert [(d["text"], d["reason"], d["speaker"]) for d in dropped] == [
+            ("угу", "legacy", "Bob")
+        ]
+
+    def test_restore_places_segment_by_start_time(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        (dropped_id,) = _seed_dropped(sid, [(1, 6000, 7000, "Bob", "угу", "legacy")])
+
+        resp = auth_client.post(f"/api/session/{sid}/dropped-segments/{dropped_id}/restore")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "restored"}
+
+        rows = _segments(sid)
+        assert [r["text"] for r in rows] == ["hello there", "hi", "угу", "bye"]
+        assert [r["sort_order"] for r in rows] == [0, 1, 2, 3]
+        assert (rows[2]["start_ms"], rows[2]["end_ms"], rows[2]["speaker"]) == (6000, 7000, "Bob")
+        assert "**[00:06] Bob:** угу" in _transcript(sid)
+        assert auth_client.get(f"/api/session/{sid}").json()["dropped_segments"] == []
+
+    def test_restore_before_first_segment(self, auth_client: TestClient, session_id: str) -> None:
+        _seed_transcript(session_id, "old", [(1, 5000, 9000, "Bob", "hi")])
+        (dropped_id,) = _seed_dropped(session_id, [(1, 1000, 1000, "Alice", "так", "logprob")])
+
+        resp = auth_client.post(f"/api/session/{session_id}/dropped-segments/{dropped_id}/restore")
+        assert resp.status_code == 200
+
+        rows = _segments(session_id)
+        assert [r["text"] for r in rows] == ["так", "hi"]
+        # A zero-length segment gets a stub duration so it stays editable
+        assert (rows[0]["start_ms"], rows[0]["end_ms"]) == (1000, 2000)
+
+    def test_failed_chunk_cannot_be_restored(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        (dropped_id,) = _seed_dropped(sid, [(1, 6000, 7000, "Bob", "", "failed")])
+
+        resp = auth_client.post(f"/api/session/{sid}/dropped-segments/{dropped_id}/restore")
+        assert resp.status_code == 400
+        assert len(_segments(sid)) == 3
+        assert len(auth_client.get(f"/api/session/{sid}").json()["dropped_segments"]) == 1
+
+    def test_restore_unknown_id_404(
+        self, auth_client: TestClient, seeded_session: tuple[str, list[int]]
+    ) -> None:
+        sid, _ = seeded_session
+        resp = auth_client.post(f"/api/session/{sid}/dropped-segments/9999/restore")
+        assert resp.status_code == 404
+
+    def test_restore_requires_transcribed_session(
+        self, auth_client: TestClient, session_id: str
+    ) -> None:
+        resp = auth_client.post(f"/api/session/{session_id}/dropped-segments/1/restore")
+        assert resp.status_code == 409
