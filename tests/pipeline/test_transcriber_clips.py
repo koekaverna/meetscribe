@@ -110,6 +110,22 @@ class TestClipsRequest:
             ("Продолжение следует...", "blocklist", "Bob")
         ]
 
+    def test_clip_may_yield_several_segments(self, tmp_path: Path):
+        payload = {
+            "segments": [
+                _seg(0, 2.0, 2.9, "вторая фраза"),
+                _seg(0, 1.1, 1.9, "первая фраза"),
+                _seg(1, 4.1, 5.0, "Угу"),
+            ],
+        }
+        result, _, _ = _run(tmp_path, [_response(payload)])
+
+        assert [(s.start_ms, s.speaker, s.text) for s in result.segments] == [
+            (1100, "Alice", "первая фраза"),
+            (2000, "Alice", "вторая фраза"),
+            (4100, "Bob", "Угу"),
+        ]
+
     def test_speaker_omitted_when_unknown(self, tmp_path: Path):
         audio = make_wav_file(tmp_path / "test.wav", duration_s=10.0)
         t = make_transcriber(segment_mode="clips")

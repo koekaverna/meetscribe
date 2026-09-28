@@ -231,13 +231,14 @@ class RemoteTranscriber:
         clips: list[SpeechSegment],
         language: str,
         pad_ms: int,
-    ) -> tuple[dict[int, TranscriptSegment], dict[int, str]]:
+    ) -> tuple[dict[int, list[TranscriptSegment]], dict[int, str]]:
         """Transcribe clips of a track in one request: the track is uploaded once.
 
         Returns ``(segments, failed)`` keyed by the clip's index in ``clips``:
-        at most one segment per clip, timestamps in track coordinates, and the
-        failure reason for clips the server could not process. Hallucinated
-        segments are returned too, marked with ``drop_reason``.
+        the clip's segments in time order, timestamps in track coordinates, and
+        the failure reason for clips the server could not process. The server
+        cuts a long clip at pauses, so a clip may yield several segments.
+        Hallucinated segments are returned too, marked with ``drop_reason``.
 
         Raises:
             ClipsEndpointUnavailable: If the server does not have the endpoint.
@@ -275,12 +276,14 @@ class RemoteTranscriber:
                 ) from e
             raise
 
-        segments: dict[int, TranscriptSegment] = {}
+        segments: dict[int, list[TranscriptSegment]] = {}
         for seg in result.get("segments", []):
             parsed = self._parse_segment(seg)
             index = seg.get("clip_index")
             if parsed is not None and isinstance(index, int) and 0 <= index < len(clips):
-                segments[index] = parsed
+                segments.setdefault(index, []).append(parsed)
+        for clip_segments in segments.values():
+            clip_segments.sort(key=lambda s: s.start_ms)
         failed = {
             item["clip_index"]: str(item.get("reason", ""))
             for item in result.get("failed_clips", [])
@@ -655,9 +658,10 @@ class Transcriber:
                         failed[i] = again_failed[pos]
 
         chunk_results: list[list[TranscriptSegment]] = [[] for _ in chunks]
-        for i, seg in found.items():
-            self._localize(seg, chunks[i], 0, segments)
-            chunk_results[i] = [seg]
+        for i, clip_segments in found.items():
+            for seg in clip_segments:
+                self._localize(seg, chunks[i], 0, segments)
+            chunk_results[i] = clip_segments
 
         failed_indices = []
         for i, reason in sorted(failed.items()):
