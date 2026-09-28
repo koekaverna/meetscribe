@@ -103,6 +103,9 @@ document.addEventListener('alpine:init', () => {
         playerDuration: 0,
         activeSegmentIdx: -1,
         activeTrackNum: null,
+        // Dropped segment being auditioned; its track plays alone and stops at the end
+        playingDroppedId: null,
+        _droppedStopAtSec: null,
         trackMuted: {},
         _trackAudios: [],
         _playerInited: false,
@@ -1124,6 +1127,7 @@ document.addEventListener('alpine:init', () => {
         },
 
         async restoreDroppedSegment(dropped) {
+            if (this.playingDroppedId === dropped.id) this.playDroppedSegment(dropped);
             await this._segmentRequest(
                 `/api/session/${this.session.id}/dropped-segments/${dropped.id}/restore`,
                 { method: 'POST' }
@@ -1187,6 +1191,7 @@ document.addEventListener('alpine:init', () => {
             const primary = this._trackAudios[0];
             primary.addEventListener('timeupdate', () => this.updatePlayerTime());
             primary.addEventListener('ended', () => {
+                this._endDroppedPlayback();
                 this.playerPlaying = false;
                 this.activeSegmentIdx = -1;
                 this.activeTrackNum = null;
@@ -1205,6 +1210,7 @@ document.addEventListener('alpine:init', () => {
             if (!this._trackAudios.length) this.initPlayer();
             if (!this._trackAudios.length) return;
 
+            this._endDroppedPlayback();
             if (this.playerPlaying) {
                 this._trackAudios.forEach(a => a.pause());
                 this.playerPlaying = false;
@@ -1225,6 +1231,7 @@ document.addEventListener('alpine:init', () => {
 
         seekPlayerToPercent(event) {
             if (!this.playerDuration) return;
+            this._endDroppedPlayback();
             const rect = event.currentTarget.getBoundingClientRect();
             const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
             this.seekTo(this.playerDuration * pct);
@@ -1235,6 +1242,12 @@ document.addEventListener('alpine:init', () => {
             if (!primary) return;
             this.playerCurrentTime = primary.currentTime;
             if (primary.duration) this.playerDuration = primary.duration;
+            if (this._droppedStopAtSec !== null
+                && primary.currentTime >= this._droppedStopAtSec) {
+                this._trackAudios.forEach(a => a.pause());
+                this.playerPlaying = false;
+                this._endDroppedPlayback();
+            }
             this._updateActiveSegment(primary.currentTime * 1000);
         },
 
@@ -1281,6 +1294,7 @@ document.addEventListener('alpine:init', () => {
             const segs = this.session?.segments;
             if (!segs || !segs[idx]) return;
             if (!this._trackAudios.length) this.initPlayer();
+            this._endDroppedPlayback();
 
             // Click on the playing segment → pause
             if (this.activeSegmentIdx === idx && this.playerPlaying) {
@@ -1295,7 +1309,50 @@ document.addEventListener('alpine:init', () => {
             this.playerPlaying = true;
         },
 
+        // Audition a dropped segment: only its own track is heard, the way the
+        // recognizer heard it, and playback stops where the segment ends
+        playDroppedSegment(dropped) {
+            if (!this._trackAudios.length) this.initPlayer();
+            if (!this._trackAudios.length) return;
+
+            // Click on the playing one → stop
+            if (this.playingDroppedId === dropped.id) {
+                this._trackAudios.forEach(a => a.pause());
+                this.playerPlaying = false;
+                this._endDroppedPlayback();
+                return;
+            }
+
+            // Timestamps of a dropped segment are rough (it may be clamped to a
+            // chunk edge, down to zero length), so play with a margin around it
+            const marginMs = 300;
+            const minDurationMs = 1500;
+            const startMs = Math.max(0, dropped.start_ms - marginMs);
+            const endMs = Math.max(dropped.end_ms, dropped.start_ms + minDurationMs)
+                + marginMs;
+
+            this.seekTo(startMs / 1000);
+            this._trackAudios.forEach(a => {
+                a.muted = parseInt(a.dataset.track) !== dropped.track_num;
+                a.play();
+            });
+            this.playingDroppedId = dropped.id;
+            this._droppedStopAtSec = endMs / 1000;
+            this.playerPlaying = true;
+        },
+
+        // Leave audition mode and give the tracks back their own mute state
+        _endDroppedPlayback() {
+            if (this.playingDroppedId === null) return;
+            this.playingDroppedId = null;
+            this._droppedStopAtSec = null;
+            this._trackAudios.forEach(a => {
+                a.muted = !!this.trackMuted[parseInt(a.dataset.track)];
+            });
+        },
+
         stopPlayer() {
+            this._endDroppedPlayback();
             this._trackAudios.forEach(a => {
                 a.pause();
                 a.currentTime = 0;

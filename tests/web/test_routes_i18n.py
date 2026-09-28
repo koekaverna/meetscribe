@@ -85,6 +85,12 @@ class TestShellLocale:
         html = auth_client.get("/").text
         assert "Meeting transcription with speaker diarization" in html
 
+    def test_step6_dropped_segment_play_button(self, auth_client: TestClient) -> None:
+        auth_client.cookies.set("lang", "ru")
+        html = auth_client.get("/step/6").text
+        assert "playDroppedSegment(dropped)" in html
+        assert "Прослушать фрагмент" in html
+
     def test_step6_editing_controls_russian(self, auth_client: TestClient) -> None:
         auth_client.cookies.set("lang", "ru")
         html = auth_client.get("/step/6").text

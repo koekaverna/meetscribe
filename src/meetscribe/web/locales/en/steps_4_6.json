@@ -80,6 +80,7 @@
   "step6.failed_chunks_hint": "The server could not process these fragments, so they are missing from the transcript. The rest of the text is saved.",
   "step6.dropped_title": "Filtered out: {n}",
   "step6.dropped_hint": "Segments the filter took for hallucinations or repeats. A real phrase can be returned to the transcript.",
+  "step6.play_dropped": "Play the fragment",
   "step6.restore_segment": "Restore",
   "step6.dropped_reason_blocklist": "stock phrase",
   "step6.dropped_reason_caption": "sound caption",
