@@ -336,6 +336,7 @@ class TestFromConfig:
             hallucination_logprob_threshold=-1.2,
             hallucination_phrases=["Тест"],
             hallucination_phrase_max_extra_words=2,
+            hallucination_drop_captions=False,
             chunk_padding_ms=150,
             min_chunk_ms=900,
             dedup_similarity=0.8,
@@ -358,6 +359,7 @@ class TestFromConfig:
             assert (f.no_speech_prob_threshold, f.avg_logprob_threshold) == (0.6, -0.3)
             assert (f.legacy_max_words, f.logprob_floor) == (4, -1.2)
             assert (f.phrases, f.phrase_max_extra_words) == (["Тест"], 2)
+            assert f.drop_captions is False
 
     def test_zero_max_inflight_means_auto(self):
         cfg = TranscriptionConfig(servers=["gpu1"], max_inflight=0)

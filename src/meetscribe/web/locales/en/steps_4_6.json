@@ -82,6 +82,7 @@
   "step6.dropped_hint": "Segments the filter took for hallucinations or repeats. A real phrase can be returned to the transcript.",
   "step6.restore_segment": "Restore",
   "step6.dropped_reason_blocklist": "stock phrase",
+  "step6.dropped_reason_caption": "sound caption",
   "step6.dropped_reason_logprob": "low confidence",
   "step6.dropped_reason_legacy": "looks like silence",
   "step6.dropped_reason_duplicate": "repeat at a joint",

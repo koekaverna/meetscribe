@@ -158,12 +158,16 @@ transcription:
     - "Корректор"
     - "Субтитры подготовлены"
     - "Субтитры сделал"
+    - "Субтитры сделаны"
+    - "Субтитры добавил"
     - "Продолжение следует"
-    - "С вами был Игорь Негода"
+    - "С вами был"
     - "Спасибо за просмотр"
     - "Спасибо за внимание"
+    - "Благодарю за внимание"
     - "Подписывайтесь"
     - "Увидимся в следующем видео"
+    - "Увидимся в следующих видео"
     - "До новых встреч"
     - "Добро пожаловать"
     - "Фондю любит тебя"
@@ -172,10 +176,14 @@ transcription:
     - "СМЕХ"
   hallucination_phrase_max_extra_words: 8
 
-  # 2. logprob: avg_logprob <= threshold, whatever the segment length.
+  # 2. caption: Cyrillic text written in capitals only, 5 letters or more:
+  #    a sound caption like "ДИНАМИЧНАЯ МУЗЫКА".
+  hallucination_drop_captions: true
+
+  # 3. logprob: avg_logprob <= threshold, whatever the segment length.
   hallucination_logprob_threshold: -1.0
 
-  # 3. legacy: no_speech_prob >= threshold AND avg_logprob <= threshold,
+  # 4. legacy: no_speech_prob >= threshold AND avg_logprob <= threshold,
   #    only for segments of up to legacy_filter_max_words words.
   #    Set no_speech_prob_threshold to 1.0 to disable this rule.
   no_speech_prob_threshold: 0.5

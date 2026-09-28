@@ -414,6 +414,7 @@ class TestDefaultsMatchConfigYaml:
             defaults.hallucination_phrase_max_extra_words
             == d["hallucination_phrase_max_extra_words"]
         )
+        assert defaults.hallucination_drop_captions == d["hallucination_drop_captions"]
         assert defaults.hallucination_logprob_threshold == d["hallucination_logprob_threshold"]
         assert defaults.no_speech_prob_threshold == d["no_speech_prob_threshold"]
         assert defaults.avg_logprob_threshold == d["avg_logprob_threshold"]

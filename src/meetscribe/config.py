@@ -185,6 +185,7 @@ class TranscriptionConfig(ValidatedConfig):
         default_factory=lambda: list(DEFAULT_HALLUCINATION_PHRASES)
     )
     hallucination_phrase_max_extra_words: int = 8
+    hallucination_drop_captions: bool = True
     chunk_padding_ms: int = 200
     min_chunk_ms: int = 1000
     dedup_similarity: float = 0.9

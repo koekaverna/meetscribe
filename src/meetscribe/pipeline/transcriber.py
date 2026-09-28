@@ -435,6 +435,7 @@ class Transcriber:
                 logprob_floor=cfg.hallucination_logprob_threshold,
                 phrases=cfg.hallucination_phrases,
                 phrase_max_extra_words=cfg.hallucination_phrase_max_extra_words,
+                drop_captions=cfg.hallucination_drop_captions,
             ),
             chunk_padding_ms=cfg.chunk_padding_ms,
             min_chunk_ms=cfg.min_chunk_ms,

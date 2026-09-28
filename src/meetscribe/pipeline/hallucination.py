@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 # Drop reasons, as written to the log and stored with dropped segments.
 REASON_BLOCKLIST = "blocklist"
+REASON_CAPTION = "caption"
 REASON_LOGPROB = "logprob"
 REASON_LEGACY = "legacy"
 REASON_DUPLICATE = "duplicate"
@@ -21,12 +22,16 @@ DEFAULT_HALLUCINATION_PHRASES = [
     "Корректор",
     "Субтитры подготовлены",
     "Субтитры сделал",
+    "Субтитры сделаны",
+    "Субтитры добавил",
     "Продолжение следует",
-    "С вами был Игорь Негода",
+    "С вами был",
     "Спасибо за просмотр",
     "Спасибо за внимание",
+    "Благодарю за внимание",
     "Подписывайтесь",
     "Увидимся в следующем видео",
+    "Увидимся в следующих видео",
     "До новых встреч",
     "Добро пожаловать",
     "Фондю любит тебя",
@@ -36,12 +41,29 @@ DEFAULT_HALLUCINATION_PHRASES = [
 ]
 
 _NON_WORD_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_CYRILLIC_RE = re.compile(r"[А-ЯЁ]")
+# Shorter all-caps texts are as likely an abbreviation as a caption
+_CAPTION_MIN_LETTERS = 5
 
 
 def normalize_words(text: str) -> list[str]:
     """Lowercase, fold ё→е, strip punctuation and split into words."""
     cleaned = _NON_WORD_RE.sub(" ", text.lower().replace("ё", "е"))
     return cleaned.split()
+
+
+def is_caption(text: str) -> bool:
+    """Whether the text is a sound caption: Cyrillic, written in capitals only.
+
+    Whisper renders non-speech sounds the way subtitles do ("ДИНАМИЧНАЯ
+    МУЗЫКА", "СМЕХ"); it does not write speech in capitals.
+    """
+    letters = [c for c in text if c.isalpha()]
+    return (
+        len(letters) >= _CAPTION_MIN_LETTERS
+        and all(c.isupper() for c in letters)
+        and _CYRILLIC_RE.search(text) is not None
+    )
 
 
 def _contains_phrase(words: list[str], phrase: list[str]) -> bool:
@@ -57,8 +79,9 @@ class HallucinationFilter:
 
     1. ``blocklist``: the text contains a known phrase and is at most
        ``phrase_max_extra_words`` words longer than it.
-    2. ``logprob``: ``avg_logprob <= logprob_floor``.
-    3. ``legacy``: ``no_speech_prob >= no_speech_prob_threshold`` and
+    2. ``caption``: the text is a sound caption in capitals (see ``is_caption``).
+    3. ``logprob``: ``avg_logprob <= logprob_floor``.
+    4. ``legacy``: ``no_speech_prob >= no_speech_prob_threshold`` and
        ``avg_logprob <= avg_logprob_threshold``, only for segments of up to
        ``legacy_max_words`` words.
     """
@@ -69,6 +92,7 @@ class HallucinationFilter:
     logprob_floor: float = -1.0
     phrases: list[str] = field(default_factory=lambda: list(DEFAULT_HALLUCINATION_PHRASES))
     phrase_max_extra_words: int = 8
+    drop_captions: bool = True
 
     def __post_init__(self) -> None:
         normalized = (normalize_words(p) for p in self.phrases)
@@ -83,6 +107,9 @@ class HallucinationFilter:
                 words, phrase
             ):
                 return REASON_BLOCKLIST
+
+        if self.drop_captions and is_caption(text):
+            return REASON_CAPTION
 
         if avg_logprob <= self.logprob_floor:
             return REASON_LOGPROB

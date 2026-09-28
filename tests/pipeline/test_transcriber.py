@@ -215,6 +215,35 @@ class TestHallucinationFiltering:
         )
         assert reasons == ["blocklist", "blocklist", "blocklist"]
 
+    def test_caption_in_capitals_is_dropped(self):
+        confident = {"no_speech_prob": 0.01, "avg_logprob": -0.1}
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": "ДИНАМИЧНАЯ МУЗЫКА", **confident},
+                {"text": "ГРОХОТ!", **confident},
+                {"text": "Динамичная музыка играет", **confident},
+                {"text": "КВА", **confident},
+                {"text": "API REST", **confident},
+                {"text": "ОК, ОК", **confident},
+            ],
+        )
+        assert reasons == ["caption", "caption", None, None, None, None]
+
+    def test_new_default_phrases(self):
+        confident = {"no_speech_prob": 0.01, "avg_logprob": -0.1}
+        reasons = self._reasons(
+            self._make_rt(),
+            [
+                {"text": "Увидимся в следующих видео!", **confident},
+                {"text": "Благодарю за внимание!", **confident},
+                {"text": "Субтитры добавил DimaTorzok", **confident},
+                {"text": "И с вами был Иван Головин.", **confident},
+                {"text": "Ещё хотел спросить про субтитры.", **confident},
+            ],
+        )
+        assert reasons == ["blocklist"] * 4 + [None]
+
     def test_blocklist_matches_whole_words_only(self):
         reasons = self._reasons(
             self._make_rt(),

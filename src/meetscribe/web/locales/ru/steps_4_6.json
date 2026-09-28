@@ -82,6 +82,7 @@
   "step6.dropped_hint": "Сегменты, которые фильтр счёл галлюцинациями или повторами. Настоящую реплику можно вернуть в транскрипт.",
   "step6.restore_segment": "Вернуть",
   "step6.dropped_reason_blocklist": "типовая фраза",
+  "step6.dropped_reason_caption": "подпись звука",
   "step6.dropped_reason_logprob": "низкая уверенность",
   "step6.dropped_reason_legacy": "похоже на тишину",
   "step6.dropped_reason_duplicate": "повтор на стыке",

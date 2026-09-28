@@ -70,7 +70,7 @@ class DroppedSegmentModel(BaseModel):
     speaker: str | None = None
     # Empty for reason "failed": the chunk was never transcribed
     text: str
-    # blocklist | logprob | legacy | duplicate | failed
+    # blocklist | caption | logprob | legacy | duplicate | failed
     reason: str
     no_speech_prob: float | None = None
     avg_logprob: float | None = None
